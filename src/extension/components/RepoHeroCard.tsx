@@ -38,7 +38,7 @@ export const RepoHeroCard: React.FC<RepoHeroCardProps> = ({
   const langColor = primaryLanguage ? getLanguageColor(primaryLanguage) : '#6e7681'
 
   return (
-    <SpotlightCard className="brand-hero-card" spotlightColor="rgba(46, 160, 67, 0.12)">
+    <SpotlightCard className="brand-hero-card" spotlightColor="rgba(255, 47, 90, 0.16)">
       <div className="brand-hero-main-row">
         {/* Left Column: GitHub icon, title, description, and metric pills */}
         <div className="brand-hero-left">

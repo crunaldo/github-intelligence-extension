@@ -49,7 +49,7 @@ export function HardwareCompatibilityCard({ hardware, compat, locale = 'es' }: P
     : compat.summary
 
   return (
-    <SpotlightCard className="modern-card hw-card-container" spotlightColor="rgba(56, 189, 248, 0.1)">
+    <SpotlightCard className="modern-card hw-card-container" spotlightColor="rgba(255, 47, 90, 0.12)">
       {/* Top Compatibility Verdict Banner with Animated Status Icon */}
       <div className={`hw-verdict-box ${compat.status}`}>
         <div className="hw-verdict-left">

@@ -14,7 +14,7 @@ export function SpotlightCard({
   children,
   className = '',
   style = {},
-  spotlightColor = 'rgba(46, 160, 67, 0.09)', // Subtle GitHub vivid green glow by default
+  spotlightColor = 'rgba(255, 47, 90, 0.14)', // Brand primary radiant glow (#FF2F5A)
   borderColor = 'var(--border-subtle)',
   radius = 'var(--radius-md)',
   onClick,

@@ -153,7 +153,7 @@ export function RoadmapView({ report, hardware, locale = 'es' }: Props) {
       : 'Claude'
 
   return (
-    <SpotlightCard className="roadmap-card-wrapper" spotlightColor="rgba(46, 160, 67, 0.08)">
+    <SpotlightCard className="roadmap-card-wrapper" spotlightColor="rgba(255, 47, 90, 0.12)">
       <div style={{ padding: '12px 14px' }}>
         <div className="roadmap-top-bar">
           <div className="roadmap-title-group">
