@@ -5,6 +5,7 @@ import {
   parseGitHubUrl,
   parseFlexibleGitHubUrl,
   extractRepoReference,
+  unwrapSocialRedirectUrl,
 } from './github'
 
 describe('parseGitHubUrl', () => {
@@ -123,6 +124,49 @@ describe('parseFlexibleGitHubUrl', () => {
     expect(parseFlexibleGitHubUrl('  "@vuejs/core"  ')).toMatchObject({
       owner: 'vuejs',
       repository: 'core',
+    })
+  })
+
+  it('unwraps Facebook Link Shim and tracking redirect URLs in parseFlexibleGitHubUrl', () => {
+    expect(parseFlexibleGitHubUrl('https://l.facebook.com/l.php?u=https%3A%2F%2Fgithub.com%2Ffacebook%2Freact&h=AT12345')).toMatchObject({
+      owner: 'facebook',
+      repository: 'react',
+    })
+
+    expect(parseFlexibleGitHubUrl('https://github.com/facebook/react?fbclid=IwAR0xyz123')).toMatchObject({
+      owner: 'facebook',
+      repository: 'react',
+    })
+  })
+})
+
+describe('unwrapSocialRedirectUrl & Social Link Discovery', () => {
+  it('unwraps Facebook l.facebook.com link shim correctly', () => {
+    const fbShim = 'https://l.facebook.com/l.php?u=https%3A%2F%2Fgithub.com%2Ffacebook%2Freact&h=AT3xyz'
+    expect(unwrapSocialRedirectUrl(fbShim)).toBe('https://github.com/facebook/react')
+  })
+
+  it('unwraps Reddit outbound redirects', () => {
+    const redditUrl = 'https://out.reddit.com/t3_xyz?url=https%3A%2F%2Fgithub.com%2Fastral-sh%2Fuv'
+    expect(unwrapSocialRedirectUrl(redditUrl)).toBe('https://github.com/astral-sh/uv')
+  })
+
+  it('unwraps Google redirect URLs', () => {
+    const googleUrl = 'https://www.google.com/url?q=https://github.com/shadcn-ui/ui&sa=D'
+    expect(unwrapSocialRedirectUrl(googleUrl)).toBe('https://github.com/shadcn-ui/ui')
+  })
+
+  it('cleans tracking parameters like fbclid and utm_source from github URLs', () => {
+    const dirtyUrl = 'https://github.com/tailwindlabs/tailwindcss?fbclid=IwAR123&utm_source=facebook'
+    expect(unwrapSocialRedirectUrl(dirtyUrl)).toBe('https://github.com/tailwindlabs/tailwindcss')
+  })
+
+  it('extracts repo reference from right-clicked Facebook link shim', () => {
+    const fbLinkUrl = 'https://l.facebook.com/l.php?u=https%3A%2F%2Fgithub.com%2Ffacebook%2Freact%3Ffbclid%3DIwAR123&h=AT123'
+    expect(extractRepoReference(fbLinkUrl)).toMatchObject({
+      owner: 'facebook',
+      repository: 'react',
+      originalUrl: 'https://github.com/facebook/react',
     })
   })
 })

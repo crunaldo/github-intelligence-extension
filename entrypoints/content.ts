@@ -295,27 +295,34 @@ export default defineContentScript({
       }, 20)
     })
 
-    // 2. Hover listener on <a> links to GitHub
+    // 2. Hover listener on <a> links to GitHub (unwraps Facebook l.facebook.com, Reddit, etc.)
     let linkHoverTimeout: ReturnType<typeof setTimeout> | null = null
 
     document.addEventListener('mouseover', (e) => {
       const targetEl = e.target as HTMLElement | null
       const anchor = targetEl?.closest('a')
-      if (!anchor || !anchor.href) return
+      if (!anchor) return
 
-      const href = anchor.href
-      if (!href.includes('github.com/') && !href.startsWith('github/') && !href.startsWith('gh/')) return
+      const rawHref = anchor.getAttribute('href') || anchor.href || ''
+      const innerText = anchor.innerText || ''
+      const title = anchor.getAttribute('title') || ''
+
+      const combined = `${rawHref} ${innerText} ${title}`.toLowerCase()
+      if (!combined.includes('github') && !combined.includes('gh/')) return
 
       if (linkHoverTimeout) clearTimeout(linkHoverTimeout)
       linkHoverTimeout = setTimeout(() => {
-        const target = extractRepoReference(href) || extractRepoReference(anchor.innerText || '')
+        const target = extractRepoReference(rawHref) ||
+                       extractRepoReference(anchor.href) ||
+                       extractRepoReference(innerText) ||
+                       extractRepoReference(title)
         if (target) {
           const rect = anchor.getBoundingClientRect()
           if (rect.width > 0 && rect.height > 0) {
             showPillAt(rect, target)
           }
         }
-      }, 350)
+      }, 320)
     })
 
     document.addEventListener('mouseout', (e) => {

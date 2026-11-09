@@ -1,4 +1,5 @@
 import { extractRepoReference, parseFlexibleGitHubUrl } from '../src/features/repository/github'
+import type { GitHubTarget } from '../src/features/repository/types'
 
 export default defineBackground(() => {
   // Setup context menus
@@ -51,14 +52,28 @@ export default defineBackground(() => {
     }
 
     if (info.menuItemId === 'analyze-selection-repo') {
-      const rawCandidate = (info.selectionText || info.linkUrl || '').trim()
-      let target = extractRepoReference(rawCandidate)
-      if (!target && rawCandidate) {
-        try {
-          target = parseFlexibleGitHubUrl(rawCandidate)
-        } catch {
-          target = null
-        }
+      let target: GitHubTarget | null = null
+
+      // 1. Prioritize linkUrl when user right-clicks directly on a link (unwraps Facebook l.facebook.com, Reddit, etc.)
+      if (info.linkUrl) {
+        target = extractRepoReference(info.linkUrl) || (() => {
+          try {
+            return parseFlexibleGitHubUrl(info.linkUrl)
+          } catch {
+            return null
+          }
+        })()
+      }
+
+      // 2. If no linkUrl or linkUrl didn't resolve, inspect selected text
+      if (!target && info.selectionText) {
+        target = extractRepoReference(info.selectionText) || (() => {
+          try {
+            return parseFlexibleGitHubUrl(info.selectionText)
+          } catch {
+            return null
+          }
+        })()
       }
 
       if (target) {

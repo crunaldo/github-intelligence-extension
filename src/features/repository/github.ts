@@ -90,6 +90,80 @@ export function getLatestRateLimit(): { remaining: number | null; resetAt: strin
   return latestRateLimit
 }
 
+/**
+ * Unwraps social media tracking redirect URLs (Facebook Link Shim l.facebook.com/l.php?u=...,
+ * Reddit out.reddit.com, Google url?q=..., and cleans tracking parameters like ?fbclid=...).
+ */
+export function unwrapSocialRedirectUrl(rawUrl: string): string {
+  if (!rawUrl || typeof rawUrl !== 'string') return ''
+  let current = rawUrl.trim()
+
+  // 1. Strip wrapping quotes, brackets, or angle brackets
+  current = current.replace(/^["'`([{<]+|[>"')\]}.,;:!?]+$/g, '').trim()
+
+  // 2. Decode redirects from Facebook (l.facebook.com, lm.facebook.com), Google, Reddit, etc.
+  for (let i = 0; i < 3; i++) {
+    try {
+      if (current.includes('?') && (
+        current.includes('facebook.com') ||
+        current.includes('reddit.com') ||
+        current.includes('google.') ||
+        current.includes('l.php') ||
+        current.includes('linkshim') ||
+        current.includes('out.') ||
+        current.includes('redirect') ||
+        current.includes('url?')
+      )) {
+        const parsed = new URL(current)
+        const redirected = parsed.searchParams.get('u') ||
+                           parsed.searchParams.get('url') ||
+                           parsed.searchParams.get('q') ||
+                           parsed.searchParams.get('target') ||
+                           parsed.searchParams.get('dest') ||
+                           parsed.searchParams.get('link')
+        if (redirected) {
+          current = redirected.trim()
+          continue
+        }
+      }
+
+      if (current.includes('%2F') || current.includes('%3A') || current.includes('%2f') || current.includes('%3a')) {
+        current = decodeURIComponent(current)
+      } else {
+        break
+      }
+    } catch {
+      break
+    }
+  }
+
+  // 3. If an embedded github URL is found within a wrapper URL string
+  const ghIndex = current.indexOf('github.com')
+  if (ghIndex > 0) {
+    const protoIndex = current.lastIndexOf('http', ghIndex)
+    if (protoIndex >= 0) {
+      current = current.slice(protoIndex)
+    }
+  }
+
+  // 4. Strip common social tracking query params (e.g. fbclid, utm_*, ref_src)
+  try {
+    if (current.includes('?') && (current.startsWith('http://') || current.startsWith('https://'))) {
+      const u = new URL(current)
+      if (u.hostname.toLowerCase().includes('github.com')) {
+        const paramsToClean = ['fbclid', 'gclid', 'ref', 'ref_src', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'h', 's']
+        paramsToClean.forEach((param) => u.searchParams.delete(param))
+        const cleanSearch = u.searchParams.toString()
+        current = `${u.origin}${u.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${u.hash}`
+      }
+    }
+  } catch {
+    // Ignore
+  }
+
+  return current
+}
+
 export function parseGitHubUrl(value: string | GitHubTarget, options?: { relaxed?: boolean }): GitHubTarget {
   if (typeof value !== 'string') {
     if (value && typeof value === 'object' && 'owner' in value && 'repository' in value) {
@@ -102,6 +176,9 @@ export function parseGitHubUrl(value: string | GitHubTarget, options?: { relaxed
   const relaxed = options?.relaxed ?? false
 
   if (relaxed) {
+    // Unwrap any social media tracking link wrappers first (e.g. Facebook l.facebook.com, Reddit, Google)
+    input = unwrapSocialRedirectUrl(input)
+
     // Strip wrapping quotes, brackets, parens, backticks, or trailing punctuation
     input = input.replace(/^["'`([{<]+|[>"')\]}.,;:!?]+$/g, '').trim()
 
@@ -212,8 +289,12 @@ export const FALSE_POSITIVE_SLASH_PAIRS = new Set([
  */
 export function extractRepoReference(rawText: string): GitHubTarget | null {
   if (!rawText || typeof rawText !== 'string') return null
-  const clean = rawText.trim()
-  if (clean.length < 3 || clean.length > 500) return null
+  let clean = rawText.trim()
+  if (clean.length < 3 || clean.length > 2000) return null
+
+  // Unwrap social media tracking redirects (e.g. Facebook l.facebook.com, Reddit, Google)
+  clean = unwrapSocialRedirectUrl(clean)
+  if (!clean) return null
 
   // 1. Explicit github.com URL pattern
   const urlMatch = clean.match(/(?:https?:\/\/)?(?:www\.)?github\.com\/([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]{1,100})(?:\/(?:tree|blob|commit)\/([a-zA-Z0-9_.-]+))?/i)
