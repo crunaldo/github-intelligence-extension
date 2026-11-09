@@ -7,17 +7,23 @@ export default defineConfig({
     description: 'Analizador inteligente de repositorios de GitHub con diagramas de arquitectura interactivos, auditoría de seguridad & licencias.',
     version: '2.0.0',
     permissions: [
+      'activeTab',
       'storage',
       'tabs',
       'sidePanel',
       'contextMenus',
       'clipboardWrite',
+      'system.cpu',
+      'system.memory',
+      'system.storage',
     ],
     host_permissions: [
       'https://api.github.com/*',
       'https://github.com/*',
       'https://raw.githubusercontent.com/*',
       'https://api.osv.dev/*',
+      'https://translate.googleapis.com/*',
+      'https://api.mymemory.translated.net/*',
     ],
     icons: {
       '16': 'icons/icon16.png',
