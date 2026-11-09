@@ -1,0 +1,63 @@
+{
+  "manifest_version": 3,
+  "name": "GitHub Project Intelligence Assistant",
+  "version": "1.0.0",
+  "description": "Inteligencia y análisis profundo de repositorios de GitHub: resumen automático de pestaña activa, dependencias y panel lateral interactivo.",
+  "permissions": [
+    "activeTab",
+    "sidePanel",
+    "storage",
+    "tabs",
+    "contextMenus",
+    "system.cpu",
+    "system.memory",
+    "system.storage"
+  ],
+  "host_permissions": [
+    "https://api.github.com/*",
+    "https://raw.githubusercontent.com/*",
+    "https://translate.googleapis.com/*",
+    "https://api.mymemory.translated.net/*",
+    "https://api.osv.dev/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "GitHub Project Intelligence",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/*",
+        "icons/*",
+        "icons/mascot/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
