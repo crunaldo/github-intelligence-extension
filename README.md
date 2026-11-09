@@ -1,11 +1,12 @@
-# 🚀 GitHub Project Intelligence Assistant — Chrome Extension
+# 🚀 GitHub Project Intelligence Assistant — Chrome Extension (v2.0 WXT)
 
-Extensión de navegador para Google Chrome / navegadores Chromium (Manifest V3) que analiza repositorios de GitHub en tiempo real, generando diagramas interactivos de arquitectura (Mermaid), auditorías de seguridad & CVEs, auditoría de licencias y uso comercial, métricas de salud y atajos de 1-clic para clonar o probar en la nube (StackBlitz, Codespaces, VS Code, Cursor).
+Extensión de navegador para Google Chrome y navegadores Chromium (Manifest V3) migrada al framework de nueva generación **[WXT](https://wxt.dev/)**. Analiza repositorios de GitHub en tiempo real, generando diagramas interactivos de arquitectura (Mermaid), auditorías de seguridad & CVEs, auditoría de licencias y uso comercial, métricas de salud y atajos de 1-clic para clonar o probar en la nube (StackBlitz, Codespaces, VS Code, Cursor).
 
 ---
 
 ## 🌟 Características Principales
 
+- **Desarrollado con WXT:** Servidor de desarrollo con Hot Module Replacement (HMR) instantáneo, compilación multi-navegador y gestión automática del manifiesto.
 - **Sidepanel & Popup Integrados:** Funciona tanto en ventana emergente (Popup) como en el panel lateral nativo de Chrome (`chrome.sidePanel`).
 - **Detección Automática de Repositorios:** Identifica el repositorio actual al navegar en GitHub y ofrece análisis con un solo clic.
 - **Diagrama de Arquitectura Interactivo:** Visualiza componentes, dependencias y flujos del proyecto mediante diagramas Mermaid renderizados en el navegador.
@@ -19,65 +20,64 @@ Extensión de navegador para Google Chrome / navegadores Chromium (Manifest V3) 
 
 ---
 
-## 🛠️ Instalación y Desarrollo
+## 🛠️ Comandos Disponibles
 
-### Requisitos Previos
-- Node.js 18+ y npm
-
-### Pasos de Instalación
-
-1. Clona o abre esta carpeta:
-   ```bash
-   cd github-intelligence-extension
-   ```
-
-2. Instala las dependencias:
-   ```bash
-   npm install
-   ```
-
-3. Compila la extensión:
-   ```bash
-   npm run build
-   ```
-
-4. O compila y empaqueta en archivo ZIP:
-   ```bash
-   npm run pack
-   ```
+| Comando | Descripción |
+| :--- | :--- |
+| `npm run dev` | Inicia el servidor de desarrollo de WXT con recarga en vivo (HMR) para Chrome |
+| `npm run build` | Compila la extensión en `.output/chrome-mv3` lista para cargar en Chrome |
+| `npm run zip` | Compila y empaqueta la extensión en un archivo `.zip` en `.output/` |
+| `npm run dev:firefox` | Inicia el servidor de desarrollo apuntando a Firefox |
+| `npm run build:firefox` | Compila la versión para Firefox en `.output/firefox-mv2` |
+| `npm run test` | Ejecuta la suite de pruebas unitarias con Vitest |
 
 ---
 
 ## 🔌 Cómo Cargar la Extensión en Google Chrome
 
-1. Abre Google Chrome y ve a `chrome://extensions/`.
-2. Activa el **Modo de desarrollador** (interruptor superior derecho).
-3. Haz clic en **Cargar descomprimida** (Load unpacked).
-4. Selecciona la carpeta `dist/` generada por `npm run build`.
-5. ¡Listo! La extensión ya estará activa en tu navegador.
+1. Compila la extensión ejecutando:
+   ```bash
+   npm run build
+   ```
+2. Abre Google Chrome y ve a `chrome://extensions/`.
+3. Activa el **Modo de desarrollador** (esquina superior derecha).
+4. Haz clic en **Cargar descomprimida** (Load unpacked).
+5. Selecciona la carpeta `.output/chrome-mv3` generada dentro del proyecto.
+6. ¡Listo! La extensión v2.0 estará activa y funcional.
 
 ---
 
-## 📂 Estructura del Proyecto
+## 📂 Estructura del Proyecto (WXT)
 
-```
+```text
 github-intelligence-extension/
-├── package.json               # Configuración y scripts npm
-├── vite.config.ts             # Configuración de compilación Vite para Manifest V3
-├── tsconfig.json              # Configuración TypeScript
-├── dist/                      # Carpeta compilada lista para cargar en Chrome
-├── src/
-│   ├── extension/             # Código de la extensión Chrome
-│   │   ├── manifest.json      # Manifiesto V3 de la extensión
-│   │   ├── background.ts      # Service worker en segundo plano
-│   │   ├── content.ts         # Content script inyectado en github.com
-│   │   ├── popup/             # Interfaz del Popup
-│   │   ├── sidepanel/         # Interfaz del Sidepanel
-│   │   ├── components/        # Componentes UI reutilizables
-│   │   └── icons/             # Iconos de la extensión
-│   └── features/
-│       └── repository/        # Motor de análisis de repositorios de GitHub
+├── wxt.config.ts              # Configuración principal de WXT y manifiesto MV3
+├── tsconfig.json              # Extiende la configuración tipada generada por WXT (.wxt/)
+├── package.json               # Dependencias y scripts WXT
+├── entrypoints/               # Puntos de entrada automáticos de WXT
+│   ├── background.ts          # Service worker en segundo plano (defineBackground)
+│   ├── content.ts             # Content script inyectado en github.com (defineContentScript)
+│   ├── popup/                 # Interfaz del Popup (index.html + main.tsx)
+│   └── sidepanel/             # Interfaz del Sidepanel (index.html + main.tsx)
+├── public/                    # Archivos estáticos e iconos copiados automáticamente
+│   └── icons/                 # Iconos oficiales, custom y mascotas
+├── src/                       # Código fuente reutilizable
+│   ├── components/            # Componentes React de UI (Modales, Badges, etc.)
+│   ├── features/repository/   # Motor de inteligencia de repositorios de GitHub
+│   ├── extension.css          # Estilos globales de la interfaz
+│   ├── storage.ts             # Almacenamiento sincronizado de preferencias y caché
+│   └── i18n.ts                # Sistema de traducción bilingüe (ES / EN)
+└── .output/                   # Salida de compilación (.output/chrome-mv3 y archivos .zip)
 ```
+
+---
+
+## 📦 Respaldos
+
+- **Respaldo de la Versión 1.0 (Vite clásico):**
+  - Carpeta física: `../github-intelligence-extension-v1.0-backup`
+  - Git Tag: `v1.0.0`
+  - Archivo comprimido: `C:\Users\moder\Downloads\github-intelligence-extension-v1.0.zip`
 
 ---
 

@@ -48,7 +48,7 @@ const hasChromeStorage = typeof chrome !== 'undefined' && Boolean(chrome.storage
 export async function getStoredPreferences(): Promise<ExtensionPreferences> {
   if (hasChromeStorage) {
     const result = await chrome.storage.local.get(STORAGE_KEYS.PREFERENCES)
-    const prefs = { ...DEFAULT_EXTENSION_PREFERENCES, ...(result[STORAGE_KEYS.PREFERENCES] || {}) }
+    const prefs = { ...DEFAULT_EXTENSION_PREFERENCES, ...((result[STORAGE_KEYS.PREFERENCES] as Record<string, unknown>) || {}) }
     if (prefs.githubToken) {
       setConfiguredGitHubToken(prefs.githubToken)
     }

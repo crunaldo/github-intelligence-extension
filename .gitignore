@@ -3,7 +3,9 @@ node_modules/
 .pnp
 .pnp.js
 
-# Build outputs
+# WXT Framework build & temporary directories
+.output/
+.wxt/
 dist/
 dist-extension/
 *.zip

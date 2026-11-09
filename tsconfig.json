@@ -1,20 +1,12 @@
 {
+  "extends": "./.wxt/tsconfig.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "types": ["vite/client", "chrome"],
-    "allowArbitraryExtensions": true,
-    "isolatedModules": true,
-    "moduleDetection": "force",
-    "noEmit": true,
     "jsx": "react-jsx",
-    "strict": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noFallthroughCasesInSwitch": true
-  },
-  "include": ["src"]
+    "types": ["chrome", "vite/client"],
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": false,
+    "strict": false,
+    "skipLibCheck": true,
+    "noEmit": true
+  }
 }
