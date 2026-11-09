@@ -158,7 +158,7 @@ export function SidepanelApp() {
     []
   )
 
-  // Detect active tab and listen for tab navigation in real time
+  // Detect pending analysis from context menu / floating pill, active tab, and live messages
   useEffect(() => {
     function inspectUrl(tabUrl: string) {
       try {
@@ -173,7 +173,30 @@ export function SidepanelApp() {
       }
     }
 
+    async function checkPendingAnalysis(): Promise<boolean> {
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        try {
+          const stored = await chrome.storage.local.get('gpi_pending_analysis')
+          if (stored?.gpi_pending_analysis) {
+            const pending = stored.gpi_pending_analysis as GitHubTarget
+            await chrome.storage.local.remove('gpi_pending_analysis')
+            setUrlInput(pending.originalUrl)
+            setActiveTabRepo(pending)
+            setNav('analyze')
+            void performAnalysis(pending.originalUrl, false)
+            return true
+          }
+        } catch {
+          // Ignore
+        }
+      }
+      return false
+    }
+
     async function checkActiveTab() {
+      const hadPending = await checkPendingAnalysis()
+      if (hadPending) return
+
       if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
         try {
           const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
@@ -192,6 +215,37 @@ export function SidepanelApp() {
     }
 
     void checkActiveTab()
+
+    // Listen for TRIGGER_ANALYSIS messages from background or floating pill
+    const onMessage = (msg: { type: string; target?: GitHubTarget }) => {
+      if (msg?.type === 'TRIGGER_ANALYSIS' && msg.target?.originalUrl) {
+        setUrlInput(msg.target.originalUrl)
+        setActiveTabRepo(msg.target)
+        setNav('analyze')
+        void performAnalysis(msg.target.originalUrl, false)
+      }
+    }
+
+    // Listen for storage changes in case gpi_pending_analysis arrives while open
+    const onStorageChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+      if (areaName === 'local' && changes.gpi_pending_analysis?.newValue) {
+        const pending = changes.gpi_pending_analysis.newValue as GitHubTarget
+        chrome.storage.local.remove('gpi_pending_analysis').catch(() => {})
+        setUrlInput(pending.originalUrl)
+        setActiveTabRepo(pending)
+        setNav('analyze')
+        void performAnalysis(pending.originalUrl, false)
+      }
+    }
+
+    if (typeof chrome !== 'undefined') {
+      if (chrome.runtime?.onMessage) {
+        chrome.runtime.onMessage.addListener(onMessage)
+      }
+      if (chrome.storage?.onChanged) {
+        chrome.storage.onChanged.addListener(onStorageChange)
+      }
+    }
 
     // Listen for tab switching and URL updates in real time
     if (typeof chrome !== 'undefined' && chrome.tabs) {
@@ -220,8 +274,25 @@ export function SidepanelApp() {
       chrome.tabs.onUpdated.addListener(onUpdated)
 
       return () => {
+        if (chrome.runtime?.onMessage) {
+          chrome.runtime.onMessage.removeListener(onMessage)
+        }
+        if (chrome.storage?.onChanged) {
+          chrome.storage.onChanged.removeListener(onStorageChange)
+        }
         chrome.tabs.onActivated.removeListener(onActivated)
         chrome.tabs.onUpdated.removeListener(onUpdated)
+      }
+    }
+
+    return () => {
+      if (typeof chrome !== 'undefined') {
+        if (chrome.runtime?.onMessage) {
+          chrome.runtime.onMessage.removeListener(onMessage)
+        }
+        if (chrome.storage?.onChanged) {
+          chrome.storage.onChanged.removeListener(onStorageChange)
+        }
       }
     }
   }, [report, performAnalysis])

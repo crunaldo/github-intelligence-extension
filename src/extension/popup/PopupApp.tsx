@@ -151,8 +151,29 @@ export function PopupApp() {
       }
     }
 
+    async function checkPendingAnalysis(): Promise<boolean> {
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        try {
+          const stored = await chrome.storage.local.get('gpi_pending_analysis')
+          if (stored?.gpi_pending_analysis) {
+            const pending = stored.gpi_pending_analysis as GitHubTarget
+            await chrome.storage.local.remove('gpi_pending_analysis')
+            setSearchUrl(pending.originalUrl)
+            setActiveTabRepo(pending)
+            void performAnalysis(pending.originalUrl, false)
+            return true
+          }
+        } catch {
+          // Ignore
+        }
+      }
+      return false
+    }
+
     if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
       ;(async () => {
+        const hadPending = await checkPendingAnalysis()
+        if (hadPending) return
         try {
           const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
           if (tab?.url) inspectUrl(tab.url, true)
@@ -160,6 +181,19 @@ export function PopupApp() {
           // Ignore
         }
       })()
+
+      // Listen for live messages
+      const onMessage = (msg: { type: string; target?: GitHubTarget }) => {
+        if (msg?.type === 'TRIGGER_ANALYSIS' && msg.target?.originalUrl) {
+          setSearchUrl(msg.target.originalUrl)
+          setActiveTabRepo(msg.target)
+          void performAnalysis(msg.target.originalUrl, false)
+        }
+      }
+
+      if (chrome.runtime?.onMessage) {
+        chrome.runtime.onMessage.addListener(onMessage)
+      }
 
       // Listen for tab switching and URL updates in real time
       const onActivated = async (activeInfo: { tabId: number; windowId: number }) => {

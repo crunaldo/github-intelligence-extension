@@ -102,6 +102,22 @@ export function parseGitHubUrl(value: string | GitHubTarget, options?: { relaxed
   const relaxed = options?.relaxed ?? false
 
   if (relaxed) {
+    // Strip wrapping quotes, brackets, parens, backticks, or trailing punctuation
+    input = input.replace(/^["'`([{<]+|[>"')\]}.,;:!?]+$/g, '').trim()
+
+    // Handle SSH clone format git@github.com:owner/repo.git
+    if (input.startsWith('git@github.com:')) {
+      input = `https://github.com/${input.slice('git@github.com:'.length)}`
+    }
+
+    // Handle social prefixes: github/owner/repo, gh/owner/repo, github:owner/repo, gh:owner/repo
+    input = input.replace(/^(?:github|gh)[:/]/i, 'github.com/')
+
+    // Handle @owner/repo
+    if (input.startsWith('@')) {
+      input = input.slice(1)
+    }
+
     if (!input.startsWith('http://') && !input.startsWith('https://')) {
       if (input.startsWith('github.com/')) {
         input = `https://${input}`
@@ -171,6 +187,88 @@ export function parseGitHubUrl(value: string | GitHubTarget, options?: { relaxed
 
 export function parseFlexibleGitHubUrl(value: string): GitHubTarget {
   return parseGitHubUrl(value, { relaxed: true })
+}
+
+export const RESERVED_GITHUB_NAMES = new Set([
+  'about', 'pricing', 'security', 'login', 'join', 'explore', 'trending',
+  'collections', 'events', 'sponsors', 'features', 'enterprise', 'team',
+  'search', 'settings', 'notifications', 'marketplace', 'pulls', 'issues',
+  'dashboard', 'orgs', 'users', 'site', 'contact', 'status', 'blog', 'help',
+  'customer-stories', 'readme', 'license', 'git', 'api', 'discussions', 'actions',
+  'projects', 'releases', 'tags', 'wiki', 'network', 'graphs'
+])
+
+export const FALSE_POSITIVE_SLASH_PAIRS = new Set([
+  'and/or', 'y/o', 'true/false', 'false/true', 'yes/no', 'si/no', 'in/out',
+  'input/output', 'on/off', 'up/down', 'left/right', 'high/low', 'min/max',
+  'before/after', 'am/pm', 'km/h', 'mph', 'w/o', 'c/u', 's/n', 'n/a', 'etc/passwd',
+  'text/html', 'text/plain', 'text/css', 'text/javascript', 'application/json',
+  'application/xml', 'image/png', 'image/jpeg', 'image/svg+xml'
+])
+
+/**
+ * Robust heuristic extractor that detects GitHub repositories in selected text or sentences
+ * across any webpage (Facebook, Reddit, Instagram, Twitter, blogs, etc.) without false positives.
+ */
+export function extractRepoReference(rawText: string): GitHubTarget | null {
+  if (!rawText || typeof rawText !== 'string') return null
+  const clean = rawText.trim()
+  if (clean.length < 3 || clean.length > 500) return null
+
+  // 1. Explicit github.com URL pattern
+  const urlMatch = clean.match(/(?:https?:\/\/)?(?:www\.)?github\.com\/([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]{1,100})(?:\/(?:tree|blob|commit)\/([a-zA-Z0-9_.-]+))?/i)
+  if (urlMatch) {
+    const owner = urlMatch[1]
+    const repo = urlMatch[2].replace(/\.git$/i, '')
+    const ref = urlMatch[3]
+    if (!RESERVED_GITHUB_NAMES.has(owner.toLowerCase()) && !FALSE_POSITIVE_SLASH_PAIRS.has(`${owner}/${repo}`.toLowerCase())) {
+      return {
+        owner,
+        repository: repo,
+        ref,
+        refKind: ref ? 'branch' : 'default',
+        originalUrl: `https://github.com/${owner}/${repo}${ref ? `/tree/${ref}` : ''}`
+      }
+    }
+  }
+
+  // 2. Social prefix: github/owner/repo, gh/owner/repo, github:owner/repo, gh:owner/repo
+  const prefixMatch = clean.match(/\b(?:github|gh)[:/]([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]{1,100})\b/i)
+  if (prefixMatch) {
+    const owner = prefixMatch[1]
+    const repo = prefixMatch[2].replace(/\.git$/i, '')
+    if (!RESERVED_GITHUB_NAMES.has(owner.toLowerCase()) && !FALSE_POSITIVE_SLASH_PAIRS.has(`${owner}/${repo}`.toLowerCase())) {
+      return {
+        owner,
+        repository: repo,
+        refKind: 'default',
+        originalUrl: `https://github.com/${owner}/${repo}`
+      }
+    }
+  }
+
+  // 3. Standalone owner/repo pattern (e.g. facebook/react, vercel/next.js)
+  const slashMatches = clean.matchAll(/(?:^|[\s"'`([<])@?([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]{1,100})(?=$|[\s"'`)\],;:!?])/g)
+  for (const match of slashMatches) {
+    const owner = match[1]
+    const repo = match[2].replace(/\.git$/i, '')
+    const pairLower = `${owner}/${repo}`.toLowerCase()
+
+    if (RESERVED_GITHUB_NAMES.has(owner.toLowerCase())) continue
+    if (FALSE_POSITIVE_SLASH_PAIRS.has(pairLower)) continue
+    if (/^\d+$/.test(owner) || /^\d+$/.test(repo)) continue
+    if (owner.startsWith('-') || owner.endsWith('-')) continue
+    if (/\.(png|jpe?g|gif|webp|svg|pdf|mp4|webm|zip|tar|gz|exe|dmg)$/i.test(repo)) continue
+
+    return {
+      owner,
+      repository: repo,
+      refKind: 'default',
+      originalUrl: `https://github.com/${owner}/${repo}`
+    }
+  }
+
+  return null
 }
 
 function safePath(path: string): string {

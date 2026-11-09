@@ -1,6 +1,16 @@
+import { extractRepoReference, parseFlexibleGitHubUrl } from '../src/features/repository/github'
+
 export default defineBackground(() => {
-  // Setup context menu
+  // Setup context menus
   chrome.runtime.onInstalled.addListener(async () => {
+    // 1. Context menu for selected text or right-clicked links
+    chrome.contextMenus.create({
+      id: 'analyze-selection-repo',
+      title: '🐙 Analizar repositorio con GitHub Intelligence',
+      contexts: ['selection', 'link'],
+    })
+
+    // 2. Context menu for opening the side panel on any page
     chrome.contextMenus.create({
       id: 'open-side-panel',
       title: 'Abrir GitHub Intelligence en Panel Lateral',
@@ -36,6 +46,34 @@ export default defineBackground(() => {
         await chrome.sidePanel.open({ windowId: tab.windowId })
       } catch (err) {
         console.warn('Failed to open side panel:', err)
+      }
+      return
+    }
+
+    if (info.menuItemId === 'analyze-selection-repo') {
+      const rawCandidate = (info.selectionText || info.linkUrl || '').trim()
+      let target = extractRepoReference(rawCandidate)
+      if (!target && rawCandidate) {
+        try {
+          target = parseFlexibleGitHubUrl(rawCandidate)
+        } catch {
+          target = null
+        }
+      }
+
+      if (target) {
+        await chrome.storage.local.set({ gpi_pending_analysis: target })
+      }
+
+      if (tab?.windowId && chrome.sidePanel?.open) {
+        try {
+          await chrome.sidePanel.open({ windowId: tab.windowId })
+          if (target) {
+            chrome.runtime.sendMessage({ type: 'TRIGGER_ANALYSIS', target }).catch(() => {})
+          }
+        } catch (err) {
+          console.warn('Failed to open side panel for repo:', err)
+        }
       }
     }
   })
@@ -85,6 +123,30 @@ export default defineBackground(() => {
 
   // Listen to messages from content script, popup, or side panel
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === 'OPEN_SIDEPANEL_FOR_REPO') {
+      const target = message.target
+      const windowId = sender.tab?.windowId || message.windowId
+      ;(async () => {
+        if (target) {
+          await chrome.storage.local.set({ gpi_pending_analysis: target })
+        }
+        if (windowId && chrome.sidePanel?.open) {
+          try {
+            await chrome.sidePanel.open({ windowId })
+            if (target) {
+              chrome.runtime.sendMessage({ type: 'TRIGGER_ANALYSIS', target }).catch(() => {})
+            }
+            sendResponse({ ok: true })
+          } catch (err) {
+            sendResponse({ ok: false, error: String(err) })
+          }
+        } else {
+          sendResponse({ ok: false, error: 'Side panel unsupported or no windowId' })
+        }
+      })()
+      return true
+    }
+
     if (message?.type === 'OPEN_SIDEPANEL') {
       const windowId = sender.tab?.windowId || message.windowId
       if (windowId && chrome.sidePanel?.open) {

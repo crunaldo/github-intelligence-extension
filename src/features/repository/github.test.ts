@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { evaluateRuntimeCompatibility, extractRuntimeRequirements, parseGitHubUrl } from './github'
+import {
+  evaluateRuntimeCompatibility,
+  extractRuntimeRequirements,
+  parseGitHubUrl,
+  parseFlexibleGitHubUrl,
+  extractRepoReference,
+} from './github'
 
 describe('parseGitHubUrl', () => {
   it('accepts a repository URL and normalizes a trailing slash and .git suffix', () => {
@@ -58,5 +64,65 @@ describe('evaluateRuntimeCompatibility', () => {
     expect(evaluateRuntimeCompatibility('1.90.0', '1.86')).toBe('compatible')
     expect(evaluateRuntimeCompatibility('8.0.404', 'net8.0')).toBe('compatible')
     expect(evaluateRuntimeCompatibility(null, '>=20')).toBe('unverified')
+  })
+})
+
+describe('extractRepoReference (Heuristic Social & Web Discovery)', () => {
+  it('extracts repos from social formats like github/owner/repo or gh:owner/repo', () => {
+    expect(extractRepoReference('mira este proyecto en github/shadcn-ui/ui para ver componentes')).toMatchObject({
+      owner: 'shadcn-ui',
+      repository: 'ui',
+      originalUrl: 'https://github.com/shadcn-ui/ui',
+    })
+
+    expect(extractRepoReference('instala gh:astral-sh/uv')).toMatchObject({
+      owner: 'astral-sh',
+      repository: 'uv',
+      originalUrl: 'https://github.com/astral-sh/uv',
+    })
+  })
+
+  it('extracts standalone owner/repo mentions on Facebook, Reddit, etc.', () => {
+    expect(extractRepoReference('Me encanta facebook/react por su ecosistema')).toMatchObject({
+      owner: 'facebook',
+      repository: 'react',
+      originalUrl: 'https://github.com/facebook/react',
+    })
+
+    expect(extractRepoReference('"vercel/next.js"')).toMatchObject({
+      owner: 'vercel',
+      repository: 'next.js',
+      originalUrl: 'https://github.com/vercel/next.js',
+    })
+
+    expect(extractRepoReference('@tailwindlabs/tailwindcss')).toMatchObject({
+      owner: 'tailwindlabs',
+      repository: 'tailwindcss',
+    })
+  })
+
+  it('rejects false positives like and/or, dates, and MIME types', () => {
+    expect(extractRepoReference('Debes elegir and/or en la configuración')).toBeNull()
+    expect(extractRepoReference('true/false')).toBeNull()
+    expect(extractRepoReference('2024/05')).toBeNull()
+    expect(extractRepoReference('text/html')).toBeNull()
+    expect(extractRepoReference('image/png')).toBeNull()
+    expect(extractRepoReference('about/pricing')).toBeNull()
+  })
+})
+
+describe('parseFlexibleGitHubUrl', () => {
+  it('handles github/owner/repo relaxed format', () => {
+    expect(parseFlexibleGitHubUrl('github/facebook/react')).toMatchObject({
+      owner: 'facebook',
+      repository: 'react',
+    })
+  })
+
+  it('handles @owner/repo and quotes', () => {
+    expect(parseFlexibleGitHubUrl('  "@vuejs/core"  ')).toMatchObject({
+      owner: 'vuejs',
+      repository: 'core',
+    })
   })
 })
