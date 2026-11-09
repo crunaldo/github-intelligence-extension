@@ -59,6 +59,7 @@ import { RepoHeroCard } from '../components/RepoHeroCard'
 import { AnalysisMascot } from '../components/AnalysisMascot'
 import { InteractiveBeamLoader } from '../components/InteractiveBeamLoader'
 import { SegmentedPill } from '../components/SegmentedPill'
+import { DirectoryTree } from '../components/DirectoryTree'
 
 type SidepanelNav = 'analyze' | 'reports' | 'compare' | 'favorites' | 'settings'
 type ReportSection = 'overview' | 'architecture' | 'files' | 'dependencies' | 'releases' | 'sources'
@@ -597,49 +598,12 @@ export function SidepanelApp() {
                 )}
 
                 {reportSection === 'files' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <input
-                        type="text"
-                        placeholder="Filtrar archivos..."
-                        value={fileFilter}
-                        onChange={(e) => setFileFilter(e.target.value)}
-                        style={{
-                          flex: 1,
-                          padding: '6px 10px',
-                          borderRadius: 'var(--radius-sm)',
-                          background: 'var(--bg-input)',
-                          border: '1px solid var(--border-medium)',
-                          color: 'var(--text-primary)',
-                          fontSize: 12,
-                        }}
-                      />
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {(fileFilter
-                        ? (report.tree || []).filter((f) => (f?.path || '').toLowerCase().includes(fileFilter.toLowerCase()))
-                        : (report.importantFiles || [])
-                      ).slice(0, 50).map((file) => (
-                        <div
-                          key={file.path}
-                          style={{
-                            padding: '6px 10px',
-                            background: 'var(--bg-surface-elevated)',
-                            borderRadius: 'var(--radius-sm)',
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: 11.5,
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                          }}
-                        >
-                          <span>📄 {file.path}</span>
-                          <span style={{ color: 'var(--text-muted)' }}>
-                            {file.size ? `${(file.size / 1024).toFixed(1)} KB` : ''}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  <DirectoryTree
+                    entries={report.tree && report.tree.length > 0 ? report.tree : report.importantFiles || []}
+                    repoHtmlUrl={report.repository.htmlUrl}
+                    defaultBranch={report.repository.defaultBranch || 'main'}
+                    locale={activeLocale}
+                  />
                 )}
 
                 {reportSection === 'releases' && (

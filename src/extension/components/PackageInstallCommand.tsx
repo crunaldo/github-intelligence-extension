@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { Terminal, Copy, Check } from 'lucide-react'
 import type { RepositoryReport } from '../../features/repository/types'
 import type { ActiveLocale } from '../i18n'
-import { SegmentedPill } from './SegmentedPill'
+import { TerminalSnippet, type TerminalOption } from './TerminalSnippet'
 
 type PackageInstallCommandProps = {
   report: RepositoryReport
@@ -103,73 +102,26 @@ export function detectInstallCommands(report: RepositoryReport): {
 }
 
 export function PackageInstallCommand({ report, locale = 'es' }: PackageInstallCommandProps) {
-  const isEs = locale === 'es'
   const { ecosystem, options } = detectInstallCommands(report)
   const [selectedTool, setSelectedTool] = useState(options[0]?.tool || 'npm')
-  const [copied, setCopied] = useState(false)
 
-  const activeOption = options.find((opt) => opt.tool === selectedTool) || options[0]
-  if (!activeOption) return null
+  if (!options || options.length === 0) return null
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(activeOption.command)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // Fallback
-    }
-  }
+  const terminalOptions: TerminalOption[] = options.map((opt) => ({
+    id: opt.tool,
+    label: opt.label,
+    command: opt.command,
+  }))
 
   return (
-    <div className="package-install-box">
-      <div className="package-install-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Terminal size={12} style={{ color: 'var(--accent-emerald)' }} />
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>
-            {isEs ? 'Comando de Instalación' : 'Install Command'}
-          </span>
-          <span className="package-ecosystem-tag">{ecosystem}</span>
-        </div>
-
-        {options.length > 1 && (
-          <SegmentedPill
-            options={options.map((opt) => ({ id: opt.tool, label: opt.label }))}
-            value={selectedTool}
-            onChange={setSelectedTool}
-            size="sm"
-          />
-        )}
-      </div>
-
-      <div className="package-install-code-row" onClick={() => void handleCopy()} title={isEs ? 'Clic para copiar' : 'Click to copy'}>
-        <code className="package-install-snippet">
-          <span className="package-install-prompt">$</span> {activeOption.command}
-        </code>
-        <button
-          type="button"
-          className="package-install-copy-btn"
-          aria-label={copied ? (isEs ? 'Copiado' : 'Copied') : (isEs ? 'Copiar comando' : 'Copy command')}
-          onClick={(e) => {
-            e.stopPropagation()
-            void handleCopy()
-          }}
-        >
-          {copied ? (
-            <>
-              <Check size={12} style={{ color: 'var(--accent-emerald)' }} />
-              <span style={{ color: 'var(--accent-emerald)', fontSize: 10.5, fontWeight: 700 }}>
-                {isEs ? '¡Copiado!' : 'Copied!'}
-              </span>
-            </>
-          ) : (
-            <>
-              <Copy size={12} />
-              <span style={{ fontSize: 10.5 }}>{isEs ? 'Copiar' : 'Copy'}</span>
-            </>
-          )}
-        </button>
-      </div>
+    <div className="package-install-box" style={{ padding: 0, border: 'none', background: 'transparent' }}>
+      <TerminalSnippet
+        title={`install — ${ecosystem}`}
+        options={terminalOptions}
+        selectedOptionId={selectedTool}
+        onOptionChange={setSelectedTool}
+        locale={locale}
+      />
     </div>
   )
 }
