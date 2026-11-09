@@ -2845,7 +2845,7 @@ body {
 }
 
 .spotlight-card:hover {
-  border-color: rgba(255, 47, 90, 0.4) !important;
+  border-color: rgba(46, 160, 67, 0.4) !important;
 }
 
 /* 3. Segmented Pill Controls */
