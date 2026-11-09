@@ -57,6 +57,8 @@ import { ApiErrorCard } from '../components/ApiErrorCard'
 import { ExtHeaderBrand } from '../components/ExtHeaderBrand'
 import { RepoHeroCard } from '../components/RepoHeroCard'
 import { AnalysisMascot } from '../components/AnalysisMascot'
+import { InteractiveBeamLoader } from '../components/InteractiveBeamLoader'
+import { SegmentedPill } from '../components/SegmentedPill'
 
 type SidepanelNav = 'analyze' | 'reports' | 'compare' | 'favorites' | 'settings'
 type ReportSection = 'overview' | 'architecture' | 'files' | 'dependencies' | 'releases' | 'sources'
@@ -406,17 +408,10 @@ export function SidepanelApp() {
         {nav === 'analyze' && (
           <>
             {loading && !report && (
-              <div className="analysis-progress-card">
-                <div className="progress-header">
-                  <span className="progress-title">
-                    <RefreshCw size={16} className="animate-spin" style={{ color: 'var(--accent-cyan)' }} />
-                    Extrayendo inteligencia de repositorio...
-                  </span>
-                </div>
-                <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                  Analizando metadata, árbol de código, dependencias de manifiestos y resumen arquitectónico.
-                </p>
-              </div>
+              <InteractiveBeamLoader
+                repoName={report?.repository?.fullName || (activeTabRepo ? `${activeTabRepo.owner}/${activeTabRepo.repository}` : (urlInput || undefined))}
+                locale={activeLocale}
+              />
             )}
 
             {!loading && !report && (
@@ -483,30 +478,21 @@ export function SidepanelApp() {
                 {/* 3. Short Installation Roadmap */}
                 <RoadmapView report={report} hardware={hardware} locale={activeLocale} />
 
-                {/* Sub-section buttons */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {[
-                    { id: 'overview', label: t('tab_summary', activeLocale) },
-                    { id: 'architecture', label: t('tab_architecture', activeLocale) },
-                    { id: 'dependencies', label: `${t('tab_dependencies', activeLocale)} (${report.dependencies?.length || 0})` },
-                    { id: 'files', label: `${t('tab_files', activeLocale)} (${report.importantFiles?.length || 0})` },
-                    { id: 'releases', label: t('tab_releases', activeLocale) },
-                    { id: 'sources', label: t('tab_sources', activeLocale) },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      className={`btn-secondary ${reportSection === tab.id ? 'active' : ''}`}
-                      onClick={() => setReportSection(tab.id as ReportSection)}
-                      style={{
-                        borderColor: reportSection === tab.id ? '#2ea043' : undefined,
-                        color: reportSection === tab.id ? '#2ea043' : undefined,
-                        fontWeight: reportSection === tab.id ? 700 : 500,
-                      }}
-                    >
-                      <span>{tab.label}</span>
-                    </button>
-                  ))}
+                {/* Sub-section navigation via SegmentedPill */}
+                <div style={{ overflowX: 'auto', paddingBottom: 2 }}>
+                  <SegmentedPill<ReportSection>
+                    options={[
+                      { id: 'overview', label: t('tab_summary', activeLocale) },
+                      { id: 'architecture', label: t('tab_architecture', activeLocale) },
+                      { id: 'dependencies', label: `${t('tab_dependencies', activeLocale)} (${report.dependencies?.length || 0})` },
+                      { id: 'files', label: `${t('tab_files', activeLocale)} (${report.importantFiles?.length || 0})` },
+                      { id: 'releases', label: t('tab_releases', activeLocale) },
+                      { id: 'sources', label: t('tab_sources', activeLocale) },
+                    ]}
+                    value={reportSection}
+                    onChange={(val) => setReportSection(val)}
+                    size="sm"
+                  />
                 </div>
 
                 {/* Sub-section Content */}

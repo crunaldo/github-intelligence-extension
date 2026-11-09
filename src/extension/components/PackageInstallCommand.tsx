@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Terminal, Copy, Check } from 'lucide-react'
 import type { RepositoryReport } from '../../features/repository/types'
 import type { ActiveLocale } from '../i18n'
+import { SegmentedPill } from './SegmentedPill'
 
 type PackageInstallCommandProps = {
   report: RepositoryReport
@@ -132,19 +133,12 @@ export function PackageInstallCommand({ report, locale = 'es' }: PackageInstallC
         </div>
 
         {options.length > 1 && (
-          <div className="package-tool-tabs">
-            {options.map((opt) => (
-              <button
-                key={opt.tool}
-                type="button"
-                className={`package-tool-tab ${selectedTool === opt.tool ? 'active' : ''}`}
-                onClick={() => setSelectedTool(opt.tool)}
-                title={opt.label}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          <SegmentedPill
+            options={options.map((opt) => ({ id: opt.tool, label: opt.label }))}
+            value={selectedTool}
+            onChange={setSelectedTool}
+            size="sm"
+          />
         )}
       </div>
 

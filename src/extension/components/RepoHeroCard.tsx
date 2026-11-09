@@ -8,6 +8,8 @@ import { LicenseBadge } from './LicenseModal'
 import { SecurityAuditBadge } from './SecurityAuditBadge'
 import { RepoHealthCard } from './RepoHealthCard'
 import { AnalysisMascot } from './AnalysisMascot'
+import { SpotlightCard } from './SpotlightCard'
+import { NumberTicker } from './NumberTicker'
 
 interface RepoHeroCardProps {
   report: RepositoryReport
@@ -36,7 +38,7 @@ export const RepoHeroCard: React.FC<RepoHeroCardProps> = ({
   const langColor = primaryLanguage ? getLanguageColor(primaryLanguage) : '#6e7681'
 
   return (
-    <div className="brand-hero-card">
+    <SpotlightCard className="brand-hero-card" spotlightColor="rgba(46, 160, 67, 0.12)">
       <div className="brand-hero-main-row">
         {/* Left Column: GitHub icon, title, description, and metric pills */}
         <div className="brand-hero-left">
@@ -79,13 +81,17 @@ export const RepoHeroCard: React.FC<RepoHeroCardProps> = ({
             {/* Stars */}
             <span className="brand-pill" title={`${repo.stars.toLocaleString()} ${t('stars', locale)}`}>
               <Star size={11} className="brand-pill-icon-svg" />
-              <span className="brand-pill-text">{formatNumber(repo.stars)}</span>
+              <span className="brand-pill-text">
+                <NumberTicker value={repo.stars} />
+              </span>
             </span>
 
             {/* Forks */}
             <span className="brand-pill" title={`${repo.forks.toLocaleString()} ${t('forks', locale)}`}>
               <GitFork size={11} className="brand-pill-icon-svg" />
-              <span className="brand-pill-text">{formatNumber(repo.forks)}</span>
+              <span className="brand-pill-text">
+                <NumberTicker value={repo.forks} />
+              </span>
             </span>
 
             {/* Language */}
@@ -120,6 +126,6 @@ export const RepoHeroCard: React.FC<RepoHeroCardProps> = ({
           <AnalysisMascot report={report} size={84} />
         </div>
       </div>
-    </div>
+    </SpotlightCard>
   )
 }

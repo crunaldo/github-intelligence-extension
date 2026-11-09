@@ -3,6 +3,7 @@ import { Copy, Check, Terminal, ExternalLink, Bot, CheckCircle2 } from 'lucide-r
 import type { RepositoryReport } from '../../features/repository/types'
 import { generateInstallationRoadmap, type HardwareInfo, type RoadmapStep } from '../hardware'
 import { t, type ActiveLocale } from '../i18n'
+import { SpotlightCard } from './SpotlightCard'
 
 type Props = {
   report: RepositoryReport
@@ -152,55 +153,67 @@ export function RoadmapView({ report, hardware, locale = 'es' }: Props) {
       : 'Claude'
 
   return (
-    <div className="modern-card roadmap-card-wrapper">
-      <div className="roadmap-top-bar">
-        <div className="roadmap-title-group">
-          <Terminal size={14} style={{ color: 'var(--text-secondary)' }} />
-          <span className="roadmap-main-title">{t('roadmap_title', locale)}</span>
-        </div>
-        <span className="roadmap-quick-pill">{t('roadmap_quick_pill', locale)}</span>
-      </div>
-
-      <div className="roadmap-steps-list">
-        {steps.map((step, idx) => (
-          <div key={step.number} className="roadmap-step-row">
-            <div className="roadmap-number-bubble">{step.number}</div>
-            <div className="roadmap-step-info">
-              <div className="roadmap-step-top">
-                <span className="roadmap-step-heading">{step.title}</span>
-                <span className="roadmap-step-category">{step.tag}</span>
-              </div>
-              <p className="roadmap-step-explanation">{step.explanation}</p>
-              {step.command && (
-                <div className="roadmap-terminal-box">
-                  <code className="roadmap-terminal-code">{step.command}</code>
-                  <button
-                    type="button"
-                    className="roadmap-copy-action"
-                    onClick={() => handleCopy(step.command!, idx)}
-                    title={t('copy', locale)}
-                  >
-                    {copiedIndex === idx ? (
-                      <>
-                        <Check size={12} className="text-emerald" />
-                        <span className="text-emerald">{t('copied', locale)}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={12} />
-                        <span>{t('copy', locale)}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
-            </div>
+    <SpotlightCard className="roadmap-card-wrapper" spotlightColor="rgba(46, 160, 67, 0.08)">
+      <div style={{ padding: '12px 14px' }}>
+        <div className="roadmap-top-bar">
+          <div className="roadmap-title-group">
+            <Terminal size={14} style={{ color: 'var(--text-secondary)' }} />
+            <span className="roadmap-main-title">{t('roadmap_title', locale)}</span>
           </div>
-        ))}
-      </div>
+          <span className="roadmap-quick-pill">{t('roadmap_quick_pill', locale)}</span>
+        </div>
 
-      {/* AI Agents 1-Click Launch */}
-      <div className="roadmap-agents-section">
+        {/* Ant Design Style Interactive Timeline */}
+        <div className="timeline-roadmap-list">
+          {steps.map((step, idx) => {
+            const isLast = idx === steps.length - 1
+            const isCopied = copiedIndex === idx
+            return (
+              <div key={step.number} className="timeline-roadmap-item">
+                <div className="timeline-axis">
+                  <div className={`timeline-bullet ${isCopied ? 'completed' : ''}`}>
+                    {isCopied ? <Check size={11} /> : step.number}
+                  </div>
+                  {!isLast && <div className="timeline-track-line" />}
+                </div>
+
+                <div className="timeline-content-card">
+                  <div className="roadmap-step-top">
+                    <span className="roadmap-step-heading">{step.title}</span>
+                    <span className="roadmap-step-category">{step.tag}</span>
+                  </div>
+                  <p className="roadmap-step-explanation" style={{ margin: '2px 0 0' }}>{step.explanation}</p>
+                  {step.command && (
+                    <div className="roadmap-terminal-box" style={{ marginTop: 6 }}>
+                      <code className="roadmap-terminal-code">{step.command}</code>
+                      <button
+                        type="button"
+                        className="roadmap-copy-action"
+                        onClick={() => handleCopy(step.command!, idx)}
+                        title={t('copy', locale)}
+                      >
+                        {isCopied ? (
+                          <>
+                            <Check size={12} className="text-emerald" />
+                            <span className="text-emerald">{t('copied', locale)}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={12} />
+                            <span>{t('copy', locale)}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* AI Agents 1-Click Launch */}
+        <div className="roadmap-agents-section" style={{ marginTop: 14 }}>
         <div className="roadmap-agents-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 11.5, color: 'var(--text-primary)' }}>
             <Bot size={14} style={{ color: 'var(--text-secondary)' }} />
@@ -270,5 +283,6 @@ export function RoadmapView({ report, hardware, locale = 'es' }: Props) {
         )}
       </div>
     </div>
+    </SpotlightCard>
   )
 }

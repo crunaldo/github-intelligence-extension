@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import type { RepositoryReport } from '../../features/repository/types'
 import { GitCompare, Star, GitFork, CircleDot, HardDrive, FileCode, Shield } from 'lucide-react'
 import type { ActiveLocale } from '../i18n'
+import { NumberTicker } from './NumberTicker'
 
 type CompareViewProps = {
   reports: RepositoryReport[]
@@ -105,20 +106,20 @@ export function CompareView({ reports, currentReport, locale = 'es' }: CompareVi
 
           <div className="compare-row">
             <span className="compare-label"><Star size={11} style={{ display: 'inline', marginRight: 4 }} />{isEs ? 'Estrellas' : 'Stars'}</span>
-            <span className="compare-val">{repoA.repository.stars.toLocaleString()}</span>
-            <span className="compare-val">{repoB.repository.stars.toLocaleString()}</span>
+            <span className="compare-val"><NumberTicker value={repoA.repository.stars} /></span>
+            <span className="compare-val"><NumberTicker value={repoB.repository.stars} /></span>
           </div>
 
           <div className="compare-row">
             <span className="compare-label"><GitFork size={11} style={{ display: 'inline', marginRight: 4 }} />Forks</span>
-            <span className="compare-val">{repoA.repository.forks.toLocaleString()}</span>
-            <span className="compare-val">{repoB.repository.forks.toLocaleString()}</span>
+            <span className="compare-val"><NumberTicker value={repoA.repository.forks} /></span>
+            <span className="compare-val"><NumberTicker value={repoB.repository.forks} /></span>
           </div>
 
           <div className="compare-row">
             <span className="compare-label"><CircleDot size={11} style={{ display: 'inline', marginRight: 4 }} />Issues</span>
-            <span className="compare-val">{repoA.repository.openIssues.toLocaleString()}</span>
-            <span className="compare-val">{repoB.repository.openIssues.toLocaleString()}</span>
+            <span className="compare-val"><NumberTicker value={repoA.repository.openIssues} /></span>
+            <span className="compare-val"><NumberTicker value={repoB.repository.openIssues} /></span>
           </div>
 
           <div className="compare-row">

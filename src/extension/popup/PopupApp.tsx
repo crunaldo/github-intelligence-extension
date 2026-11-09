@@ -51,6 +51,7 @@ import { ApiErrorCard } from '../components/ApiErrorCard'
 import { ExtHeaderBrand } from '../components/ExtHeaderBrand'
 import { RepoHeroCard } from '../components/RepoHeroCard'
 import { AnalysisMascot } from '../components/AnalysisMascot'
+import { InteractiveBeamLoader } from '../components/InteractiveBeamLoader'
 
 const QUICK_SUGGESTIONS = [
   { name: 'facebook/react', url: 'https://github.com/facebook/react', tag: 'UI Library' },
@@ -463,20 +464,10 @@ export function PopupApp() {
       {/* Body Area */}
       <div className="ext-body">
         {loading && !report && (
-          <div className="analysis-progress-card" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <AnalysisMascot loading size={58} />
-            <div style={{ flex: 1 }}>
-              <div className="progress-header">
-                <span className="progress-title">
-                  <RefreshCw size={15} className="animate-spin" style={{ color: 'var(--brand-primary)' }} />
-                  {t('analyzing_repo', activeLocale)}
-                </span>
-              </div>
-              <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                {t('analyzing_desc', activeLocale)}
-              </p>
-            </div>
-          </div>
+          <InteractiveBeamLoader
+            repoName={activeTabRepo ? `${activeTabRepo.owner}/${activeTabRepo.repository}` : (searchUrl || undefined)}
+            locale={activeLocale}
+          />
         )}
 
         {error && (

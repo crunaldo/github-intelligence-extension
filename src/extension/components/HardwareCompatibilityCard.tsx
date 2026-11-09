@@ -1,6 +1,7 @@
 import { Cpu, HardDrive, MemoryStick, CheckCircle2, AlertTriangle, XCircle, Activity, Monitor } from 'lucide-react'
 import type { HardwareInfo, HardwareCompatibility } from '../hardware'
 import { t, type ActiveLocale } from '../i18n'
+import { SpotlightCard } from './SpotlightCard'
 
 type Props = {
   hardware: HardwareInfo | null
@@ -48,7 +49,7 @@ export function HardwareCompatibilityCard({ hardware, compat, locale = 'es' }: P
     : compat.summary
 
   return (
-    <div className="modern-card hw-card-container">
+    <SpotlightCard className="modern-card hw-card-container" spotlightColor="rgba(56, 189, 248, 0.1)">
       {/* Top Compatibility Verdict Banner with Animated Status Icon */}
       <div className={`hw-verdict-box ${compat.status}`}>
         <div className="hw-verdict-left">
@@ -161,6 +162,6 @@ export function HardwareCompatibilityCard({ hardware, compat, locale = 'es' }: P
           </ul>
         </div>
       )}
-    </div>
+    </SpotlightCard>
   )
 }

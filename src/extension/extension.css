@@ -2825,3 +2825,260 @@ body {
 
 
 
+
+
+/* ==========================================================================
+   MODERN UI SUITE: NumberTicker, SpotlightCard, SegmentedPill, BeamLoader, Timeline
+   ========================================================================== */
+
+/* 1. NumberTicker */
+.number-ticker {
+  font-variant-numeric: tabular-nums;
+  display: inline-block;
+  letter-spacing: -0.01em;
+}
+
+/* 2. Spotlight Card */
+.spotlight-card {
+  position: relative;
+  background: var(--bg-card, #161b22);
+}
+
+.spotlight-card:hover {
+  border-color: rgba(46, 160, 67, 0.4) !important;
+}
+
+/* 3. Segmented Pill Controls */
+.segmented-pill-container.full-width {
+  width: 100%;
+}
+
+.segmented-item-btn:hover {
+  color: var(--text-primary, #ffffff) !important;
+}
+
+.segmented-item-btn:active {
+  transform: scale(0.98);
+}
+
+/* 4. Interactive Beam Loader */
+.beam-loader-container {
+  padding: 14px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-card, #161b22);
+  border: 1px solid var(--border-medium, #30363d);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.beam-loader-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-subtle, #21262d);
+}
+
+.beam-center-avatar {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #21262d;
+  border: 1px solid #30363d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.beam-pulse-ring {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border-radius: 50%;
+  border: 1.5px solid #2ea043;
+  animation: beamRingPulse 1.8s infinite ease-out;
+  pointer-events: none;
+}
+
+@keyframes beamRingPulse {
+  0% { transform: scale(1); opacity: 0.9; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+
+.beam-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.beam-pods-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.beam-pod-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-surface-elevated, #0d1117);
+  border: 1px solid var(--border-subtle, #21262d);
+  transition: all 0.2s ease;
+}
+
+.beam-pod-card.is-scanning {
+  border-color: rgba(46, 160, 67, 0.4);
+  background: rgba(46, 160, 67, 0.04);
+}
+
+.beam-pod-card.is-complete {
+  border-color: rgba(46, 160, 67, 0.25);
+}
+
+.beam-pod-indicator {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.beam-pod-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+}
+
+.beam-pod-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary, #ffffff);
+}
+
+.beam-pod-desc {
+  font-size: 9.5px;
+  color: var(--text-muted, #8b949e);
+}
+
+.beam-pod-status {
+  flex-shrink: 0;
+}
+
+.beam-badge-ready {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #2ea043;
+  background: rgba(46, 160, 67, 0.12);
+  border: 1px solid rgba(46, 160, 67, 0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.beam-badge-running {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #f59e0b;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.beam-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+  animation: pulseDot 1s infinite alternate;
+}
+
+@keyframes pulseDot {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
+}
+
+/* 5. Ant Design Style Vertical Timeline for Roadmap */
+.timeline-roadmap-list {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  margin-top: 8px;
+}
+
+.timeline-roadmap-item {
+  display: flex;
+  gap: 10px;
+  position: relative;
+  padding-bottom: 12px;
+}
+
+.timeline-roadmap-item:last-child {
+  padding-bottom: 0;
+}
+
+.timeline-axis {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 22px;
+  flex-shrink: 0;
+}
+
+.timeline-bullet {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #21262d;
+  border: 1.5px solid #30363d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--text-primary, #ffffff);
+  z-index: 2;
+  transition: all 0.15s ease;
+}
+
+.timeline-bullet.completed {
+  background: rgba(46, 160, 67, 0.15);
+  border-color: #2ea043;
+  color: #2ea043;
+}
+
+.timeline-track-line {
+  flex: 1;
+  width: 2px;
+  background: var(--border-subtle, #30363d);
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.timeline-content-card {
+  flex: 1;
+  background: var(--bg-surface-elevated, #0d1117);
+  border: 1px solid var(--border-subtle, #21262d);
+  border-radius: var(--radius-sm, 6px);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  transition: border-color 0.15s ease;
+}
+
+.timeline-content-card:hover {
+  border-color: var(--border-medium, #484f58);
+}
