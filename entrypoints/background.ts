@@ -57,14 +57,14 @@ export default defineBackground(() => {
     const tabId = tab?.id
 
     // CRITICAL: Call sidePanel.open SYNCHRONOUSLY at the top of the user click callback
-    // Awaiting anything beforehand destroys the transient user activation token in Chrome MV3.
+    // Prioritize tabId because tab-scoped activation is strictly accepted by Chrome MV3
     if (chrome.sidePanel?.open) {
-      if (windowId) {
-        chrome.sidePanel.open({ windowId }).catch(() => {
-          if (tabId) chrome.sidePanel.open({ tabId }).catch(() => {})
+      if (tabId) {
+        chrome.sidePanel.open({ tabId }).catch(() => {
+          if (windowId) chrome.sidePanel.open({ windowId }).catch(() => {})
         })
-      } else if (tabId) {
-        chrome.sidePanel.open({ tabId }).catch(() => {})
+      } else if (windowId) {
+        chrome.sidePanel.open({ windowId }).catch(() => {})
       }
     }
 
@@ -189,17 +189,20 @@ export default defineBackground(() => {
 
     if (message?.type === 'OPEN_SIDEPANEL_FOR_REPO') {
       const target = message.target as GitHubTarget | undefined
-      const windowId = sender.tab?.windowId || message.windowId
       const tabId = sender.tab?.id
+      const windowId = sender.tab?.windowId || message.windowId
 
-      // Synchronously trigger open immediately
+      // Synchronously trigger open immediately using tabId (required for content script gestures in MV3)
       if (chrome.sidePanel?.open) {
-        if (windowId) {
-          chrome.sidePanel.open({ windowId }).catch(() => {
-            if (tabId) chrome.sidePanel.open({ tabId }).catch(() => {})
+        if (tabId) {
+          chrome.sidePanel.open({ tabId }).catch((err) => {
+            console.warn('Could not open sidePanel with tabId:', err)
+            if (windowId) {
+              chrome.sidePanel.open({ windowId }).catch(() => {})
+            }
           })
-        } else if (tabId) {
-          chrome.sidePanel.open({ tabId }).catch(() => {})
+        } else if (windowId) {
+          chrome.sidePanel.open({ windowId }).catch(() => {})
         }
       }
 
@@ -209,30 +212,30 @@ export default defineBackground(() => {
             chrome.runtime.sendMessage({ type: 'TRIGGER_ANALYSIS', target }).catch(() => {})
           }
           broadcast()
-          setTimeout(broadcast, 200)
-          setTimeout(broadcast, 500)
-          setTimeout(broadcast, 1000)
+          setTimeout(broadcast, 150)
+          setTimeout(broadcast, 400)
+          setTimeout(broadcast, 900)
         })
       }
-      sendResponse({ ok: true })
+      sendResponse?.({ ok: true })
       return true
     }
 
     if (message?.type === 'OPEN_SIDEPANEL') {
-      const windowId = sender.tab?.windowId || message.windowId
       const tabId = sender.tab?.id
+      const windowId = sender.tab?.windowId || message.windowId
       if (chrome.sidePanel?.open) {
-        if (windowId) {
-          chrome.sidePanel.open({ windowId }).catch(() => {
-            if (tabId) chrome.sidePanel.open({ tabId }).catch(() => {})
+        if (tabId) {
+          chrome.sidePanel.open({ tabId }).catch(() => {
+            if (windowId) chrome.sidePanel.open({ windowId }).catch(() => {})
           })
-        } else if (tabId) {
-          chrome.sidePanel.open({ tabId }).catch(() => {})
+        } else if (windowId) {
+          chrome.sidePanel.open({ windowId }).catch(() => {})
         }
-        sendResponse({ ok: true })
+        sendResponse?.({ ok: true })
         return true
       }
-      sendResponse({ ok: false, error: 'Side panel API not supported' })
+      sendResponse?.({ ok: false, error: 'Side panel API not supported' })
       return true
     }
 

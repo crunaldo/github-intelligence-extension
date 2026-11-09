@@ -106,7 +106,8 @@ export default defineContentScript({
       hostEl.id = 'gpi-floating-pill-host'
       document.documentElement.appendChild(hostEl)
 
-      shadowRoot = hostEl.attachShadow({ mode: 'closed' })
+      // Use mode: 'open' so Chrome event dispatch & user activation tracking recognizes clicks across shadow boundary
+      shadowRoot = hostEl.attachShadow({ mode: 'open' })
 
       const style = document.createElement('style')
       style.textContent = `
@@ -193,26 +194,33 @@ export default defineContentScript({
         <span class="gpi-pill-content"></span>
       `
 
-      pillEl.addEventListener('click', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        if (!activeTarget) return
+      pillEl.addEventListener('click', () => {
+        const targetToOpen = activeTarget
+        if (!targetToOpen) return
+
+        // 1. Immediately send message on click tick without ANY await or pre-DOM delays
+        try {
+          chrome.runtime.sendMessage({
+            type: 'OPEN_SIDEPANEL_FOR_REPO',
+            target: targetToOpen,
+          }, (response) => {
+            if (response && response.ok === false) {
+              const content = pillEl?.querySelector('.gpi-pill-content')
+              if (content) {
+                content.innerHTML = '<span style="color:#58a6ff;font-weight:700">✓ ¡Listo! Abre el panel lateral 🧩</span>'
+              }
+            }
+          })
+        } catch {
+          // Ignore
+        }
 
         const content = pillEl?.querySelector('.gpi-pill-content')
         if (content) {
           content.innerHTML = '<span style="color:#2ea043;font-weight:700">✓ Abriendo en Sidepanel...</span>'
         }
 
-        try {
-          chrome.runtime.sendMessage({
-            type: 'OPEN_SIDEPANEL_FOR_REPO',
-            target: activeTarget,
-          })
-        } catch {
-          // Ignore
-        }
-
-        setTimeout(() => hidePill(), 600)
+        setTimeout(() => hidePill(), 1000)
       })
 
       shadowRoot.appendChild(pillEl)
