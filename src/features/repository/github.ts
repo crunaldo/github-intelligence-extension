@@ -104,26 +104,49 @@ export function unwrapSocialRedirectUrl(rawUrl: string): string {
   // 2. Decode redirects from Facebook (l.facebook.com, lm.facebook.com), Google, Reddit, etc.
   for (let i = 0; i < 3; i++) {
     try {
-      if (current.includes('?') && (
+      const hasRedirectMarkers = current.includes('?') && (
         current.includes('facebook.com') ||
+        current.includes('instagram.com') ||
         current.includes('reddit.com') ||
         current.includes('google.') ||
         current.includes('l.php') ||
         current.includes('linkshim') ||
         current.includes('out.') ||
         current.includes('redirect') ||
-        current.includes('url?')
-      )) {
-        const parsed = new URL(current)
+        current.includes('url?') ||
+        current.includes('dest=') ||
+        current.includes('target=') ||
+        current.includes('u=')
+      )
+
+      if (hasRedirectMarkers) {
+        const urlToParse = current.startsWith('http://') || current.startsWith('https://') ? current : `https://${current}`
+        const parsed = new URL(urlToParse)
         const redirected = parsed.searchParams.get('u') ||
                            parsed.searchParams.get('url') ||
                            parsed.searchParams.get('q') ||
                            parsed.searchParams.get('target') ||
                            parsed.searchParams.get('dest') ||
-                           parsed.searchParams.get('link')
+                           parsed.searchParams.get('link') ||
+                           parsed.searchParams.get('redirect_to') ||
+                           parsed.searchParams.get('next')
         if (redirected) {
           current = redirected.trim()
           continue
+        }
+      }
+
+      // Regex fallback for ?u= or &u= if URL parsing missed it (e.g. malformed wrappers)
+      const uParamMatch = current.match(/[?&]u=([^&]+)/i)
+      if (uParamMatch && (current.includes('facebook.com') || current.includes('l.php') || current.includes('instagram.com'))) {
+        try {
+          const extracted = decodeURIComponent(uParamMatch[1]).trim()
+          if (extracted && extracted !== current) {
+            current = extracted
+            continue
+          }
+        } catch {
+          // Ignore
         }
       }
 
@@ -151,8 +174,20 @@ export function unwrapSocialRedirectUrl(rawUrl: string): string {
     if (current.includes('?') && (current.startsWith('http://') || current.startsWith('https://'))) {
       const u = new URL(current)
       if (u.hostname.toLowerCase().includes('github.com')) {
-        const paramsToClean = ['fbclid', 'gclid', 'ref', 'ref_src', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'h', 's']
-        paramsToClean.forEach((param) => u.searchParams.delete(param))
+        const paramsToClean = [
+          'fbclid', 'gclid', 'ref', 'ref_src',
+          'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+          'h', 's', '__tn__', '__cft__', 'mibextid', 'rdid', 'ved', 'ei'
+        ]
+        paramsToClean.forEach((param) => {
+          u.searchParams.delete(param)
+          // Also check bracket variants like __cft__[0]
+          for (const key of Array.from(u.searchParams.keys())) {
+            if (key.startsWith(param)) {
+              u.searchParams.delete(key)
+            }
+          }
+        })
         const cleanSearch = u.searchParams.toString()
         current = `${u.origin}${u.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${u.hash}`
       }
@@ -174,6 +209,11 @@ export function parseGitHubUrl(value: string | GitHubTarget, options?: { relaxed
 
   let input = value.trim()
   const relaxed = options?.relaxed ?? false
+
+  // Always unwrap social redirects or encoded wrappers if present
+  if (input.includes('facebook.com') || input.includes('l.php') || input.includes('out.reddit.com') || input.includes('google.') || input.includes('%2F') || input.includes('%2f')) {
+    input = unwrapSocialRedirectUrl(input)
+  }
 
   if (relaxed) {
     // Unwrap any social media tracking link wrappers first (e.g. Facebook l.facebook.com, Reddit, Google)

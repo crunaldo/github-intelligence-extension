@@ -295,15 +295,42 @@ export default defineContentScript({
       }, 20)
     })
 
-    // 2. Hover listener on <a> links to GitHub (unwraps Facebook l.facebook.com, Reddit, etc.)
+    // 2. Capture-phase right click listener to guarantee we identify the clicked repo even on complex SPAs (Facebook, Reddit, Twitter)
+    document.addEventListener('contextmenu', (e) => {
+      const targetEl = e.target as HTMLElement | null
+      if (!targetEl) return
+
+      const anchor = targetEl.closest('a') || targetEl.closest('[role="link"]') || targetEl.closest('[data-href]')
+      const href = anchor ? (anchor.getAttribute('href') || (anchor as HTMLAnchorElement).href || anchor.getAttribute('data-href') || '') : ''
+      const text = targetEl.innerText || anchor?.innerText || ''
+      const title = anchor?.getAttribute('title') || targetEl.getAttribute('title') || ''
+
+      const repo = (href ? extractRepoReference(href) : null) ||
+                   (text ? extractRepoReference(text) : null) ||
+                   (title ? extractRepoReference(title) : null)
+
+      if (repo) {
+        try {
+          chrome.runtime.sendMessage({
+            type: 'LAST_RIGHT_CLICK_REPO',
+            target: repo,
+            url: href,
+          }).catch(() => {})
+        } catch {
+          // Ignore
+        }
+      }
+    }, true)
+
+    // 3. Hover listener on <a> links to GitHub (unwraps Facebook l.facebook.com, Reddit, etc.)
     let linkHoverTimeout: ReturnType<typeof setTimeout> | null = null
 
     document.addEventListener('mouseover', (e) => {
       const targetEl = e.target as HTMLElement | null
-      const anchor = targetEl?.closest('a')
+      const anchor = targetEl?.closest('a') || targetEl?.closest('[role="link"]') || targetEl?.closest('[data-href]')
       if (!anchor) return
 
-      const rawHref = anchor.getAttribute('href') || anchor.href || ''
+      const rawHref = anchor.getAttribute('href') || (anchor as HTMLAnchorElement).href || anchor.getAttribute('data-href') || ''
       const innerText = anchor.innerText || ''
       const title = anchor.getAttribute('title') || ''
 
@@ -313,7 +340,7 @@ export default defineContentScript({
       if (linkHoverTimeout) clearTimeout(linkHoverTimeout)
       linkHoverTimeout = setTimeout(() => {
         const target = extractRepoReference(rawHref) ||
-                       extractRepoReference(anchor.href) ||
+                       extractRepoReference((anchor as HTMLAnchorElement).href || '') ||
                        extractRepoReference(innerText) ||
                        extractRepoReference(title)
         if (target) {
@@ -327,13 +354,13 @@ export default defineContentScript({
 
     document.addEventListener('mouseout', (e) => {
       const targetEl = e.target as HTMLElement | null
-      const anchor = targetEl?.closest('a')
+      const anchor = targetEl?.closest('a') || targetEl?.closest('[role="link"]') || targetEl?.closest('[data-href]')
       if (anchor && linkHoverTimeout) {
         clearTimeout(linkHoverTimeout)
       }
     })
 
-    // 3. Dismiss on outside click, scroll, or Escape key
+    // 4. Dismiss on outside click, scroll, or Escape key
     document.addEventListener('mousedown', (e) => {
       if (hostEl && e.composedPath().includes(hostEl)) {
         return

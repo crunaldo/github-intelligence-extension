@@ -2,23 +2,31 @@ import { extractRepoReference, parseFlexibleGitHubUrl } from '../src/features/re
 import type { GitHubTarget } from '../src/features/repository/types'
 
 export default defineBackground(() => {
-  // Setup context menus
+  let lastContentScriptTarget: { target: GitHubTarget; timestamp: number } | null = null
+
+  function setupContextMenus() {
+    if (!chrome.contextMenus) return
+    chrome.contextMenus.removeAll(() => {
+      // 1. Context menu available on links, selections, and general page/media
+      chrome.contextMenus.create({
+        id: 'analyze-selection-repo',
+        title: '🐙 Analizar repositorio con GitHub Intelligence',
+        contexts: ['link', 'selection', 'page', 'image', 'video'],
+      })
+
+      // 2. Open side panel standalone option
+      chrome.contextMenus.create({
+        id: 'open-side-panel',
+        title: 'Abrir GitHub Intelligence en Panel Lateral',
+        contexts: ['action'],
+      })
+    })
+  }
+
+  // Configure context menus and side panel behavior on installation / startup
   chrome.runtime.onInstalled.addListener(async () => {
-    // 1. Context menu for selected text or right-clicked links
-    chrome.contextMenus.create({
-      id: 'analyze-selection-repo',
-      title: '🐙 Analizar repositorio con GitHub Intelligence',
-      contexts: ['selection', 'link'],
-    })
+    setupContextMenus()
 
-    // 2. Context menu for opening the side panel on any page
-    chrome.contextMenus.create({
-      id: 'open-side-panel',
-      title: 'Abrir GitHub Intelligence en Panel Lateral',
-      contexts: ['page', 'action'],
-    })
-
-    // Keep popup as default action, side panel can be opened from popup or context menu
     if (chrome.sidePanel?.setPanelBehavior) {
       try {
         await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false })
@@ -27,7 +35,6 @@ export default defineBackground(() => {
       }
     }
 
-    // Ensure default path is configured and enabled
     if (chrome.sidePanel?.setOptions) {
       try {
         await chrome.sidePanel.setOptions({
@@ -40,56 +47,88 @@ export default defineBackground(() => {
     }
   })
 
+  chrome.runtime.onStartup?.addListener(() => {
+    setupContextMenus()
+  })
+
   // Handle context menu clicks
-  chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-    if (info.menuItemId === 'open-side-panel' && tab?.windowId) {
-      try {
-        await chrome.sidePanel.open({ windowId: tab.windowId })
-      } catch (err) {
-        console.warn('Failed to open side panel:', err)
+  chrome.contextMenus.onClicked.addListener((info, tab) => {
+    const windowId = tab?.windowId
+    const tabId = tab?.id
+
+    // CRITICAL: Call sidePanel.open SYNCHRONOUSLY at the top of the user click callback
+    // Awaiting anything beforehand destroys the transient user activation token in Chrome MV3.
+    if (chrome.sidePanel?.open) {
+      if (windowId) {
+        chrome.sidePanel.open({ windowId }).catch(() => {
+          if (tabId) chrome.sidePanel.open({ tabId }).catch(() => {})
+        })
+      } else if (tabId) {
+        chrome.sidePanel.open({ tabId }).catch(() => {})
       }
+    }
+
+    if (info.menuItemId === 'open-side-panel') {
       return
     }
 
     if (info.menuItemId === 'analyze-selection-repo') {
-      let target: GitHubTarget | null = null
+      void (async () => {
+        let target: GitHubTarget | null = null
 
-      // 1. Prioritize linkUrl when user right-clicks directly on a link (unwraps Facebook l.facebook.com, Reddit, etc.)
-      if (info.linkUrl) {
-        target = extractRepoReference(info.linkUrl) || (() => {
-          try {
-            return parseFlexibleGitHubUrl(info.linkUrl)
-          } catch {
-            return null
-          }
-        })()
-      }
+        // 1. Prioritize direct link URL (unwraps Facebook l.facebook.com, Reddit out.reddit.com, Google, etc.)
+        if (info.linkUrl) {
+          target = extractRepoReference(info.linkUrl) || (() => {
+            try {
+              return parseFlexibleGitHubUrl(info.linkUrl)
+            } catch {
+              return null
+            }
+          })()
+        }
 
-      // 2. If no linkUrl or linkUrl didn't resolve, inspect selected text
-      if (!target && info.selectionText) {
-        target = extractRepoReference(info.selectionText) || (() => {
-          try {
-            return parseFlexibleGitHubUrl(info.selectionText)
-          } catch {
-            return null
-          }
-        })()
-      }
+        // 2. Check if content script captured the right-clicked element/anchor on the page (within 8 seconds)
+        if (!target && lastContentScriptTarget && (Date.now() - lastContentScriptTarget.timestamp < 8000)) {
+          target = lastContentScriptTarget.target
+        }
 
-      if (target) {
-        await chrome.storage.local.set({ gpi_pending_analysis: target })
-      }
+        // 3. Inspect selected text if any
+        if (!target && info.selectionText) {
+          target = extractRepoReference(info.selectionText) || (() => {
+            try {
+              return parseFlexibleGitHubUrl(info.selectionText)
+            } catch {
+              return null
+            }
+          })()
+        }
 
-      if (tab?.windowId && chrome.sidePanel?.open) {
-        try {
-          await chrome.sidePanel.open({ windowId: tab.windowId })
-          if (target) {
+        // 4. Inspect current page URL
+        if (!target && info.pageUrl) {
+          target = extractRepoReference(info.pageUrl) || (() => {
+            try {
+              return parseFlexibleGitHubUrl(info.pageUrl)
+            } catch {
+              return null
+            }
+          })()
+        }
+
+        if (target) {
+          // Persist target in local storage so side panel / popup reads it immediately on mount
+          await chrome.storage.local.set({ gpi_pending_analysis: target })
+
+          // Multi-wave broadcast to ensure side panel catches the message whether already mounted or opening
+          const broadcast = () => {
             chrome.runtime.sendMessage({ type: 'TRIGGER_ANALYSIS', target }).catch(() => {})
           }
-        } catch (err) {
-          console.warn('Failed to open side panel for repo:', err)
+          broadcast()
+          setTimeout(broadcast, 200)
+          setTimeout(broadcast, 500)
+          setTimeout(broadcast, 1000)
+          setTimeout(broadcast, 1800)
         }
-      }
+      })()
     }
   })
 
@@ -138,70 +177,85 @@ export default defineBackground(() => {
 
   // Listen to messages from content script, popup, or side panel
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Content script reporting what element was right-clicked before context menu opened
+    if (message?.type === 'LAST_RIGHT_CLICK_REPO' && message.target) {
+      lastContentScriptTarget = {
+        target: message.target as GitHubTarget,
+        timestamp: Date.now(),
+      }
+      sendResponse?.({ ok: true })
+      return true
+    }
+
     if (message?.type === 'OPEN_SIDEPANEL_FOR_REPO') {
-      const target = message.target
+      const target = message.target as GitHubTarget | undefined
       const windowId = sender.tab?.windowId || message.windowId
-      ;(async () => {
-        if (target) {
-          await chrome.storage.local.set({ gpi_pending_analysis: target })
+      const tabId = sender.tab?.id
+
+      // Synchronously trigger open immediately
+      if (chrome.sidePanel?.open) {
+        if (windowId) {
+          chrome.sidePanel.open({ windowId }).catch(() => {
+            if (tabId) chrome.sidePanel.open({ tabId }).catch(() => {})
+          })
+        } else if (tabId) {
+          chrome.sidePanel.open({ tabId }).catch(() => {})
         }
-        if (windowId && chrome.sidePanel?.open) {
-          try {
-            await chrome.sidePanel.open({ windowId })
-            if (target) {
-              chrome.runtime.sendMessage({ type: 'TRIGGER_ANALYSIS', target }).catch(() => {})
-            }
-            sendResponse({ ok: true })
-          } catch (err) {
-            sendResponse({ ok: false, error: String(err) })
+      }
+
+      if (target) {
+        void chrome.storage.local.set({ gpi_pending_analysis: target }).then(() => {
+          const broadcast = () => {
+            chrome.runtime.sendMessage({ type: 'TRIGGER_ANALYSIS', target }).catch(() => {})
           }
-        } else {
-          sendResponse({ ok: false, error: 'Side panel unsupported or no windowId' })
-        }
-      })()
+          broadcast()
+          setTimeout(broadcast, 200)
+          setTimeout(broadcast, 500)
+          setTimeout(broadcast, 1000)
+        })
+      }
+      sendResponse({ ok: true })
       return true
     }
 
     if (message?.type === 'OPEN_SIDEPANEL') {
       const windowId = sender.tab?.windowId || message.windowId
-      if (windowId && chrome.sidePanel?.open) {
-        ;(async () => {
-          try {
-            await chrome.sidePanel.open({ windowId })
-            sendResponse({ ok: true })
-          } catch (err) {
-            sendResponse({ ok: false, error: String(err) })
-          }
-        })()
+      const tabId = sender.tab?.id
+      if (chrome.sidePanel?.open) {
+        if (windowId) {
+          chrome.sidePanel.open({ windowId }).catch(() => {
+            if (tabId) chrome.sidePanel.open({ tabId }).catch(() => {})
+          })
+        } else if (tabId) {
+          chrome.sidePanel.open({ tabId }).catch(() => {})
+        }
+        sendResponse({ ok: true })
         return true
       }
-      sendResponse({ ok: false, error: 'Side panel API not supported or no windowId' })
+      sendResponse({ ok: false, error: 'Side panel API not supported' })
       return true
     }
 
     if (message?.type === 'GITHUB_PAGE_CHANGED') {
       const repo = message.repo || null
-      ;(async () => {
+      void (async () => {
         await setActiveRepoSession(repo)
         if (sender.tab?.id) {
           updateBadge(Boolean(repo), sender.tab.id)
         }
-        // Broadcast to any open side panel or popup
         chrome.runtime.sendMessage({
           type: 'BROADCAST_ACTIVE_REPO',
           repo,
           tabId: sender.tab?.id,
           url: message.url,
-        }).catch(() => {
-          // Ignore when no listener is active
-        })
+        }).catch(() => {})
         sendResponse({ ok: true })
       })()
       return true
     }
 
     if (message?.type === 'GET_ACTIVE_REPO_STATE') {
-      ;(async () => {
+      void (async () => {
         const repo = await getActiveRepoSession()
         sendResponse({ repo })
       })()

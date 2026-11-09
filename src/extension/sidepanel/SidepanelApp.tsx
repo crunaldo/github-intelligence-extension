@@ -21,6 +21,7 @@ import type { RepositoryReport, GitHubTarget } from '../../features/repository/t
 import {
   analyzeGitHubRepository,
   parseFlexibleGitHubUrl,
+  extractRepoReference,
   getLatestRateLimit,
 } from '../../features/repository/github'
 import { createReportExport, downloadReport } from '../../features/repository/export'
@@ -116,11 +117,19 @@ export function SidepanelApp() {
       try {
         target = parseFlexibleGitHubUrl(urlToAnalyze)
       } catch {
-        setError('Ingresa un repositorio válido de GitHub (ej. facebook/react o https://github.com/owner/repo).')
-        return
+        const fallback = extractRepoReference(urlToAnalyze)
+        if (fallback) {
+          target = fallback
+        } else {
+          setError('Ingresa un repositorio válido de GitHub (ej. facebook/react o https://github.com/owner/repo).')
+          return
+        }
       }
 
       setError(null)
+      setUrlInput(target.originalUrl)
+      setActiveTabRepo(target)
+      setNav('analyze')
 
       if (!force) {
         const cached = await getCachedReport(target.originalUrl)
@@ -138,6 +147,8 @@ export function SidepanelApp() {
       const controller = new AbortController()
       abortControllerRef.current = controller
 
+      // Clear previous report so that InteractiveBeamLoader is immediately visible
+      setReport(null)
       setLoading(true)
       try {
         const res = await analyzeGitHubRepository(target, controller.signal)

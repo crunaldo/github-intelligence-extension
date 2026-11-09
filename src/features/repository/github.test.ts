@@ -169,4 +169,22 @@ describe('unwrapSocialRedirectUrl & Social Link Discovery', () => {
       originalUrl: 'https://github.com/facebook/react',
     })
   })
+
+  it('unwraps real Facebook link with heavy tracking payload (e.g. addyosmani/agent-skills)', () => {
+    const userFbUrl = 'https://l.facebook.com/l.php?u=https%3A%2F%2Fgithub.com%2Faddyosmani%2Fagent-skills%3Ffbclid%3DIwZXh0bgNhZW0CMTAAcGRvZgVicmlkETFnMTZ0Tk9HT0thdnJiNWVkc3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5MgABHzQUR-dFhNy1ksuyLh6Kx9gDDdyEOFwxogyqn0UFWkfC3ThSFSpWZzCJ1PAX_aem__SrvT1UX-1UOFPWjIxTVAg&h=AUBk4H2XYA7EKfmmseaeQxjbiABJKOcbNANpjwcpHxcjoqy-M5eNjv_8w8V4yhltEiLQt6G6hT3YdFbKzdg4QeP2FQFvQtehPUKl0NXTfQ_ICO2N21-BYlTWHG1NBnlrCpW0HF3zYEcm1w&__tn__=K'
+    
+    expect(unwrapSocialRedirectUrl(userFbUrl)).toBe('https://github.com/addyosmani/agent-skills')
+    
+    expect(parseFlexibleGitHubUrl(userFbUrl)).toMatchObject({
+      owner: 'addyosmani',
+      repository: 'agent-skills',
+      originalUrl: 'https://github.com/addyosmani/agent-skills',
+    })
+
+    expect(extractRepoReference(userFbUrl)).toMatchObject({
+      owner: 'addyosmani',
+      repository: 'agent-skills',
+      originalUrl: 'https://github.com/addyosmani/agent-skills',
+    })
+  })
 })

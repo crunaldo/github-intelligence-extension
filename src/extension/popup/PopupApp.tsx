@@ -20,6 +20,7 @@ import type { RepositoryReport, GitHubTarget } from '../../features/repository/t
 import {
   analyzeGitHubRepository,
   parseFlexibleGitHubUrl,
+  extractRepoReference,
   getLatestRateLimit,
 } from '../../features/repository/github'
 import { createReportExport } from '../../features/repository/export'
@@ -94,11 +95,18 @@ export function PopupApp() {
     try {
       target = parseFlexibleGitHubUrl(urlToAnalyze)
     } catch {
-      setError('Ingresa un repositorio válido de GitHub (ej. facebook/react o https://github.com/owner/repo).')
-      return
+      const fallback = extractRepoReference(urlToAnalyze)
+      if (fallback) {
+        target = fallback
+      } else {
+        setError('Ingresa un repositorio válido de GitHub (ej. facebook/react o https://github.com/owner/repo).')
+        return
+      }
     }
 
     setError(null)
+    setSearchUrl(target.originalUrl)
+    setActiveTabRepo(target)
 
     // Check cache first if not forced
     if (!force) {
@@ -116,6 +124,8 @@ export function PopupApp() {
     const controller = new AbortController()
     abortControllerRef.current = controller
 
+    // Clear previous report so that InteractiveBeamLoader is immediately visible
+    setReport(null)
     setLoading(true)
     try {
       const res = await analyzeGitHubRepository(target, controller.signal)
@@ -191,8 +201,22 @@ export function PopupApp() {
         }
       }
 
+      // Listen for storage changes in case gpi_pending_analysis arrives
+      const onStorageChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+        if (areaName === 'local' && changes.gpi_pending_analysis?.newValue) {
+          const pending = changes.gpi_pending_analysis.newValue as GitHubTarget
+          chrome.storage.local.remove('gpi_pending_analysis').catch(() => {})
+          setSearchUrl(pending.originalUrl)
+          setActiveTabRepo(pending)
+          void performAnalysis(pending.originalUrl, false)
+        }
+      }
+
       if (chrome.runtime?.onMessage) {
         chrome.runtime.onMessage.addListener(onMessage)
+      }
+      if (chrome.storage?.onChanged) {
+        chrome.storage.onChanged.addListener(onStorageChange)
       }
 
       // Listen for tab switching and URL updates in real time
@@ -221,6 +245,12 @@ export function PopupApp() {
       chrome.tabs.onUpdated.addListener(onUpdated)
 
       return () => {
+        if (chrome.runtime?.onMessage) {
+          chrome.runtime.onMessage.removeListener(onMessage)
+        }
+        if (chrome.storage?.onChanged) {
+          chrome.storage.onChanged.removeListener(onStorageChange)
+        }
         chrome.tabs.onActivated.removeListener(onActivated)
         chrome.tabs.onUpdated.removeListener(onUpdated)
       }
