@@ -102,6 +102,30 @@ describe('extractRepoReference (Heuristic Social & Web Discovery)', () => {
     })
   })
 
+  it('extracts repos from relative GitHub paths (e.g. on github.com navigation and lists)', () => {
+    expect(extractRepoReference('/facebook/react')).toMatchObject({
+      owner: 'facebook',
+      repository: 'react',
+      refKind: 'default',
+      originalUrl: 'https://github.com/facebook/react',
+    })
+
+    expect(extractRepoReference('/shadcn-ui/ui/tree/main')).toMatchObject({
+      owner: 'shadcn-ui',
+      repository: 'ui',
+      ref: 'main',
+      refKind: 'branch',
+      originalUrl: 'https://github.com/shadcn-ui/ui/tree/main',
+    })
+
+    // Rejects reserved GitHub paths
+    expect(extractRepoReference('/settings/profile')).toBeNull()
+    expect(extractRepoReference('/notifications')).toBeNull()
+    expect(extractRepoReference('/marketplace')).toBeNull()
+    expect(extractRepoReference('/pulls')).toBeNull()
+    expect(extractRepoReference('/issues')).toBeNull()
+  })
+
   it('rejects false positives like and/or, dates, and MIME types', () => {
     expect(extractRepoReference('Debes elegir and/or en la configuración')).toBeNull()
     expect(extractRepoReference('true/false')).toBeNull()

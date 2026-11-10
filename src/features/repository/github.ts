@@ -312,7 +312,9 @@ export const RESERVED_GITHUB_NAMES = new Set([
   'search', 'settings', 'notifications', 'marketplace', 'pulls', 'issues',
   'dashboard', 'orgs', 'users', 'site', 'contact', 'status', 'blog', 'help',
   'customer-stories', 'readme', 'license', 'git', 'api', 'discussions', 'actions',
-  'projects', 'releases', 'tags', 'wiki', 'network', 'graphs'
+  'projects', 'releases', 'tags', 'wiki', 'network', 'graphs', 'stars', 'topics',
+  'new', 'edit', 'blob', 'raw', 'commit', 'commits', 'pull', 'branches', 'codespaces',
+  'organizations'
 ])
 
 export const FALSE_POSITIVE_SLASH_PAIRS = new Set([
@@ -324,8 +326,8 @@ export const FALSE_POSITIVE_SLASH_PAIRS = new Set([
 ])
 
 /**
- * Robust heuristic extractor that detects GitHub repositories in selected text or sentences
- * across any webpage (Facebook, Reddit, Instagram, Twitter, blogs, etc.) without false positives.
+ * Robust heuristic extractor that detects GitHub repositories in selected text, sentences,
+ * or anchor links across any webpage (GitHub.com, Facebook, Reddit, Instagram, Twitter, blogs, etc.)
  */
 export function extractRepoReference(rawText: string): GitHubTarget | null {
   if (!rawText || typeof rawText !== 'string') return null
@@ -336,7 +338,24 @@ export function extractRepoReference(rawText: string): GitHubTarget | null {
   clean = unwrapSocialRedirectUrl(clean)
   if (!clean) return null
 
-  // 1. Explicit github.com URL pattern
+  // 1. Relative GitHub path (used heavily on github.com e.g. /facebook/react, /shadcn-ui/ui)
+  const relativeMatch = clean.match(/^\/([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]{1,100})(?:\/(?:tree|blob|commit)\/([a-zA-Z0-9_.-]+))?(?:\/.*)?$/)
+  if (relativeMatch) {
+    const owner = relativeMatch[1]
+    const repo = relativeMatch[2].replace(/\.git$/i, '')
+    const ref = relativeMatch[3]
+    if (!RESERVED_GITHUB_NAMES.has(owner.toLowerCase()) && !FALSE_POSITIVE_SLASH_PAIRS.has(`${owner}/${repo}`.toLowerCase())) {
+      return {
+        owner,
+        repository: repo,
+        ref,
+        refKind: ref ? 'branch' : 'default',
+        originalUrl: `https://github.com/${owner}/${repo}${ref ? `/tree/${ref}` : ''}`
+      }
+    }
+  }
+
+  // 2. Explicit github.com URL pattern
   const urlMatch = clean.match(/(?:https?:\/\/)?(?:www\.)?github\.com\/([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]{1,100})(?:\/(?:tree|blob|commit)\/([a-zA-Z0-9_.-]+))?/i)
   if (urlMatch) {
     const owner = urlMatch[1]
