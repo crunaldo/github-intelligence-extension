@@ -78,7 +78,7 @@ export default defineBackground(() => {
 
         // 1. Prioritize direct link URL (unwraps Facebook l.facebook.com, Reddit out.reddit.com, Google, etc.)
         if (info.linkUrl) {
-          target = extractRepoReference(info.linkUrl) || (() => {
+          target = extractRepoReference(info.linkUrl, { explicitOnly: true }) || (() => {
             try {
               return parseFlexibleGitHubUrl(info.linkUrl)
             } catch {
@@ -92,7 +92,7 @@ export default defineBackground(() => {
           target = lastContentScriptTarget.target
         }
 
-        // 3. Inspect selected text if any
+        // 3. Inspect selected text if any (supports standalone owner/repo from manual selection)
         if (!target && info.selectionText) {
           target = extractRepoReference(info.selectionText) || (() => {
             try {
@@ -105,7 +105,7 @@ export default defineBackground(() => {
 
         // 4. Inspect current page URL
         if (!target && info.pageUrl) {
-          target = extractRepoReference(info.pageUrl) || (() => {
+          target = extractRepoReference(info.pageUrl, { explicitOnly: true }) || (() => {
             try {
               return parseFlexibleGitHubUrl(info.pageUrl)
             } catch {
@@ -178,11 +178,13 @@ export default defineBackground(() => {
   // Listen to messages from content script, popup, or side panel
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Content script reporting what element was right-clicked before context menu opened
-    if (message?.type === 'LAST_RIGHT_CLICK_REPO' && message.target) {
-      lastContentScriptTarget = {
-        target: message.target as GitHubTarget,
-        timestamp: Date.now(),
-      }
+    if (message?.type === 'LAST_RIGHT_CLICK_REPO') {
+      lastContentScriptTarget = message.target
+        ? {
+            target: message.target as GitHubTarget,
+            timestamp: Date.now(),
+          }
+        : null
       sendResponse?.({ ok: true })
       return true
     }

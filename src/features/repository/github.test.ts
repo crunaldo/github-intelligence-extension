@@ -5,6 +5,8 @@ import {
   parseGitHubUrl,
   parseFlexibleGitHubUrl,
   extractRepoReference,
+  extractRepoFromUrl,
+  extractRepoFromAnchorData,
   unwrapSocialRedirectUrl,
 } from './github'
 
@@ -102,15 +104,21 @@ describe('extractRepoReference (Heuristic Social & Web Discovery)', () => {
     })
   })
 
-  it('extracts repos from relative GitHub paths (e.g. on github.com navigation and lists)', () => {
-    expect(extractRepoReference('/facebook/react')).toMatchObject({
+  it('requires allowRelativePath for leading-slash paths so non-GitHub site paths never false-positive', () => {
+    // Default extraction MUST reject relative paths (prevents matching /r/programming, /groups/123, /news/tech)
+    expect(extractRepoReference('/facebook/react')).toBeNull()
+    expect(extractRepoReference('/r/programming')).toBeNull()
+    expect(extractRepoReference('/groups/123456')).toBeNull()
+
+    // Explicit github.com context opt-in still works
+    expect(extractRepoReference('/facebook/react', { allowRelativePath: true })).toMatchObject({
       owner: 'facebook',
       repository: 'react',
       refKind: 'default',
       originalUrl: 'https://github.com/facebook/react',
     })
 
-    expect(extractRepoReference('/shadcn-ui/ui/tree/main')).toMatchObject({
+    expect(extractRepoReference('/shadcn-ui/ui/tree/main', { allowRelativePath: true })).toMatchObject({
       owner: 'shadcn-ui',
       repository: 'ui',
       ref: 'main',
@@ -118,21 +126,163 @@ describe('extractRepoReference (Heuristic Social & Web Discovery)', () => {
       originalUrl: 'https://github.com/shadcn-ui/ui/tree/main',
     })
 
-    // Rejects reserved GitHub paths
-    expect(extractRepoReference('/settings/profile')).toBeNull()
-    expect(extractRepoReference('/notifications')).toBeNull()
-    expect(extractRepoReference('/marketplace')).toBeNull()
-    expect(extractRepoReference('/pulls')).toBeNull()
-    expect(extractRepoReference('/issues')).toBeNull()
+    // Rejects reserved GitHub paths even with allowRelativePath
+    expect(extractRepoReference('/settings/profile', { allowRelativePath: true })).toBeNull()
+    expect(extractRepoReference('/notifications', { allowRelativePath: true })).toBeNull()
+    expect(extractRepoReference('/marketplace', { allowRelativePath: true })).toBeNull()
+    expect(extractRepoReference('/pulls', { allowRelativePath: true })).toBeNull()
+    expect(extractRepoReference('/issues', { allowRelativePath: true })).toBeNull()
+    expect(extractRepoReference('/apps/dependabot', { allowRelativePath: true })).toBeNull()
   })
 
-  it('rejects false positives like and/or, dates, and MIME types', () => {
+  it('rejects false positives like and/or, dates, Reddit shortcuts, and MIME types', () => {
     expect(extractRepoReference('Debes elegir and/or en la configuración')).toBeNull()
     expect(extractRepoReference('true/false')).toBeNull()
     expect(extractRepoReference('2024/05')).toBeNull()
     expect(extractRepoReference('text/html')).toBeNull()
     expect(extractRepoReference('image/png')).toBeNull()
     expect(extractRepoReference('about/pricing')).toBeNull()
+    expect(extractRepoReference('UI/UX')).toBeNull()
+    expect(extractRepoReference('CI/CD')).toBeNull()
+    expect(extractRepoReference('r/programming')).toBeNull()
+    expect(extractRepoReference('u/someuser')).toBeNull()
+  })
+
+  it('rejects non-repo GitHub subdomains such as docs.github.com and gist.github.com', () => {
+    expect(extractRepoReference('https://docs.github.com/en/copilot')).toBeNull()
+    expect(extractRepoReference('https://gist.github.com/addyosmani/123456')).toBeNull()
+    expect(extractRepoReference('https://skills.github.com/intro/course')).toBeNull()
+    expect(extractRepoFromUrl('https://docs.github.com/en/actions')).toBeNull()
+    expect(extractRepoFromUrl('https://gist.github.com/user/abcdef')).toBeNull()
+  })
+})
+
+describe('extractRepoFromAnchorData (Tooltip & Hover Accuracy)', () => {
+  it('NEVER triggers on non-GitHub relative URLs or generic slash link labels', () => {
+    expect(extractRepoFromAnchorData({
+      rawHref: '/r/technology/comments/abc123',
+      fullHref: 'https://www.reddit.com/r/technology/comments/abc123',
+      innerText: 'r/technology',
+      pageHostname: 'www.reddit.com',
+    })).toBeNull()
+
+    expect(extractRepoFromAnchorData({
+      rawHref: '/groups/987654/posts/123',
+      fullHref: 'https://www.facebook.com/groups/987654/posts/123',
+      innerText: 'UI/UX',
+      pageHostname: 'www.facebook.com',
+    })).toBeNull()
+
+    expect(extractRepoFromAnchorData({
+      rawHref: '/es/tecnologia/articulo',
+      fullHref: 'https://elpais.com/es/tecnologia/articulo',
+      innerText: 'España/Mundo',
+      pageHostname: 'elpais.com',
+    })).toBeNull()
+
+    expect(extractRepoFromAnchorData({
+      rawHref: '/search?q=ci/cd',
+      fullHref: 'https://www.google.com/search?q=ci/cd',
+      innerText: 'CI/CD tutorial',
+      pageHostname: 'www.google.com',
+    })).toBeNull()
+
+    expect(extractRepoFromAnchorData({
+      rawHref: 'https://l.facebook.com/l.php?u=https%3A%2F%2Fdev.to%2Fauthor%2Fpost',
+      fullHref: 'https://l.facebook.com/l.php?u=https%3A%2F%2Fdev.to%2Fauthor%2Fpost',
+      innerText: 'Aprender UI/UX y AI/ML',
+      pageHostname: 'www.facebook.com',
+    })).toBeNull()
+  })
+
+  it('detects GitHub repository links on github.com while ignoring files, issues, anchors, and UI tabs', () => {
+    expect(extractRepoFromAnchorData({
+      rawHref: '/facebook/react',
+      fullHref: 'https://github.com/facebook/react',
+      innerText: 'facebook / react',
+      pageHostname: 'github.com',
+    })).toMatchObject({
+      owner: 'facebook',
+      repository: 'react',
+      originalUrl: 'https://github.com/facebook/react',
+    })
+
+    expect(extractRepoFromAnchorData({
+      rawHref: '/shadcn-ui/ui/tree/main',
+      fullHref: 'https://github.com/shadcn-ui/ui/tree/main',
+      innerText: 'main',
+      pageHostname: 'github.com',
+    })).toMatchObject({
+      owner: 'shadcn-ui',
+      repository: 'ui',
+      ref: 'main',
+      refKind: 'branch',
+    })
+
+    // Ignore code files, subfolder trees, issues, PRs, tabs, same-page hash links, and login redirects on GitHub
+    expect(extractRepoFromAnchorData({
+      rawHref: '/facebook/react/blob/main/package.json',
+      fullHref: 'https://github.com/facebook/react/blob/main/package.json',
+      innerText: 'package.json',
+      pageHostname: 'github.com',
+    })).toBeNull()
+
+    expect(extractRepoFromAnchorData({
+      rawHref: '/facebook/react/tree/main/packages/react',
+      fullHref: 'https://github.com/facebook/react/tree/main/packages/react',
+      innerText: 'packages/react',
+      pageHostname: 'github.com',
+    })).toBeNull()
+
+    expect(extractRepoFromAnchorData({
+      rawHref: '/facebook/react/issues',
+      fullHref: 'https://github.com/facebook/react/issues',
+      innerText: 'Issues',
+      pageHostname: 'github.com',
+    })).toBeNull()
+
+    expect(extractRepoFromAnchorData({
+      rawHref: '#installation',
+      fullHref: 'https://github.com/facebook/react#installation',
+      innerText: 'Installation',
+      pageHostname: 'github.com',
+    })).toBeNull()
+
+    expect(extractRepoFromAnchorData({
+      rawHref: '/facebook/react?tab=MIT-1-ov-file',
+      fullHref: 'https://github.com/facebook/react?tab=MIT-1-ov-file',
+      innerText: 'MIT license',
+      pageHostname: 'github.com',
+    })).toBeNull()
+
+    expect(extractRepoFromAnchorData({
+      rawHref: '/login?return_to=https%3A%2F%2Fgithub.com%2Ffacebook%2Freact',
+      fullHref: 'https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Ffacebook%2Freact',
+      innerText: 'Star',
+      pageHostname: 'github.com',
+    })).toBeNull()
+  })
+
+  it('detects social-wrapped GitHub URLs and explicit GitHub labels on Twitter t.co links', () => {
+    expect(extractRepoFromAnchorData({
+      rawHref: 'https://l.facebook.com/l.php?u=https%3A%2F%2Fgithub.com%2Faddyosmani%2Fagent-skills%3Ffbclid%3D123',
+      fullHref: 'https://l.facebook.com/l.php?u=https%3A%2F%2Fgithub.com%2Faddyosmani%2Fagent-skills%3Ffbclid%3D123',
+      innerText: 'Agent Skills',
+      pageHostname: 'www.facebook.com',
+    })).toMatchObject({
+      owner: 'addyosmani',
+      repository: 'agent-skills',
+    })
+
+    expect(extractRepoFromAnchorData({
+      rawHref: 'https://t.co/AbCdEf123',
+      fullHref: 'https://t.co/AbCdEf123',
+      innerText: 'https://github.com/vercel/next.js',
+      pageHostname: 'x.com',
+    })).toMatchObject({
+      owner: 'vercel',
+      repository: 'next.js',
+    })
   })
 })
 
@@ -210,5 +360,19 @@ describe('unwrapSocialRedirectUrl & Social Link Discovery', () => {
       repository: 'agent-skills',
       originalUrl: 'https://github.com/addyosmani/agent-skills',
     })
+  })
+
+  it('does NOT unwrap non-redirect search query URLs or GitHub login return_to URLs', () => {
+    const googleSearch = 'https://www.google.com/search?q=custom/thing'
+    expect(unwrapSocialRedirectUrl(googleSearch)).toBe(googleSearch)
+    expect(extractRepoReference(googleSearch)).toBeNull()
+
+    const redditSearch = 'https://www.reddit.com/search/?q=foo/bar'
+    expect(unwrapSocialRedirectUrl(redditSearch)).toBe(redditSearch)
+    expect(extractRepoReference(redditSearch)).toBeNull()
+
+    const ghLoginReturn = 'https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Ffacebook%2Freact'
+    expect(unwrapSocialRedirectUrl(ghLoginReturn)).toBe(ghLoginReturn)
+    expect(extractRepoReference(ghLoginReturn)).toBeNull()
   })
 })

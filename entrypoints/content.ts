@@ -1,37 +1,32 @@
 import {
   extractRepoReference,
+  extractRepoFromAnchorData,
   RESERVED_GITHUB_NAMES,
-  FALSE_POSITIVE_SLASH_PAIRS,
 } from '../src/features/repository/github'
 import type { GitHubTarget } from '../src/features/repository/types'
 
 export default defineContentScript({
   matches: ['<all_urls>'],
   main() {
-    const isGitHubSite = window.location.hostname.toLowerCase().includes('github.com')
+    const currentHostname = window.location.hostname.toLowerCase()
+    const isGitHubSite = currentHostname === 'github.com' || currentHostname === 'www.github.com'
 
     // =========================================================================
     // 1. GITHUB.COM NATIVE PAGE TRACKING (Maintains Turbo & PJAX listeners)
     // =========================================================================
     if (isGitHubSite) {
-      const RESERVED_NAMES = new Set([
-        'about', 'pricing', 'security', 'login', 'join', 'explore', 'trending',
-        'collections', 'events', 'sponsors', 'features', 'enterprise', 'team',
-        'search', 'settings', 'notifications', 'marketplace', 'pulls', 'issues',
-        'dashboard', 'orgs', 'users', 'site', 'contact', 'status',
-      ])
-
       function parseGitHubRepo(urlStr: string): { owner: string; repo: string; ref?: string; fullName: string; url: string } | null {
         try {
           const url = new URL(urlStr)
-          if (url.hostname.toLowerCase() !== 'github.com') return null
+          const host = url.hostname.toLowerCase()
+          if (host !== 'github.com' && host !== 'www.github.com') return null
           const parts = url.pathname.split('/').filter(Boolean)
           if (parts.length < 2) return null
 
           const owner = parts[0]
           const repo = parts[1].replace(/\.git$/i, '')
 
-          if (RESERVED_NAMES.has(owner.toLowerCase())) return null
+          if (RESERVED_GITHUB_NAMES.has(owner.toLowerCase())) return null
 
           let ref: string | undefined
           if (parts.length >= 4 && (parts[2] === 'tree' || parts[2] === 'blob' || parts[2] === 'commit')) {
@@ -267,10 +262,11 @@ export default defineContentScript({
       const margin = 8
       let top = rect.top - pillHeight - margin
 
-      // If too close to viewport top, flip below selection
+      // If too close to viewport top, flip below selection, clamped inside viewport
       if (top < 10) {
         top = rect.bottom + margin
       }
+      top = Math.max(10, Math.min(window.innerHeight - pillHeight - 10, top))
 
       // Center horizontally relative to selection, clamped within screen
       const centerX = rect.left + rect.width / 2
@@ -290,75 +286,43 @@ export default defineContentScript({
       activeTarget = null
     }
 
-    /**
-     * Universal repository resolver from any anchor element or its children
-     * Handles:
-     * - GitHub.com relative links (/facebook/react, /shadcn-ui/ui, /torvalds/linux)
-     * - GitHub.com tree / branch links (/owner/repo/tree/branch)
-     * - External absolute links (github.com/owner/repo)
-     * - Social media wrappers (Facebook l.facebook.com, Reddit, Google, Twitter)
-     * - Plain text and title attributes
-     */
-    function extractTargetFromElement(el: HTMLElement | null): GitHubTarget | null {
-      if (!el) return null
+    function findAnchorElement(targetEl: Element | null): HTMLElement | null {
+      if (!targetEl) return null
+      const anchor = targetEl.closest('a, [data-href], [role="link"]') as HTMLElement | null
+      if (!anchor) return null
 
-      const anchor = (el.closest('a') || el.closest('[role="link"]') || el.closest('[data-href]')) as HTMLElement | null
+      // Ignore large non-<a> SPA container cards (e.g. Facebook/X role="link" wrappers)
+      if (anchor.tagName !== 'A' && !anchor.hasAttribute('data-href')) {
+        if (anchor.querySelector('a[href]')) return null
+        const text = (anchor.textContent || '').trim()
+        if (text.length > 200) return null
+      }
+
+      return anchor
+    }
+
+    /**
+     * Strict repository resolver from an anchor element or its children.
+     * Avoids false positives on relative non-GitHub links (/groups/123, /r/programming)
+     * and non-GitHub link labels (UI/UX, CI/CD, dates).
+     */
+    function extractTargetFromElement(el: Element | null): GitHubTarget | null {
+      const anchor = findAnchorElement(el)
       if (!anchor) return null
 
       const rawHref = anchor.getAttribute('href') || anchor.getAttribute('data-href') || ''
-      const fullHref = (anchor as HTMLAnchorElement).href || ''
-      const innerText = (anchor.innerText || el.innerText || '').trim()
-      const title = anchor.getAttribute('title') || el.getAttribute('title') || ''
+      const anchorHrefProp = (anchor as HTMLAnchorElement).href
+      const fullHref = typeof anchorHrefProp === 'string' ? anchorHrefProp : ''
+      const innerText = (anchor.innerText || (el as HTMLElement)?.innerText || anchor.textContent || '').trim()
+      const title = anchor.getAttribute('title') || el?.getAttribute('title') || ''
 
-      // 1. Direct heuristic check across attributes & text
-      let target = extractRepoReference(rawHref) ||
-                   extractRepoReference(fullHref) ||
-                   extractRepoReference(innerText) ||
-                   extractRepoReference(title)
-
-      if (target) return target
-
-      // 2. Specific GitHub.com DOM resolution (handles relative URLs like /facebook/react, /shadcn-ui/ui)
-      try {
-        const urlStr = fullHref || (rawHref.startsWith('/') ? `https://github.com${rawHref}` : '')
-        if (urlStr) {
-          const u = new URL(urlStr, window.location.origin)
-          if (u.hostname.toLowerCase() === 'github.com' || u.hostname.toLowerCase().endsWith('.github.com')) {
-            const parts = u.pathname.split('/').filter(Boolean)
-            if (parts.length >= 2) {
-              const owner = parts[0]
-              const repo = parts[1].replace(/\.git$/i, '')
-
-              if (!RESERVED_GITHUB_NAMES.has(owner.toLowerCase()) && !FALSE_POSITIVE_SLASH_PAIRS.has(`${owner}/${repo}`.toLowerCase())) {
-                // If it is a clean repository path (e.g. /owner/repo)
-                if (parts.length === 2) {
-                  return {
-                    owner,
-                    repository: repo,
-                    refKind: 'default',
-                    originalUrl: `https://github.com/${owner}/${repo}`,
-                  }
-                }
-                // If it points to a tree / branch view (e.g. /owner/repo/tree/main)
-                if (parts.length >= 4 && parts[2] === 'tree') {
-                  const ref = parts.slice(3).join('/')
-                  return {
-                    owner,
-                    repository: repo,
-                    ref,
-                    refKind: 'branch',
-                    originalUrl: `https://github.com/${owner}/${repo}/tree/${ref}`,
-                  }
-                }
-              }
-            }
-          }
-        }
-      } catch {
-        // Ignore parsing errors
-      }
-
-      return null
+      return extractRepoFromAnchorData({
+        rawHref,
+        fullHref,
+        innerText,
+        title,
+        pageHostname: currentHostname,
+      })
     }
 
     // 1. Text selection listener (Mouse Up)
@@ -391,19 +355,17 @@ export default defineContentScript({
 
     // 2. Capture-phase right click listener to guarantee we identify the clicked repo even on complex SPAs (Facebook, Reddit, Twitter, GitHub)
     document.addEventListener('contextmenu', (e) => {
-      const targetEl = e.target as HTMLElement | null
+      const targetEl = e.target as Element | null
       const repo = extractTargetFromElement(targetEl) || (window.getSelection() ? extractRepoReference(window.getSelection()?.toString() || '') : null)
 
-      if (repo) {
-        try {
-          chrome.runtime.sendMessage({
-            type: 'LAST_RIGHT_CLICK_REPO',
-            target: repo,
-            url: repo.originalUrl,
-          }).catch(() => {})
-        } catch {
-          // Ignore
-        }
+      try {
+        chrome.runtime.sendMessage({
+          type: 'LAST_RIGHT_CLICK_REPO',
+          target: repo,
+          url: repo?.originalUrl ?? null,
+        }).catch(() => {})
+      } catch {
+        // Ignore
       }
     }, true)
 
@@ -412,11 +374,10 @@ export default defineContentScript({
     let currentHoverAnchor: HTMLElement | null = null
 
     document.addEventListener('mouseover', (e) => {
-      const targetEl = e.target as HTMLElement | null
-      const anchor = (targetEl?.closest('a') || targetEl?.closest('[role="link"]') || targetEl?.closest('[data-href]')) as HTMLElement | null
-      if (!anchor) return
+      const targetEl = e.target as Element | null
+      if (!targetEl) return
 
-      // Don't trigger if hovering over the floating pill itself
+      // Don't trigger or hide if hovering over the floating pill itself
       if (hostEl && e.composedPath().includes(hostEl)) {
         if (hideTimeout) {
           clearTimeout(hideTimeout)
@@ -425,35 +386,61 @@ export default defineContentScript({
         return
       }
 
+      const anchor = findAnchorElement(targetEl)
+      if (!anchor) return
+
+      if (anchor === currentHoverAnchor && pillEl?.classList.contains('is-visible')) {
+        if (hideTimeout) {
+          clearTimeout(hideTimeout)
+          hideTimeout = null
+        }
+        return
+      }
+
+      const target = extractTargetFromElement(anchor)
+      if (!target) {
+        if (linkHoverTimeout) {
+          clearTimeout(linkHoverTimeout)
+          linkHoverTimeout = null
+        }
+        currentHoverAnchor = null
+        return
+      }
+
       if (linkHoverTimeout) clearTimeout(linkHoverTimeout)
-      if (hideTimeout) clearTimeout(hideTimeout)
+      if (hideTimeout) {
+        clearTimeout(hideTimeout)
+        hideTimeout = null
+      }
       currentHoverAnchor = anchor
 
       linkHoverTimeout = setTimeout(() => {
-        const target = extractTargetFromElement(anchor)
-        if (target) {
-          const rect = anchor.getBoundingClientRect()
-          if (rect.width > 0 && rect.height > 0) {
-            showPillAt(rect, target)
-          }
+        if (!document.contains(anchor)) return
+        const rect = anchor.getBoundingClientRect()
+        if (rect.width > 0 && rect.height > 0) {
+          showPillAt(rect, target)
         }
       }, 180)
     })
 
     document.addEventListener('mouseout', (e) => {
-      const targetEl = e.target as HTMLElement | null
-      const anchor = targetEl?.closest('a') || targetEl?.closest('[role="link"]') || targetEl?.closest('[data-href]')
-      if (anchor && anchor === currentHoverAnchor) {
-        if (linkHoverTimeout) {
-          clearTimeout(linkHoverTimeout)
-          linkHoverTimeout = null
-        }
-        // Grace period before hiding pill in case user is moving mouse onto the pill
-        if (pillEl && pillEl.classList.contains('is-visible')) {
-          if (hideTimeout) clearTimeout(hideTimeout)
-          hideTimeout = setTimeout(() => hidePill(), 750)
-        }
+      const targetEl = e.target as Element | null
+      const anchor = findAnchorElement(targetEl)
+      if (!anchor || anchor !== currentHoverAnchor) return
+
+      const related = e.relatedTarget as Node | null
+      if (related && anchor.contains(related)) return
+
+      if (linkHoverTimeout) {
+        clearTimeout(linkHoverTimeout)
+        linkHoverTimeout = null
       }
+      // Grace period before hiding pill in case user is moving mouse onto the pill
+      if (pillEl && pillEl.classList.contains('is-visible')) {
+        if (hideTimeout) clearTimeout(hideTimeout)
+        hideTimeout = setTimeout(() => hidePill(), 750)
+      }
+      currentHoverAnchor = null
     })
 
     // 4. Dismiss on outside click, scroll, or Escape key

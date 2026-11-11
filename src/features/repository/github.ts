@@ -92,7 +92,7 @@ export function getLatestRateLimit(): { remaining: number | null; resetAt: strin
 
 /**
  * Unwraps social media tracking redirect URLs (Facebook Link Shim l.facebook.com/l.php?u=...,
- * Reddit out.reddit.com, Google url?q=..., and cleans tracking parameters like ?fbclid=...).
+ * Reddit out.reddit.com, Google url?q=..., YouTube redirect?q=..., and cleans tracking parameters like ?fbclid=...).
  */
 export function unwrapSocialRedirectUrl(rawUrl: string): string {
   if (!rawUrl || typeof rawUrl !== 'string') return ''
@@ -101,27 +101,39 @@ export function unwrapSocialRedirectUrl(rawUrl: string): string {
   // 1. Strip wrapping quotes, brackets, or angle brackets
   current = current.replace(/^["'`([{<]+|[>"')\]}.,;:!?]+$/g, '').trim()
 
-  // 2. Decode redirects from Facebook (l.facebook.com, lm.facebook.com), Google, Reddit, etc.
+  // 2. Decode redirects from Facebook (l.facebook.com, lm.facebook.com), Google (/url), Reddit (out.reddit.com), etc.
   for (let i = 0; i < 3; i++) {
     try {
-      const hasRedirectMarkers = current.includes('?') && (
-        current.includes('facebook.com') ||
-        current.includes('instagram.com') ||
-        current.includes('reddit.com') ||
-        current.includes('google.') ||
-        current.includes('l.php') ||
-        current.includes('linkshim') ||
-        current.includes('out.') ||
-        current.includes('redirect') ||
-        current.includes('url?') ||
-        current.includes('dest=') ||
-        current.includes('target=') ||
-        current.includes('u=')
-      )
+      const looksLikeHttpUrl = current.startsWith('http://') || current.startsWith('https://')
+      if (!looksLikeHttpUrl && !current.includes('.')) {
+        break
+      }
 
-      if (hasRedirectMarkers) {
-        const urlToParse = current.startsWith('http://') || current.startsWith('https://') ? current : `https://${current}`
-        const parsed = new URL(urlToParse)
+      const urlToParse = looksLikeHttpUrl ? current : `https://${current}`
+      const parsed = new URL(urlToParse)
+      const host = parsed.hostname.toLowerCase()
+      const path = parsed.pathname.toLowerCase()
+
+      // Do not unwrap redirects out of github.com itself (e.g. /login?return_to=...)
+      if (host === 'github.com' || host === 'www.github.com') {
+        break
+      }
+
+      const isKnownRedirectEndpoint =
+        host === 'l.facebook.com' ||
+        host === 'lm.facebook.com' ||
+        host === 'l.instagram.com' ||
+        host === 'out.reddit.com' ||
+        host === 'l.messenger.com' ||
+        ((host === 'facebook.com' || host.endsWith('.facebook.com')) && (path.includes('/l.php') || path.includes('linkshim'))) ||
+        ((host.startsWith('google.') || host.includes('.google.')) && path === '/url') ||
+        ((host === 'youtube.com' || host.endsWith('.youtube.com')) && path === '/redirect') ||
+        ((host === 'linkedin.com' || host.endsWith('.linkedin.com')) && path.includes('/redir')) ||
+        path.includes('/redirect') ||
+        path.endsWith('/l.php') ||
+        path.includes('/linkshim')
+
+      if (isKnownRedirectEndpoint && parsed.search) {
         const redirected = parsed.searchParams.get('u') ||
                            parsed.searchParams.get('url') ||
                            parsed.searchParams.get('q') ||
@@ -130,50 +142,52 @@ export function unwrapSocialRedirectUrl(rawUrl: string): string {
                            parsed.searchParams.get('link') ||
                            parsed.searchParams.get('redirect_to') ||
                            parsed.searchParams.get('next')
-        if (redirected) {
-          current = redirected.trim()
-          continue
-        }
-      }
 
-      // Regex fallback for ?u= or &u= if URL parsing missed it (e.g. malformed wrappers)
-      const uParamMatch = current.match(/[?&]u=([^&]+)/i)
-      if (uParamMatch && (current.includes('facebook.com') || current.includes('l.php') || current.includes('instagram.com'))) {
-        try {
-          const extracted = decodeURIComponent(uParamMatch[1]).trim()
-          if (extracted && extracted !== current) {
-            current = extracted
+        if (redirected) {
+          const trimmed = redirected.trim()
+          // Only unwrap if the parameter value itself looks like a URL (prevents treating search queries like ?q=ui/ux as paths)
+          if (/^(?:https?:\/\/|https?%3A%2F%2F|(?:www\.)?github\.com\/)/i.test(trimmed)) {
+            current = trimmed
+            if (current.includes('%2F') || current.includes('%3A') || current.includes('%2f') || current.includes('%3a')) {
+              try {
+                current = decodeURIComponent(current)
+              } catch {
+                // Keep partially decoded value
+              }
+            }
             continue
           }
-        } catch {
-          // Ignore
         }
       }
 
-      if (current.includes('%2F') || current.includes('%3A') || current.includes('%2f') || current.includes('%3a')) {
-        current = decodeURIComponent(current)
-      } else {
-        break
+      // Regex fallback for malformed l.facebook.com / l.instagram.com shims
+      if (isKnownRedirectEndpoint) {
+        const uParamMatch = current.match(/[?&]u=([^&]+)/i)
+        if (uParamMatch) {
+          try {
+            const extracted = decodeURIComponent(uParamMatch[1]).trim()
+            if (extracted && extracted !== current && /^(?:https?:\/\/|(?:www\.)?github\.com\/)/i.test(extracted)) {
+              current = extracted
+              continue
+            }
+          } catch {
+            // Ignore
+          }
+        }
       }
+
+      break
     } catch {
       break
     }
   }
 
-  // 3. If an embedded github URL is found within a wrapper URL string
-  const ghIndex = current.indexOf('github.com')
-  if (ghIndex > 0) {
-    const protoIndex = current.lastIndexOf('http', ghIndex)
-    if (protoIndex >= 0) {
-      current = current.slice(protoIndex)
-    }
-  }
-
-  // 4. Strip common social tracking query params (e.g. fbclid, utm_*, ref_src)
+  // 3. Strip common social tracking query params (e.g. fbclid, utm_*, ref_src) on GitHub URLs
   try {
     if (current.includes('?') && (current.startsWith('http://') || current.startsWith('https://'))) {
       const u = new URL(current)
-      if (u.hostname.toLowerCase().includes('github.com')) {
+      const host = u.hostname.toLowerCase()
+      if (host === 'github.com' || host === 'www.github.com') {
         const paramsToClean = [
           'fbclid', 'gclid', 'ref', 'ref_src',
           'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
@@ -181,7 +195,6 @@ export function unwrapSocialRedirectUrl(rawUrl: string): string {
         ]
         paramsToClean.forEach((param) => {
           u.searchParams.delete(param)
-          // Also check bracket variants like __cft__[0]
           for (const key of Array.from(u.searchParams.keys())) {
             if (key.startsWith(param)) {
               u.searchParams.delete(key)
@@ -251,8 +264,13 @@ export function parseGitHubUrl(value: string | GitHubTarget, options?: { relaxed
     throw new Error('Enter a complete GitHub repository URL, such as https://github.com/owner/repository.')
   }
 
-  if (relaxed && parsed.protocol === 'http:' && parsed.hostname.toLowerCase() === 'github.com') {
-    parsed.protocol = 'https:'
+  if (relaxed) {
+    if (parsed.protocol === 'http:' && (parsed.hostname.toLowerCase() === 'github.com' || parsed.hostname.toLowerCase() === 'www.github.com')) {
+      parsed.protocol = 'https:'
+    }
+    if (parsed.hostname.toLowerCase() === 'www.github.com') {
+      parsed.hostname = 'github.com'
+    }
   }
 
   if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'github.com' || parsed.port || parsed.username || parsed.password) {
@@ -307,14 +325,17 @@ export function parseFlexibleGitHubUrl(value: string): GitHubTarget {
 }
 
 export const RESERVED_GITHUB_NAMES = new Set([
-  'about', 'pricing', 'security', 'login', 'join', 'explore', 'trending',
-  'collections', 'events', 'sponsors', 'features', 'enterprise', 'team',
-  'search', 'settings', 'notifications', 'marketplace', 'pulls', 'issues',
-  'dashboard', 'orgs', 'users', 'site', 'contact', 'status', 'blog', 'help',
-  'customer-stories', 'readme', 'license', 'git', 'api', 'discussions', 'actions',
-  'projects', 'releases', 'tags', 'wiki', 'network', 'graphs', 'stars', 'topics',
-  'new', 'edit', 'blob', 'raw', 'commit', 'commits', 'pull', 'branches', 'codespaces',
-  'organizations'
+  'about', 'account', 'actions', 'advisories', 'api', 'apps', 'assets', 'blog',
+  'blob', 'branches', 'codespaces', 'collections', 'commit', 'commits', 'community',
+  'contact', 'copilot', 'customer-stories', 'dashboard', 'developers', 'discussions',
+  'edit', 'education', 'enterprise', 'events', 'explore', 'features', 'git',
+  'git-guides', 'github-copilot', 'graphs', 'help', 'images', 'issues', 'join',
+  'license', 'login', 'logout', 'marketplace', 'network', 'new', 'nonprofit',
+  'notifications', 'organizations', 'orgs', 'partners', 'pricing', 'projects',
+  'pull', 'pulls', 'raw', 'readme', 'releases', 'resources', 'search', 'security',
+  'services', 'sessions', 'settings', 'shop', 'signup', 'site', 'solutions',
+  'sponsors', 'stars', 'status', 'support', 'tags', 'team', 'topics', 'trending',
+  'users', 'watch', 'why-github', 'wiki'
 ])
 
 export const FALSE_POSITIVE_SLASH_PAIRS = new Set([
@@ -322,90 +343,284 @@ export const FALSE_POSITIVE_SLASH_PAIRS = new Set([
   'input/output', 'on/off', 'up/down', 'left/right', 'high/low', 'min/max',
   'before/after', 'am/pm', 'km/h', 'mph', 'w/o', 'c/u', 's/n', 'n/a', 'etc/passwd',
   'text/html', 'text/plain', 'text/css', 'text/javascript', 'application/json',
-  'application/xml', 'image/png', 'image/jpeg', 'image/svg+xml'
+  'application/xml', 'image/png', 'image/jpeg', 'image/svg+xml',
+  'ui/ux', 'ci/cd', 'ai/ml', 'b2b/b2c', 'html/css', 'ios/android', 'pc/mac',
+  'read/write', 'qa/qc', 'v1/v2', 'http/2', 'http/1.1', 'tcp/ip', 'utf/8'
 ])
 
+export function isValidGitHubOwnerAndRepo(owner: string, repo: string): boolean {
+  if (!owner || !repo) return false
+  if (!/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/.test(owner)) return false
+  if (!/^[a-zA-Z0-9_.-]{1,100}$/.test(repo) || repo === '.' || repo === '..') return false
+  if (RESERVED_GITHUB_NAMES.has(owner.toLowerCase())) return false
+  if (FALSE_POSITIVE_SLASH_PAIRS.has(`${owner}/${repo}`.toLowerCase())) return false
+  return true
+}
+
+function safeDecodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return segment
+  }
+}
+
+export interface ExtractRepoFromUrlOptions {
+  isGitHubSite?: boolean
+}
+
 /**
- * Robust heuristic extractor that detects GitHub repositories in selected text, sentences,
- * or anchor links across any webpage (GitHub.com, Facebook, Reddit, Instagram, Twitter, blogs, etc.)
+ * Strictly extracts a GitHub repository target only from genuine github.com / www.github.com URLs.
+ * Rejects GitHub subdomains (docs.github.com, gist.github.com, etc.), non-GitHub hosts,
+ * and non-repository paths (/issues, /pulls, /blob on GitHub itself, etc.).
  */
-export function extractRepoReference(rawText: string): GitHubTarget | null {
+export function extractRepoFromUrl(rawUrl: string, options?: ExtractRepoFromUrlOptions): GitHubTarget | null {
+  if (!rawUrl || typeof rawUrl !== 'string') return null
+  let normalized = rawUrl.trim()
+  if (/^(?:www\.)?github\.com\//i.test(normalized)) {
+    normalized = `https://${normalized}`
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(normalized)
+  } catch {
+    return null
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+  if (parsed.port || parsed.username || parsed.password) return null
+
+  const host = parsed.hostname.toLowerCase()
+  if (host !== 'github.com' && host !== 'www.github.com') return null
+
+  const parts = parsed.pathname.split('/').filter(Boolean).map(safeDecodeSegment)
+  if (parts.length < 2) return null
+
+  const owner = parts[0]
+  const repo = parts[1].replace(/\.git$/i, '')
+  if (!isValidGitHubOwnerAndRepo(owner, repo)) return null
+
+  const isGitHubSite = options?.isGitHubSite ?? false
+
+  if (parts.length === 2) {
+    if (isGitHubSite && parsed.searchParams.has('tab')) {
+      return null
+    }
+    return {
+      owner,
+      repository: repo,
+      refKind: 'default',
+      originalUrl: `https://github.com/${owner}/${repo}`,
+    }
+  }
+
+  const route = parts[2]
+  if (isGitHubSite) {
+    // On github.com itself, ignore file trees (/blob/), nested folder paths (/tree/main/src), issues, PRs, etc.
+    if (parts.length === 4 && route === 'tree') {
+      const ref = parts[3]
+      return {
+        owner,
+        repository: repo,
+        ref,
+        refKind: 'branch',
+        originalUrl: `https://github.com/${owner}/${repo}/tree/${ref}`,
+      }
+    }
+    return null
+  }
+
+  // On external sites, allow explicit tree/blob/commit/releases links to resolve to the repository
+  if (parts.length >= 4 && (route === 'tree' || route === 'blob' || route === 'commit')) {
+    const ref = route === 'tree' ? parts.slice(3).join('/') : parts[3]
+    if (!ref || ref.includes('..') || ref.includes('\\')) return null
+    const refKind: GitHubTarget['refKind'] = route === 'commit' ? 'commit' : 'branch'
+    return {
+      owner,
+      repository: repo,
+      ref,
+      refKind,
+      originalUrl: `https://github.com/${owner}/${repo}/${route === 'commit' ? 'commit' : 'tree'}/${ref}`,
+    }
+  }
+
+  if (route === 'releases') {
+    return {
+      owner,
+      repository: repo,
+      refKind: 'default',
+      originalUrl: `https://github.com/${owner}/${repo}`,
+    }
+  }
+
+  return null
+}
+
+export interface ExtractRepoReferenceOptions {
+  /** Only match explicit GitHub references (github.com/..., github/..., gh:...) and never standalone owner/repo pairs */
+  explicitOnly?: boolean
+  /** Allow leading-slash /owner/repo paths (ONLY safe when already inside github.com context) */
+  allowRelativePath?: boolean
+}
+
+/**
+ * Heuristic extractor that detects GitHub repositories in text, selections, or explicit references
+ * across webpages (GitHub.com, Facebook, Reddit, Instagram, Twitter, blogs, etc.).
+ */
+export function extractRepoReference(rawText: string, options?: ExtractRepoReferenceOptions): GitHubTarget | null {
   if (!rawText || typeof rawText !== 'string') return null
   let clean = rawText.trim()
   if (clean.length < 3 || clean.length > 2000) return null
 
-  // Unwrap social media tracking redirects (e.g. Facebook l.facebook.com, Reddit, Google)
+  // Unwrap social media tracking redirects (e.g. Facebook l.facebook.com, Reddit out.reddit.com, Google /url)
   clean = unwrapSocialRedirectUrl(clean)
   if (!clean) return null
 
-  // 1. Relative GitHub path (used heavily on github.com e.g. /facebook/react, /shadcn-ui/ui)
-  const relativeMatch = clean.match(/^\/([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]{1,100})(?:\/(?:tree|blob|commit)\/([a-zA-Z0-9_.-]+))?(?:\/.*)?$/)
-  if (relativeMatch) {
-    const owner = relativeMatch[1]
-    const repo = relativeMatch[2].replace(/\.git$/i, '')
-    const ref = relativeMatch[3]
-    if (!RESERVED_GITHUB_NAMES.has(owner.toLowerCase()) && !FALSE_POSITIVE_SLASH_PAIRS.has(`${owner}/${repo}`.toLowerCase())) {
-      return {
-        owner,
-        repository: repo,
-        ref,
-        refKind: ref ? 'branch' : 'default',
-        originalUrl: `https://github.com/${owner}/${repo}${ref ? `/tree/${ref}` : ''}`
+  // 1. Optional relative GitHub path (ONLY when explicitly enabled for github.com context)
+  if (options?.allowRelativePath) {
+    const relMatch = clean.match(/^\/([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]{1,100})(?:\/(tree)\/([a-zA-Z0-9_.-]+))?(?:\/)?$/)
+    if (relMatch) {
+      const owner = relMatch[1]
+      const repo = relMatch[2].replace(/\.git$/i, '')
+      const ref = relMatch[4]
+      if (isValidGitHubOwnerAndRepo(owner, repo)) {
+        return {
+          owner,
+          repository: repo,
+          ref,
+          refKind: ref ? 'branch' : 'default',
+          originalUrl: `https://github.com/${owner}/${repo}${ref ? `/tree/${ref}` : ''}`,
+        }
       }
     }
   }
 
-  // 2. Explicit github.com URL pattern
-  const urlMatch = clean.match(/(?:https?:\/\/)?(?:www\.)?github\.com\/([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]{1,100})(?:\/(?:tree|blob|commit)\/([a-zA-Z0-9_.-]+))?/i)
-  if (urlMatch) {
-    const owner = urlMatch[1]
-    const repo = urlMatch[2].replace(/\.git$/i, '')
-    const ref = urlMatch[3]
-    if (!RESERVED_GITHUB_NAMES.has(owner.toLowerCase()) && !FALSE_POSITIVE_SLASH_PAIRS.has(`${owner}/${repo}`.toLowerCase())) {
-      return {
-        owner,
-        repository: repo,
-        ref,
-        refKind: ref ? 'branch' : 'default',
-        originalUrl: `https://github.com/${owner}/${repo}${ref ? `/tree/${ref}` : ''}`
-      }
+  // 2. Explicit github.com URL pattern (strict boundary prevents docs.github.com / gist.github.com matches)
+  const urlMatches = clean.matchAll(/(?:^|[\s"'`([<])((?:https?:\/\/)?(?:www\.)?github\.com\/[^\s"'`)\],;<>]+)/gi)
+  for (const match of urlMatches) {
+    const rawCandidate = match[1].replace(/[.,;:!?]+$/, '')
+    const parsedTarget = extractRepoFromUrl(rawCandidate)
+    if (parsedTarget) {
+      return parsedTarget
     }
   }
 
-  // 2. Social prefix: github/owner/repo, gh/owner/repo, github:owner/repo, gh:owner/repo
-  const prefixMatch = clean.match(/\b(?:github|gh)[:/]([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]{1,100})\b/i)
+  // 3. Explicit social prefix: github/owner/repo, gh/owner/repo, github:owner/repo, gh:owner/repo
+  const prefixMatch = clean.match(/(?:^|[\s"'`([<])(?:github|gh)[:/]([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]{1,100})(?=$|[\s"'`)\],;:!?])/i)
   if (prefixMatch) {
     const owner = prefixMatch[1]
     const repo = prefixMatch[2].replace(/\.git$/i, '')
-    if (!RESERVED_GITHUB_NAMES.has(owner.toLowerCase()) && !FALSE_POSITIVE_SLASH_PAIRS.has(`${owner}/${repo}`.toLowerCase())) {
+    if (isValidGitHubOwnerAndRepo(owner, repo)) {
       return {
         owner,
         repository: repo,
         refKind: 'default',
-        originalUrl: `https://github.com/${owner}/${repo}`
+        originalUrl: `https://github.com/${owner}/${repo}`,
       }
     }
   }
 
-  // 3. Standalone owner/repo pattern (e.g. facebook/react, vercel/next.js)
+  if (options?.explicitOnly) {
+    return null
+  }
+
+  // 4. Standalone owner/repo pattern in highlighted user text (e.g. "facebook/react", "vercel/next.js", "@tailwindlabs/tailwindcss")
   const slashMatches = clean.matchAll(/(?:^|[\s"'`([<])@?([a-zA-Z0-9-]{1,39})\/([a-zA-Z0-9_.-]{1,100})(?=$|[\s"'`)\],;:!?])/g)
   for (const match of slashMatches) {
     const owner = match[1]
     const repo = match[2].replace(/\.git$/i, '')
-    const pairLower = `${owner}/${repo}`.toLowerCase()
 
-    if (RESERVED_GITHUB_NAMES.has(owner.toLowerCase())) continue
-    if (FALSE_POSITIVE_SLASH_PAIRS.has(pairLower)) continue
+    // Exclude Reddit-style shorthand (r/subreddit, u/username) from standalone selection heuristics
+    if (owner.toLowerCase() === 'r' || owner.toLowerCase() === 'u') continue
+    if (!isValidGitHubOwnerAndRepo(owner, repo)) continue
     if (/^\d+$/.test(owner) || /^\d+$/.test(repo)) continue
-    if (owner.startsWith('-') || owner.endsWith('-')) continue
-    if (/\.(png|jpe?g|gif|webp|svg|pdf|mp4|webm|zip|tar|gz|exe|dmg)$/i.test(repo)) continue
+    if (/\.(png|jpe?g|gif|webp|svg|pdf|mp4|webm|zip|tar|gz|exe|dmg|html?|php|css)$/i.test(repo)) continue
 
     return {
       owner,
       repository: repo,
       refKind: 'default',
-      originalUrl: `https://github.com/${owner}/${repo}`
+      originalUrl: `https://github.com/${owner}/${repo}`,
     }
+  }
+
+  return null
+}
+
+export interface AnchorDataInput {
+  rawHref?: string
+  fullHref?: string
+  innerText?: string
+  title?: string
+  pageHostname?: string
+}
+
+/**
+ * Precision anchor resolver for hover tooltips and direct link right-clicks.
+ * Prevents false positives on unrelated relative paths (/r/programming, /groups/123)
+ * and non-GitHub link labels (UI/UX, CI/CD, dates).
+ */
+export function extractRepoFromAnchorData(input: AnchorDataInput): GitHubTarget | null {
+  const pageHost = (input.pageHostname || '').toLowerCase()
+  const isGitHubSite = pageHost === 'github.com' || pageHost === 'www.github.com'
+
+  const rawHref = (input.rawHref || '').trim()
+  const fullHref = (input.fullHref || '').trim()
+  const innerText = (input.innerText || '').trim()
+  const title = (input.title || '').trim()
+
+  if (/^(?:javascript|mailto|tel|sms|data|blob|about):/i.test(rawHref)) {
+    return null
+  }
+
+  const isHashAnchor = rawHref.startsWith('#')
+  if (isHashAnchor && isGitHubSite) {
+    // Ignore same-page README heading / jump anchors on github.com (#installation, #top)
+    return null
+  }
+
+  // 1. Inspect the destination URL (resolving relative links strictly against the page context)
+  if (!isHashAnchor) {
+    let urlCandidate = fullHref
+    if (!urlCandidate && rawHref) {
+      if (rawHref.startsWith('/')) {
+        urlCandidate = isGitHubSite ? `https://github.com${rawHref}` : ''
+      } else {
+        urlCandidate = rawHref
+      }
+    }
+
+    if (urlCandidate) {
+      const unwrapped = unwrapSocialRedirectUrl(urlCandidate)
+      const normalizedUnwrapped = /^(?:www\.)?github\.com\//i.test(unwrapped)
+        ? `https://${unwrapped}`
+        : unwrapped
+
+      if (/^https?:\/\//i.test(normalizedUnwrapped)) {
+        try {
+          const u = new URL(normalizedUnwrapped)
+          const uHost = u.hostname.toLowerCase()
+          if (uHost === 'github.com' || uHost === 'www.github.com') {
+            // URL explicitly points to github.com: honor strict route acceptance/rejection
+            return extractRepoFromUrl(normalizedUnwrapped, { isGitHubSite })
+          }
+        } catch {
+          // Fall through if malformed
+        }
+      }
+    }
+  }
+
+  // 2. Fallback to concise visible text / title ONLY for explicit GitHub mentions (e.g. Twitter t.co links showing "github.com/owner/repo")
+  if (title && title.length <= 250) {
+    const fromTitle = extractRepoReference(title, { explicitOnly: true })
+    if (fromTitle) return fromTitle
+  }
+
+  if (innerText && innerText.length <= 250) {
+    const fromText = extractRepoReference(innerText, { explicitOnly: true })
+    if (fromText) return fromText
   }
 
   return null
