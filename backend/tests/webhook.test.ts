@@ -581,18 +581,21 @@ describe('Cloudflare Worker Entrypoint', () => {
     expect(badRes.status).toBe(401)
   })
 
-  it('POST /v1/mascot/chat returns HTTP 501 placeholder JSON', async () => {
+  it('POST /v1/mascot/chat requires an active Pro subscription (403 PRO_REQUIRED)', async () => {
     const req = new Request('https://api.example.com/v1/mascot/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: 'hi' })
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: 'hi' }],
+        repoContext: { owner: 'facebook', repo: 'react' }
+      })
     })
     const res = await worker.fetch(req, { KV: createMockKv() })
 
-    expect(res.status).toBe(501)
+    expect(res.status).toBe(403)
     expect(await res.json()).toEqual({
-      error: 'NOT_IMPLEMENTED',
-      message: 'Mascot chat endpoint wired in Task 6'
+      error: 'PRO_REQUIRED',
+      message: 'Mascot chat requires an active Pro subscription'
     })
   })
 

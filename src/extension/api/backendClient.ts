@@ -268,3 +268,122 @@ export async function fetchRemoteConfig(): Promise<RemoteConfig> {
     },
   }
 }
+
+export interface MascotChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface MascotRepoContext {
+  owner: string
+  repo: string
+  commitSha?: string
+}
+
+export interface StreamMascotChatParams {
+  messages: MascotChatMessage[]
+  repoContext: MascotRepoContext
+  onDelta: (delta: string) => void
+  signal?: AbortSignal
+}
+
+/**
+ * Consumes a `text/event-stream` byte stream, buffering partial lines across
+ * arbitrary network chunks and invoking `onDelta` for each `{ delta }` frame.
+ */
+export async function consumeSseDeltaStream(
+  body: ReadableStream<Uint8Array>,
+  onDelta: (delta: string) => void
+): Promise<string> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let fullText = ''
+
+  const processLine = (rawLine: string) => {
+    const trimmed = rawLine.trim()
+    if (!trimmed.startsWith('data:')) return
+    const payload = trimmed.slice(5).trim()
+    if (!payload || payload === '[DONE]') return
+    try {
+      const parsed = JSON.parse(payload) as { delta?: unknown }
+      if (typeof parsed?.delta === 'string' && parsed.delta.length > 0) {
+        fullText += parsed.delta
+        onDelta(parsed.delta)
+      }
+    } catch {
+      // Ignore malformed SSE frame
+    }
+  }
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (value) {
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split(/\r?\n/)
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          processLine(line)
+        }
+      }
+    }
+
+    buffer += decoder.decode()
+    if (buffer.length > 0) {
+      for (const line of buffer.split(/\r?\n/)) {
+        processLine(line)
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  return fullText
+}
+
+/**
+ * Streams a Pro Mascot chat reply from `/v1/mascot/chat` via Server-Sent Events (SSE).
+ * Includes `Authorization: Bearer <jwt>` and `X-Client-Signature`, and parses chunked SSE deltas.
+ */
+export async function streamMascotChat(params: StreamMascotChatParams): Promise<string> {
+  const [signature, session] = await Promise.all([getClientSignature(), getAuthSession()])
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Client-Signature': signature,
+  }
+
+  if (session?.accessToken) {
+    headers.Authorization = `Bearer ${session.accessToken}`
+  }
+
+  const safeCommitSha = params.repoContext.commitSha
+    ? sanitizeCommitRef(params.repoContext.commitSha)
+    : undefined
+
+  const res = await fetch(`${getBackendBaseUrl()}/v1/mascot/chat`, {
+    method: 'POST',
+    headers,
+    signal: params.signal,
+    body: JSON.stringify({
+      messages: params.messages,
+      repoContext: {
+        owner: params.repoContext.owner,
+        repo: params.repoContext.repo,
+        ...(safeCommitSha ? { commitSha: safeCommitSha } : {}),
+      },
+    }),
+  })
+
+  if (!res.ok) {
+    throw await parseErrorResponse(res)
+  }
+
+  if (!res.body) {
+    throw new BackendApiError('Empty mascot response stream', 502, 'STREAM_UNAVAILABLE')
+  }
+
+  return consumeSseDeltaStream(res.body, params.onDelta)
+}

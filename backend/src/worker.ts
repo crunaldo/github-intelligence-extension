@@ -1,3 +1,9 @@
+import {
+  handleMascotChatRequest,
+  InvalidMascotRequestError,
+  type MascotChatMessage,
+  type MascotChatOptions
+} from './ai/mascot-chat'
 import { generateRepoAnalysis } from './ai/router'
 import {
   AIProvidersExhaustedError,
@@ -26,6 +32,7 @@ export interface WorkerEnv {
   verifyProUser?: (token: string, env: WorkerEnv) => Promise<{ isPro: boolean; userId: string | null }>
   createSupabaseClient?: (env: WorkerEnv) => SupabaseClientLike
   analyzeRepo?: typeof generateRepoAnalysis
+  chatProviders?: MascotChatOptions['chatProviders']
 }
 
 interface RemoteConfigResponse {
@@ -472,6 +479,133 @@ async function handleWebhookRequest(request: Request, env: WorkerEnv): Promise<R
   }
 }
 
+async function handleMascotChat(request: Request, env: WorkerEnv): Promise<Response> {
+  const authHeader = request.headers.get('Authorization') ?? ''
+  const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i)
+  const token = bearerMatch?.[1]?.trim()
+
+  const { isPro, userId } = token
+    ? await verifySupabaseUser(token, env)
+    : { isPro: false, userId: null }
+
+  if (!userId || !isPro) {
+    return jsonResponse(
+      { error: 'PRO_REQUIRED', message: 'Mascot chat requires an active Pro subscription' },
+      403
+    )
+  }
+
+  const config = await readRemoteConfig(env.KV)
+  if (config.feature_flags.mascot_enabled === false) {
+    return jsonResponse(
+      { error: 'MASCOT_DISABLED', message: 'Mascot chat is currently disabled' },
+      403
+    )
+  }
+
+  let body: Record<string, unknown>
+  try {
+    const parsed: unknown = await request.json()
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return jsonResponse({ error: 'INVALID_REQUEST', message: 'JSON object body required' }, 400)
+    }
+    body = parsed as Record<string, unknown>
+  } catch {
+    return jsonResponse({ error: 'INVALID_REQUEST', message: 'Invalid JSON body' }, 400)
+  }
+
+  const rawRepoContext =
+    body.repoContext && typeof body.repoContext === 'object' && !Array.isArray(body.repoContext)
+      ? (body.repoContext as Record<string, unknown>)
+      : {}
+  const owner = rawRepoContext.owner
+  const repo = rawRepoContext.repo
+  const commitShaRaw = rawRepoContext.commitSha ?? rawRepoContext.commit_sha
+
+  if (!isSafeRepoSegment(owner) || !isSafeRepoSegment(repo)) {
+    return jsonResponse(
+      { error: 'INVALID_REQUEST', message: 'Valid repoContext.owner and repoContext.repo are required' },
+      400
+    )
+  }
+
+  const commitSha = isSafeRepoSegment(commitShaRaw) ? commitShaRaw : undefined
+  const messages = body.messages as MascotChatMessage[]
+
+  const [systemPromptRaw, priorityOrder, cached] = await Promise.all([
+    env.KV.get('system_prompt_mascot'),
+    readProviderPriority(env.KV),
+    commitSha ? getCachedAnalysis(owner, repo, commitSha, env.KV) : Promise.resolve(null)
+  ])
+
+  try {
+    const stream = await handleMascotChatRequest(
+      {
+        userId,
+        messages,
+        repoContext: {
+          owner,
+          repo,
+          ...(commitSha ? { commitSha } : {}),
+          ...(cached?.summary ? { summary: cached.summary } : {})
+        }
+      },
+      env.KV,
+      {
+        proLimit: config.pro_daily_limit,
+        systemPrompt: systemPromptRaw ?? undefined,
+        priorityOrder,
+        geminiApiKey: env.GEMINI_API_KEY,
+        groqApiKey: env.GROQ_API_KEY,
+        cfAiBinding: env.AI,
+        openRouterApiKey: env.OPENROUTER_API_KEY,
+        chatProviders: env.chatProviders
+      }
+    )
+
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        ...CORS_HEADERS,
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+      }
+    })
+  } catch (error) {
+    if (error instanceof InvalidMascotRequestError) {
+      return jsonResponse({ error: 'INVALID_REQUEST', message: error.message }, 400)
+    }
+
+    if (error instanceof Error && error.message === 'PRO_QUOTA_EXHAUSTED') {
+      return jsonResponse(
+        {
+          error: 'QUOTA_EXCEEDED',
+          code: 'PRO_QUOTA_EXHAUSTED',
+          message: 'Daily Pro limit reached'
+        },
+        429
+      )
+    }
+
+    const code = (error as { code?: string })?.code
+    if (error instanceof AIProvidersExhaustedError || code === 'AI_PROVIDERS_EXHAUSTED') {
+      return jsonResponse(
+        {
+          error: 'AI_PROVIDERS_EXHAUSTED',
+          message: 'All AI providers temporarily unavailable. Please retry shortly.'
+        },
+        503
+      )
+    }
+
+    return jsonResponse(
+      { error: 'INTERNAL_ERROR', message: 'Failed to process mascot chat' },
+      500
+    )
+  }
+}
+
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     if (request.method === 'OPTIONS') {
@@ -495,10 +629,7 @@ export default {
       }
 
       if (request.method === 'POST' && url.pathname === '/v1/mascot/chat') {
-        return jsonResponse(
-          { error: 'NOT_IMPLEMENTED', message: 'Mascot chat endpoint wired in Task 6' },
-          501
-        )
+        return await handleMascotChat(request, env)
       }
 
       return jsonResponse({ error: 'NOT_FOUND', message: 'Route not found' }, 404)
