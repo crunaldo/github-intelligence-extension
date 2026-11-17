@@ -2,6 +2,17 @@ import type { AnalysisResult, ProviderName, RepoContext } from '../types'
 
 const MAX_README_CHARS = 16000
 const MAX_MANIFEST_CHARS = 8000
+export const DEFAULT_MAX_OUTPUT_TOKENS = 2048
+export const DEFAULT_TIMEOUT_MS = 15000
+
+/** Creates an AbortSignal that times out after the configured milliseconds. */
+export function createTimeoutSignal(timeoutMs?: number): AbortSignal {
+  const effectiveTimeout =
+    typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? timeoutMs
+      : DEFAULT_TIMEOUT_MS
+  return AbortSignal.timeout(effectiveTimeout)
+}
 
 export const DEFAULT_SYSTEM_PROMPT = [
   'You are an expert software architect analyzing a public GitHub repository.',
@@ -148,6 +159,7 @@ export interface OpenAICompatibleOptions {
   model: string
   context: RepoContext
   systemPrompt?: string
+  timeoutMs?: number
   extraHeaders?: Record<string, string>
 }
 
@@ -178,6 +190,7 @@ export async function callOpenAICompatibleProvider(
       Authorization: `Bearer ${options.apiKey}`,
       ...options.extraHeaders
     },
+    signal: createTimeoutSignal(options.timeoutMs),
     body: JSON.stringify({
       model: options.model,
       messages: [
@@ -185,6 +198,7 @@ export async function callOpenAICompatibleProvider(
         { role: 'user', content: user }
       ],
       response_format: { type: 'json_object' },
+      max_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
       temperature: 0.2
     })
   })

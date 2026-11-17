@@ -131,6 +131,23 @@ describe('AI Multi-Provider Fallback Router', () => {
     })
 
     expect(fetchMock).toHaveBeenCalledOnce()
+    const [geminiUrl, geminiInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(geminiUrl).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
+    )
+    expect(geminiInit.method).toBe('POST')
+    expect(geminiInit.headers).toMatchObject({
+      'Content-Type': 'application/json',
+      'x-goog-api-key': 'test-gemini-key'
+    })
+    expect(geminiInit.signal).toBeInstanceOf(AbortSignal)
+    const geminiBody = JSON.parse(String(geminiInit.body))
+    expect(geminiBody.generationConfig).toEqual({
+      responseMimeType: 'application/json',
+      maxOutputTokens: 2048,
+      temperature: 0.2
+    })
+
     expect(result.providerUsed).toBe('gemini')
     expect(result.tokensConsumed).toBe(345)
     expect(result.summary.headline).toBe('A test project')
@@ -159,6 +176,25 @@ describe('AI Multi-Provider Fallback Router', () => {
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
+    )
+    const [groqUrl, groqInit] = fetchMock.mock.calls[1] as [string, RequestInit]
+    expect(groqUrl).toBe('https://api.groq.com/openai/v1/chat/completions')
+    expect(groqInit.method).toBe('POST')
+    expect(groqInit.headers).toMatchObject({
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer test-groq-key'
+    })
+    expect(groqInit.signal).toBeInstanceOf(AbortSignal)
+    const groqBody = JSON.parse(String(groqInit.body))
+    expect(groqBody).toMatchObject({
+      model: 'llama-3.3-70b-versatile',
+      response_format: { type: 'json_object' },
+      max_tokens: 2048,
+      temperature: 0.2
+    })
+
     expect(result.providerUsed).toBe('groq')
     expect(result.tokensConsumed).toBe(210)
     expect(result.deepAudit.strengths).toEqual(['Fast'])
@@ -195,6 +231,23 @@ describe('AI Multi-Provider Fallback Router', () => {
 
     expect(cfAiBinding.run).toHaveBeenCalledOnce()
     expect(fetchMock).toHaveBeenCalledOnce()
+    const [orUrl, orInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(orUrl).toBe('https://openrouter.ai/api/v1/chat/completions')
+    expect(orInit.method).toBe('POST')
+    expect(orInit.headers).toMatchObject({
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer test-or-key',
+      'X-Title': 'GitHub Intelligence Extension'
+    })
+    expect(orInit.signal).toBeInstanceOf(AbortSignal)
+    const orBody = JSON.parse(String(orInit.body))
+    expect(orBody).toMatchObject({
+      model: 'deepseek/deepseek-chat',
+      response_format: { type: 'json_object' },
+      max_tokens: 2048,
+      temperature: 0.2
+    })
+
     expect(result.providerUsed).toBe('openRouter')
     expect(result.tokensConsumed).toBe(512)
   })
@@ -215,14 +268,38 @@ describe('AI Multi-Provider Fallback Router', () => {
 
     expect(cfAiBinding.run).toHaveBeenCalledOnce()
     const callArgs = cfAiBinding.run.mock.calls[0]
+    expect(callArgs[0]).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast')
     expect(callArgs[1]).toMatchObject({
       messages: [
         { role: 'system', content: 'Custom architecture prompt' },
         { role: 'user', content: expect.stringContaining('test-owner/test-repo') }
-      ]
+      ],
+      max_tokens: 2048
     })
     expect(result.providerUsed).toBe('cfAi')
     expect(result.tokensConsumed).toBe(99)
     expect(result.summary.stackPills).toEqual(['TypeScript'])
+  })
+
+  it('applies custom timeoutMs via AbortSignal.timeout on outgoing fetch requests', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout')
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify(samplePayload) } }],
+          usage: { total_tokens: 77 }
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateRepoAnalysis(mockContext, {
+      groqApiKey: 'test-groq-key',
+      priorityOrder: ['groq'],
+      timeoutMs: 4200
+    })
+
+    expect(timeoutSpy).toHaveBeenCalledWith(4200)
   })
 })

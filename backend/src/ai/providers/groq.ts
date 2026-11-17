@@ -15,6 +15,7 @@ export async function analyzeWithGroq(
     apiKey: config.groqApiKey,
     model: GROQ_MODEL,
     context,
-    systemPrompt: config.systemPrompt
+    systemPrompt: config.systemPrompt,
+    timeoutMs: config.timeoutMs
   })
 }

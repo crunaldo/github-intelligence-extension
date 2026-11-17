@@ -1,5 +1,10 @@
 import type { AIConfig, AnalysisResult, RepoContext } from '../types'
-import { buildRepoPrompt, parseAnalysisResponse } from './shared'
+import {
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  buildRepoPrompt,
+  createTimeoutSignal,
+  parseAnalysisResponse
+} from './shared'
 
 const GEMINI_ENDPOINT =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
@@ -33,6 +38,7 @@ export async function analyzeWithGemini(
       'Content-Type': 'application/json',
       'x-goog-api-key': config.geminiApiKey
     },
+    signal: createTimeoutSignal(config.timeoutMs),
     body: JSON.stringify({
       systemInstruction: {
         parts: [{ text: system }]
@@ -45,6 +51,7 @@ export async function analyzeWithGemini(
       ],
       generationConfig: {
         responseMimeType: 'application/json',
+        maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
         temperature: 0.2
       }
     })

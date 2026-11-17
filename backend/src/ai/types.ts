@@ -3,7 +3,7 @@ export type ProviderName = 'gemini' | 'groq' | 'cfAi' | 'openRouter'
 export interface KVNamespace {
   get(key: string): Promise<string | null>
   put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>
-  delete?(key: string): Promise<void>
+  delete(key: string): Promise<void>
 }
 
 export interface RepoContext {
@@ -38,6 +38,7 @@ export interface AIConfig {
   providers?: Partial<Record<ProviderName, ProviderFn>>
   priorityOrder?: ProviderName[]
   systemPrompt?: string
+  timeoutMs?: number
   geminiApiKey?: string
   groqApiKey?: string
   cfAiBinding?: { run: (model: string, input: unknown) => Promise<unknown> }

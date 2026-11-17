@@ -16,6 +16,7 @@ export async function analyzeWithOpenRouter(
     model: OPENROUTER_MODEL,
     context,
     systemPrompt: config.systemPrompt,
+    timeoutMs: config.timeoutMs,
     extraHeaders: {
       'X-Title': 'GitHub Intelligence Extension'
     }

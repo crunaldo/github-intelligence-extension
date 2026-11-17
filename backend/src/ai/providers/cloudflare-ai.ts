@@ -1,5 +1,5 @@
 import type { AIConfig, AnalysisResult, RepoContext } from '../types'
-import { buildRepoPrompt, parseAnalysisResponse } from './shared'
+import { DEFAULT_MAX_OUTPUT_TOKENS, buildRepoPrompt, parseAnalysisResponse } from './shared'
 
 const CF_AI_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 
@@ -24,7 +24,8 @@ export async function analyzeWithCloudflareAi(
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user }
-    ]
+    ],
+    max_tokens: DEFAULT_MAX_OUTPUT_TOKENS
   })
 
   if (typeof rawResult === 'string') {
