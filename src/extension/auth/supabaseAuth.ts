@@ -15,10 +15,14 @@ export interface AuthSession {
 
 const AUTH_SESSION_STORAGE_KEY = 'gpi_auth_session'
 const DEFAULT_SUPABASE_URL = 'https://your-project.supabase.co'
+const DEFAULT_SUPABASE_ANON_KEY = 'public-anon-key-placeholder'
 const DEFAULT_LEMON_SQUEEZY_CHECKOUT_URL =
   'https://github-intelligence.lemonsqueezy.com/checkout/buy/pro-monthly'
+const TOKEN_EXPIRY_BUFFER_MS = 30_000
 
-function getEnvVar(key: 'VITE_SUPABASE_URL' | 'VITE_LEMON_SQUEEZY_CHECKOUT_URL'): string | undefined {
+function getEnvVar(
+  key: 'VITE_SUPABASE_URL' | 'VITE_SUPABASE_ANON_KEY' | 'VITE_LEMON_SQUEEZY_CHECKOUT_URL'
+): string | undefined {
   try {
     const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env
     return env?.[key]
@@ -30,6 +34,11 @@ function getEnvVar(key: 'VITE_SUPABASE_URL' | 'VITE_LEMON_SQUEEZY_CHECKOUT_URL')
 export function getSupabaseUrl(): string {
   const configured = getEnvVar('VITE_SUPABASE_URL')?.trim()
   return (configured || DEFAULT_SUPABASE_URL).replace(/\/+$/, '')
+}
+
+export function getSupabaseAnonKey(): string {
+  const configured = getEnvVar('VITE_SUPABASE_ANON_KEY')?.trim()
+  return configured || DEFAULT_SUPABASE_ANON_KEY
 }
 
 export function getLemonSqueezyCheckoutUrl(): string {
@@ -54,33 +63,86 @@ async function openExternalUrl(url: string): Promise<void> {
   }
 }
 
-function parseSessionFromRedirectUrl(
-  redirectUrl: string,
-  user: AuthUser
-): AuthSession | null {
+function toBase64Url(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  const base64 =
+    typeof btoa === 'function'
+      ? btoa(binary)
+      : Buffer.from(bytes).toString('base64')
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function generateCodeVerifier(): string {
+  const bytes = new Uint8Array(32)
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues(bytes)
+  } else {
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = Math.floor(Math.random() * 256)
+    }
+  }
+  return toBase64Url(bytes)
+}
+
+async function createPkceChallenge(verifier: string): Promise<string> {
+  const subtle = globalThis.crypto?.subtle
+  if (subtle && typeof subtle.digest === 'function') {
+    const encoded = new TextEncoder().encode(verifier)
+    const digest = await subtle.digest('SHA-256', encoded)
+    return toBase64Url(new Uint8Array(digest))
+  }
+  return verifier
+}
+
+function extractAuthParamsFromUrl(redirectUrl: string): {
+  code?: string
+  accessToken?: string
+  refreshToken?: string
+  expiresIn?: number
+} {
   try {
     const parsed = new URL(redirectUrl)
     const hashParams = new URLSearchParams(parsed.hash.replace(/^#/, ''))
+    const code = parsed.searchParams.get('code') || hashParams.get('code') || undefined
     const accessToken =
-      hashParams.get('access_token') || parsed.searchParams.get('access_token')
-    if (!accessToken) return null
-
+      hashParams.get('access_token') || parsed.searchParams.get('access_token') || undefined
     const refreshToken =
-      hashParams.get('refresh_token') ||
-      parsed.searchParams.get('refresh_token') ||
-      undefined
+      hashParams.get('refresh_token') || parsed.searchParams.get('refresh_token') || undefined
     const expiresInRaw =
       hashParams.get('expires_in') || parsed.searchParams.get('expires_in')
     const expiresIn = expiresInRaw ? Number.parseInt(expiresInRaw, 10) : NaN
 
     return {
+      code,
       accessToken,
       refreshToken,
-      expiresAt: Number.isFinite(expiresIn) ? Date.now() + expiresIn * 1000 : undefined,
-      user,
+      expiresIn: Number.isFinite(expiresIn) ? expiresIn : undefined,
     }
   } catch {
-    return null
+    return {}
+  }
+}
+
+interface RawSupabaseUser {
+  id?: string
+  email?: string
+  user_metadata?: {
+    user_name?: string
+    preferred_username?: string
+    avatar_url?: string
+  }
+}
+
+function mapSupabaseUser(data: RawSupabaseUser | undefined | null): AuthUser | null {
+  if (!data?.id) return null
+  return {
+    id: data.id,
+    email: data.email,
+    userName: data.user_metadata?.user_name || data.user_metadata?.preferred_username,
+    avatarUrl: data.user_metadata?.avatar_url,
   }
 }
 
@@ -91,31 +153,42 @@ async function fetchSupabaseUser(
   try {
     const res = await fetch(`${supabaseUrl}/auth/v1/user`, {
       headers: {
+        apikey: getSupabaseAnonKey(),
         Authorization: `Bearer ${accessToken}`,
       },
     })
     if (!res.ok) return null
-    const data = (await res.json()) as {
-      id?: string
-      email?: string
-      user_metadata?: { user_name?: string; preferred_username?: string; avatar_url?: string }
-    }
-    if (!data?.id) return null
-    return {
-      id: data.id,
-      email: data.email,
-      userName: data.user_metadata?.user_name || data.user_metadata?.preferred_username,
-      avatarUrl: data.user_metadata?.avatar_url,
-    }
+    const data = (await res.json()) as RawSupabaseUser
+    return mapSupabaseUser(data)
   } catch {
     return null
   }
 }
 
-/**
- * Reads the persisted Supabase authentication session from local extension storage.
- */
-export async function getAuthSession(): Promise<AuthSession | null> {
+async function fetchProStatus(
+  supabaseUrl: string,
+  accessToken: string,
+  userId: string
+): Promise<boolean | null> {
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=is_pro`,
+      {
+        headers: {
+          apikey: getSupabaseAnonKey(),
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    )
+    if (!res.ok) return null
+    const rows = (await res.json()) as Array<{ is_pro?: boolean }>
+    return Boolean(rows?.[0]?.is_pro)
+  } catch {
+    return null
+  }
+}
+
+async function readStoredSessionRaw(): Promise<AuthSession | null> {
   const storage = getChromeStorageLocal()
   if (storage) {
     const result = (await storage.get(AUTH_SESSION_STORAGE_KEY)) as Record<string, unknown>
@@ -135,6 +208,81 @@ export async function getAuthSession(): Promise<AuthSession | null> {
   } catch {
     return null
   }
+}
+
+function isSessionExpired(session: AuthSession): boolean {
+  if (typeof session.expiresAt !== 'number') return false
+  return Date.now() >= session.expiresAt - TOKEN_EXPIRY_BUFFER_MS
+}
+
+async function refreshSessionToken(session: AuthSession): Promise<AuthSession | null> {
+  if (!session.refreshToken) {
+    await signOut()
+    return null
+  }
+
+  const supabaseUrl = getSupabaseUrl()
+  try {
+    const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: getSupabaseAnonKey(),
+      },
+      body: JSON.stringify({ refresh_token: session.refreshToken }),
+    })
+
+    if (!res.ok) {
+      await signOut()
+      return null
+    }
+
+    const tokenPayload = (await res.json()) as {
+      access_token?: string
+      refresh_token?: string
+      expires_in?: number
+      user?: RawSupabaseUser
+    }
+
+    if (!tokenPayload?.access_token) {
+      await signOut()
+      return null
+    }
+
+    const refreshedUser = mapSupabaseUser(tokenPayload.user) ?? session.user
+    const proStatus = await fetchProStatus(supabaseUrl, tokenPayload.access_token, refreshedUser.id)
+    const refreshedSession: AuthSession = {
+      accessToken: tokenPayload.access_token,
+      refreshToken: tokenPayload.refresh_token || session.refreshToken,
+      expiresAt:
+        typeof tokenPayload.expires_in === 'number'
+          ? Date.now() + tokenPayload.expires_in * 1000
+          : undefined,
+      user: refreshedUser,
+      isPro: proStatus ?? session.isPro ?? false,
+    }
+
+    await saveAuthSession(refreshedSession)
+    return refreshedSession
+  } catch {
+    await signOut()
+    return null
+  }
+}
+
+/**
+ * Reads the persisted Supabase authentication session from local extension storage.
+ * Automatically refreshes expired tokens when a `refreshToken` is available, or clears stale sessions.
+ */
+export async function getAuthSession(): Promise<AuthSession | null> {
+  const session = await readStoredSessionRaw()
+  if (!session) return null
+
+  if (isSessionExpired(session)) {
+    return refreshSessionToken(session)
+  }
+
+  return session
 }
 
 /**
@@ -168,8 +316,74 @@ export async function signOut(): Promise<void> {
 }
 
 /**
- * Initiates Supabase 1-click GitHub OAuth sign-in.
- * Uses `chrome.identity.launchWebAuthFlow` when available, otherwise opens the OAuth tab.
+ * Queries Supabase `profiles.is_pro` for the current session and persists the updated `isPro` flag.
+ */
+export async function refreshProStatus(): Promise<AuthSession | null> {
+  const session = await getAuthSession()
+  if (!session) return null
+
+  const proStatus = await fetchProStatus(getSupabaseUrl(), session.accessToken, session.user.id)
+  if (proStatus === null) {
+    return session
+  }
+
+  const updated: AuthSession = { ...session, isPro: proStatus }
+  await saveAuthSession(updated)
+  return updated
+}
+
+async function exchangePkceCode(
+  supabaseUrl: string,
+  code: string,
+  codeVerifier: string
+): Promise<AuthSession | null> {
+  try {
+    const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=pkce`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: getSupabaseAnonKey(),
+      },
+      body: JSON.stringify({
+        auth_code: code,
+        code_verifier: codeVerifier,
+      }),
+    })
+    if (!res.ok) return null
+
+    const data = (await res.json()) as {
+      access_token?: string
+      refresh_token?: string
+      expires_in?: number
+      user?: RawSupabaseUser
+    }
+
+    if (!data?.access_token) return null
+
+    const user =
+      mapSupabaseUser(data.user) ?? (await fetchSupabaseUser(supabaseUrl, data.access_token))
+    if (!user) return null
+
+    const proStatus = await fetchProStatus(supabaseUrl, data.access_token, user.id)
+
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresAt:
+        typeof data.expires_in === 'number'
+          ? Date.now() + data.expires_in * 1000
+          : undefined,
+      user,
+      isPro: proStatus ?? false,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Initiates Supabase 1-click GitHub OAuth sign-in via `chrome.identity.launchWebAuthFlow`
+ * with PKCE and implicit `#access_token` redirect support, populating `isPro` from `profiles`.
  */
 export async function signInWithGitHub(): Promise<AuthSession | null> {
   const supabaseUrl = getSupabaseUrl()
@@ -186,37 +400,81 @@ export async function signInWithGitHub(): Promise<AuthSession | null> {
         }).identity
       : undefined
 
-  const redirectTo =
-    identity?.getRedirectURL?.('supabase-auth') ||
-    (typeof chrome !== 'undefined' && chrome.runtime?.id
-      ? `https://${chrome.runtime.id}.chromiumapp.org/supabase-auth`
-      : 'https://github.com')
+  const codeVerifier = generateCodeVerifier()
+  const codeChallenge = await createPkceChallenge(codeVerifier)
 
   const authUrl = new URL(`${supabaseUrl}/auth/v1/authorize`)
   authUrl.searchParams.set('provider', 'github')
-  authUrl.searchParams.set('redirect_to', redirectTo)
+  authUrl.searchParams.set('code_challenge', codeChallenge)
+  authUrl.searchParams.set('code_challenge_method', 's256')
 
   if (identity?.launchWebAuthFlow) {
+    const redirectTo =
+      identity.getRedirectURL?.('supabase-auth') ||
+      (typeof chrome !== 'undefined' && chrome.runtime?.id
+        ? `https://${chrome.runtime.id}.chromiumapp.org/supabase-auth`
+        : supabaseUrl)
+
+    authUrl.searchParams.set('redirect_to', redirectTo)
+
     const callbackUrl = await new Promise<string | undefined>((resolve) => {
       identity.launchWebAuthFlow!(
         { url: authUrl.toString(), interactive: true },
-        (responseUrl) => resolve(responseUrl)
+        (responseUrl) => {
+          const lastError =
+            typeof chrome !== 'undefined' ? chrome.runtime?.lastError : undefined
+          if (lastError || !responseUrl) {
+            resolve(undefined)
+            return
+          }
+          resolve(responseUrl)
+        }
       )
     })
 
-    if (callbackUrl) {
-      const prelim = parseSessionFromRedirectUrl(callbackUrl, { id: '' })
-      if (prelim?.accessToken) {
-        const user = await fetchSupabaseUser(supabaseUrl, prelim.accessToken)
-        if (user) {
-          const fullSession: AuthSession = { ...prelim, user }
-          await saveAuthSession(fullSession)
-          return fullSession
+    if (!callbackUrl) {
+      return null
+    }
+
+    const params = extractAuthParamsFromUrl(callbackUrl)
+
+    if (params.code) {
+      const pkceSession = await exchangePkceCode(supabaseUrl, params.code, codeVerifier)
+      if (pkceSession) {
+        await saveAuthSession(pkceSession)
+        return pkceSession
+      }
+      return null
+    }
+
+    if (params.accessToken) {
+      const user = await fetchSupabaseUser(supabaseUrl, params.accessToken)
+      if (user) {
+        const proStatus = await fetchProStatus(supabaseUrl, params.accessToken, user.id)
+        const fullSession: AuthSession = {
+          accessToken: params.accessToken,
+          refreshToken: params.refreshToken,
+          expiresAt:
+            typeof params.expiresIn === 'number'
+              ? Date.now() + params.expiresIn * 1000
+              : undefined,
+          user,
+          isPro: proStatus ?? false,
         }
+        await saveAuthSession(fullSession)
+        return fullSession
       }
     }
+
     return null
   }
+
+  // Non-identity fallback: never open a dead chromiumapp.org redirect URL.
+  const webRedirect =
+    typeof window !== 'undefined' && window.location?.origin?.startsWith('http')
+      ? window.location.origin
+      : supabaseUrl
+  authUrl.searchParams.set('redirect_to', webRedirect)
 
   await openExternalUrl(authUrl.toString())
   return getAuthSession()
@@ -239,7 +497,7 @@ export async function initiateProUpgrade(deps?: {
   }
 
   if (!session?.user?.id) {
-    // Interactive OAuth opened in another tab; wait for auth completion before checkout.
+    // Interactive OAuth did not complete yet; wait for auth completion before checkout.
     return
   }
 

@@ -13,6 +13,7 @@ export default defineConfig({
       'sidePanel',
       'contextMenus',
       'clipboardWrite',
+      'identity',
       'system.cpu',
       'system.memory',
       'system.storage',

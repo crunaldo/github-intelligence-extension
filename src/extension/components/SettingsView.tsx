@@ -21,6 +21,7 @@ import { resolveActiveLanguage, detectSystemLanguage, t, type AppLanguage, type 
 import {
   getAuthSession,
   initiateProUpgrade,
+  refreshProStatus,
   signInWithGitHub,
   signOut,
   type AuthSession,
@@ -50,7 +51,20 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
   const [authBusy, setAuthBusy] = useState(false)
 
   useEffect(() => {
-    void getAuthSession().then(setAuthSession)
+    let cancelled = false
+    void getAuthSession().then((session) => {
+      if (!cancelled) setAuthSession(session)
+      if (session) {
+        void refreshProStatus().then((refreshed) => {
+          if (!cancelled && refreshed) {
+            setAuthSession(refreshed)
+          }
+        })
+      }
+    })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const handleGitHubSignIn = async () => {

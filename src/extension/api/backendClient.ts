@@ -47,8 +47,27 @@ export class BackendApiError extends Error {
 
 const CLIENT_ID_STORAGE_KEY = 'gpi_client_id'
 const DEFAULT_BACKEND_API_URL = 'https://github-intelligence-api.workers.dev'
+const SAFE_COMMIT_REF_PATTERN = /^[A-Za-z0-9_.-]+$/
 
 let memoryClientId: string | null = null
+
+/**
+ * Validates that a commit SHA or branch ref satisfies the backend's safe segment rule
+ * (`^[A-Za-z0-9_.-]+$`, excluding `.` and `..`). Branch names containing slashes
+ * (e.g. `feat/monetization`) safely fall back to `'HEAD'`.
+ */
+export function sanitizeCommitRef(candidate?: string | null): string {
+  const trimmed = (candidate || '').trim()
+  if (
+    trimmed.length > 0 &&
+    trimmed !== '.' &&
+    !trimmed.includes('..') &&
+    SAFE_COMMIT_REF_PATTERN.test(trimmed)
+  ) {
+    return trimmed
+  }
+  return 'HEAD'
+}
 
 export function getBackendBaseUrl(): string {
   try {
@@ -201,10 +220,12 @@ export async function fetchRepoIntelligence(
     headers.Authorization = `Bearer ${session.accessToken}`
   }
 
+  const safeCommitSha = sanitizeCommitRef(commitSha)
+
   const res = await fetch(`${getBackendBaseUrl()}/v1/analyze`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ owner, repo, commitSha }),
+    body: JSON.stringify({ owner, repo, commitSha: safeCommitSha }),
   })
 
   if (!res.ok) {

@@ -193,6 +193,8 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     quota_exceeded_title: 'Límite diario gratuito alcanzado',
     quota_exceeded_desc: 'Has utilizado tus análisis gratuitos de hoy. Pásate a Pro para obtener análisis ilimitados de arquitectura, auditoría profunda y mascota IA.',
     upgrade_to_pro_btn: 'Mejorar a Pro ($4.99)',
+    ai_error_notice: 'No se pudo cargar el resumen inteligente en este momento.',
+    retry_btn: 'Reintentar',
   },
 
   en: {
@@ -330,6 +332,8 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     quota_exceeded_title: 'Daily free limit reached',
     quota_exceeded_desc: 'You have reached today’s free AI analysis limit. Upgrade to Pro for architecture diagrams, deep audits, and the interactive AI mascot.',
     upgrade_to_pro_btn: 'Upgrade to Pro ($4.99)',
+    ai_error_notice: 'Could not load AI intelligence right now.',
+    retry_btn: 'Retry',
   },
 }
 

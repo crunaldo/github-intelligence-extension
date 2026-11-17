@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
-import { BookOpen, Lightbulb, Sparkles, Terminal, Users } from 'lucide-react'
+import { AlertCircle, BookOpen, Lightbulb, RefreshCw, Sparkles, Terminal, Users } from 'lucide-react'
 import type { RepositoryReport } from '../../features/repository/types'
-import { BackendApiError, fetchRepoIntelligence } from '../api/backendClient'
+import { fetchRepoIntelligence, sanitizeCommitRef } from '../api/backendClient'
 import { initiateProUpgrade } from '../auth/supabaseAuth'
 import {
+  classifySummaryError,
   generateColloquialSpanishSummary,
+  generateFallbackSummary,
   mapAnalysisToColloquialSummary,
   type ColloquialExplanation,
 } from '../spanishSummary'
@@ -17,54 +19,63 @@ type Props = {
 }
 
 export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = false }: Props) {
-  const fallbackSummary = useMemo(
+  const loadingSummary = useMemo(
     () => generateColloquialSpanishSummary(report, locale),
     [report, locale]
   )
-  const [summary, setSummary] = useState<ColloquialExplanation>(fallbackSummary)
-  const [quotaExceeded, setQuotaExceeded] = useState(false)
-  const [upgrading, setUpgrading] = useState(false)
+  const fallbackSummary = useMemo(
+    () => generateFallbackSummary(report, locale),
+    [report, locale]
+  )
 
-  useEffect(() => {
-    setSummary(fallbackSummary)
-  }, [fallbackSummary])
+  const [summary, setSummary] = useState<ColloquialExplanation>(loadingSummary)
+  const [loading, setLoading] = useState(true)
+  const [quotaExceeded, setQuotaExceeded] = useState(false)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [upgrading, setUpgrading] = useState(false)
+  const [retryTick, setRetryTick] = useState(0)
 
   useEffect(() => {
     let isCancelled = false
     const owner = report.repository?.owner || report.target?.owner
     const repo = report.repository?.name || report.target?.repository
-    const commitSha =
-      report.latestCommit?.sha ||
-      report.resolvedRef ||
-      report.repository?.defaultBranch ||
-      'HEAD'
+    const commitSha = sanitizeCommitRef(
+      report.latestCommit?.sha || report.resolvedRef || report.repository?.defaultBranch
+    )
 
     if (!owner || !repo) {
+      setSummary(fallbackSummary)
+      setLoading(false)
+      setQuotaExceeded(false)
+      setAnalysisError(null)
       return
     }
 
+    setLoading(true)
     setQuotaExceeded(false)
+    setAnalysisError(null)
+    setSummary(loadingSummary)
 
     void fetchRepoIntelligence(owner, repo, commitSha)
       .then((analysis) => {
         if (!isCancelled) {
           setSummary(mapAnalysisToColloquialSummary(analysis, locale))
+          setLoading(false)
         }
       })
       .catch((err: unknown) => {
         if (isCancelled) return
-        if (
-          err instanceof BackendApiError &&
-          (err.status === 429 || err.code === 'QUOTA_EXCEEDED')
-        ) {
-          setQuotaExceeded(true)
-        }
+        const errorState = classifySummaryError(err)
+        setQuotaExceeded(errorState.quotaExceeded)
+        setAnalysisError(errorState.errorMessage)
+        setSummary(fallbackSummary)
+        setLoading(false)
       })
 
     return () => {
       isCancelled = true
     }
-  }, [report, locale])
+  }, [report, locale, loadingSummary, fallbackSummary, retryTick])
 
   const handleUpgrade = async () => {
     setUpgrading(true)
@@ -76,7 +87,7 @@ export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = f
   }
 
   return (
-    <div className="colloquial-container">
+    <div className="colloquial-container" aria-busy={loading}>
       {/* Top Banner Tag */}
       {!hideTopBanner && (
         <div className="colloquial-banner-row">
@@ -121,6 +132,36 @@ export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = f
           >
             <Sparkles size={13} />
             <span>{t('upgrade_to_pro_btn', locale)}</span>
+          </button>
+        </div>
+      )}
+
+      {analysisError && !quotaExceeded && (
+        <div
+          className="insight-card"
+          style={{
+            border: '1px solid rgba(245, 158, 11, 0.35)',
+            background: 'rgba(245, 158, 11, 0.08)',
+            marginBottom: 10,
+            padding: 10,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-secondary)' }}>
+            <AlertCircle size={14} style={{ color: 'var(--accent-amber)', flexShrink: 0 }} />
+            <span>{t('ai_error_notice', locale)}</span>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setRetryTick((n) => n + 1)}
+            style={{ padding: '4px 8px', fontSize: 11, flexShrink: 0 }}
+          >
+            <RefreshCw size={11} />
+            <span>{t('retry_btn', locale)}</span>
           </button>
         </div>
       )}
