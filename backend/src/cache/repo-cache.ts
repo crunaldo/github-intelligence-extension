@@ -8,9 +8,43 @@ function buildRepoCacheKey(owner: string, repo: string, commitSha: string): stri
   return `cache:repo:${owner.toLowerCase()}:${repo.toLowerCase()}:${commitSha}`
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+function isValidAnalysisResult(value: unknown): value is AnalysisResult {
+  if (!isPlainObject(value)) {
+    return false
+  }
+
+  const { summary, architectureDiagram, deepAudit, providerUsed, tokensConsumed } = value
+  if (!isPlainObject(summary) || !isPlainObject(deepAudit)) {
+    return false
+  }
+
+  return (
+    typeof summary.headline === 'string' &&
+    typeof summary.whatItIs === 'string' &&
+    typeof summary.whyItMatters === 'string' &&
+    typeof summary.practicalUse === 'string' &&
+    typeof summary.targetAudience === 'string' &&
+    isStringArray(summary.stackPills) &&
+    typeof architectureDiagram === 'string' &&
+    isStringArray(deepAudit.strengths) &&
+    isStringArray(deepAudit.concerns) &&
+    typeof providerUsed === 'string' &&
+    typeof tokensConsumed === 'number' &&
+    Number.isFinite(tokensConsumed)
+  )
+}
+
 /**
  * Reads a cached repository analysis from KV by normalized owner/repo and commit SHA.
- * Returns null on cache miss or corrupt JSON.
+ * Returns null on cache miss, corrupt JSON, or schema mismatch.
  */
 export async function getCachedAnalysis(
   owner: string,
@@ -25,10 +59,10 @@ export async function getCachedAnalysis(
 
   try {
     const parsed: unknown = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    if (!isValidAnalysisResult(parsed)) {
       return null
     }
-    return parsed as AnalysisResult
+    return parsed
   } catch {
     return null
   }

@@ -79,6 +79,30 @@ describe('Hierarchical Repo Cache', () => {
     expect(result).toBeNull()
   })
 
+  it('returns null when cached JSON is empty object or malformed AnalysisResult schema', async () => {
+    const sample = createSampleResult()
+    const invalidPayloads: unknown[] = [
+      {},
+      { summary: {}, providerUsed: 'gemini', tokensConsumed: 10 },
+      { ...sample, summary: { ...sample.summary, stackPills: [123] } },
+      { ...sample, summary: { ...sample.summary, headline: null } },
+      { ...sample, architectureDiagram: 42 },
+      { ...sample, deepAudit: { strengths: 'not-array', concerns: [] } },
+      { ...sample, deepAudit: { strengths: [], concerns: [false] } },
+      { ...sample, providerUsed: null },
+      { ...sample, tokensConsumed: '100' },
+      { ...sample, tokensConsumed: null }
+    ]
+
+    for (const payload of invalidPayloads) {
+      const kv = createMockKv({
+        'cache:repo:octocat:hello-world:sha123': JSON.stringify(payload)
+      })
+      const result = await getCachedAnalysis('OctoCat', 'Hello-World', 'sha123', kv)
+      expect(result).toBeNull()
+    }
+  })
+
   it('deletes cached entry on invalidateCachedAnalysis', async () => {
     const sample = createSampleResult()
     const kv = createMockKv({
