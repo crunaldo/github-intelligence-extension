@@ -49,6 +49,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
   const [showInstructions, setShowInstructions] = useState(true)
   const [authSession, setAuthSession] = useState<AuthSession | null>(null)
   const [authBusy, setAuthBusy] = useState(false)
+  const [authNotice, setAuthNotice] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -68,16 +69,25 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
   }, [])
 
   const handleGitHubSignIn = async () => {
+    setAuthNotice(null)
     setAuthBusy(true)
     try {
       const session = await signInWithGitHub()
+      if (!session) {
+        setAuthNotice(t('auth_cancelled_notice', activeLocale))
+      }
       setAuthSession(session)
+    } catch (err) {
+      setAuthNotice(
+        err instanceof Error && err.message ? err.message : t('auth_cancelled_notice', activeLocale)
+      )
     } finally {
       setAuthBusy(false)
     }
   }
 
   const handleSignOut = async () => {
+    setAuthNotice(null)
     setAuthBusy(true)
     try {
       await signOut()
@@ -88,10 +98,20 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
   }
 
   const handleUpgradeToPro = async () => {
+    setAuthNotice(null)
     setAuthBusy(true)
     try {
-      await initiateProUpgrade()
+      const session = await initiateProUpgrade()
+      if (!session) {
+        setAuthNotice(t('upgrade_cancelled_notice', activeLocale))
+      }
       setAuthSession(await getAuthSession())
+    } catch (err) {
+      setAuthNotice(
+        err instanceof Error && err.message
+          ? err.message
+          : t('upgrade_cancelled_notice', activeLocale)
+      )
     } finally {
       setAuthBusy(false)
     }
@@ -276,6 +296,27 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
             </button>
           )}
         </div>
+
+        {authNotice && (
+          <div
+            role="alert"
+            style={{
+              marginTop: 10,
+              padding: '8px 10px',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 11.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              background: 'rgba(245, 158, 11, 0.1)',
+              color: 'var(--accent-amber)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+            }}
+          >
+            <AlertCircle size={14} style={{ flexShrink: 0 }} />
+            <span>{authNotice}</span>
+          </div>
+        )}
       </div>
 
       {/* 2. GitHub Token Configuration Card */}

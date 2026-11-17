@@ -54,6 +54,56 @@ export default defineContentScript({
         }
       }
 
+      function extractCommitShaFromDom(owner: string, repo: string): string | undefined {
+        try {
+          const escapedOwner = owner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const escapedRepo = repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const commitHrefPattern = new RegExp(
+            `^/${escapedOwner}/${escapedRepo}/commit/([0-9a-f]{7,40})(?:[/?#]|$)`,
+            'i'
+          )
+
+          const prioritySelectors = [
+            '[data-testid*="latest-commit"] a[href*="/commit/"]',
+            '.commit-tease a[href*="/commit/"]',
+            'main a[href*="/commit/"]',
+            'a[href*="/commit/"]',
+          ]
+          for (const selector of prioritySelectors) {
+            const links = document.querySelectorAll(selector)
+            for (const link of links) {
+              const rawHref = link.getAttribute('href') || ''
+              let pathname = rawHref
+              if (rawHref.startsWith('http')) {
+                try {
+                  pathname = new URL(rawHref).pathname
+                } catch {
+                  continue
+                }
+              }
+              const match = commitHrefPattern.exec(pathname)
+              if (match?.[1]) {
+                return match[1]
+              }
+            }
+          }
+
+          const embeddedScripts = document.querySelectorAll(
+            'script[data-target="react-app.embeddedData"]'
+          )
+          for (const script of embeddedScripts) {
+            const content = script.textContent || ''
+            const oidMatch = /"currentOid"\s*:\s*"([0-9a-f]{7,40})"/i.exec(content)
+            if (oidMatch?.[1]) {
+              return oidMatch[1]
+            }
+          }
+        } catch {
+          // Fall back cleanly when GitHub DOM structure is unavailable
+        }
+        return undefined
+      }
+
       let mascotRoot: Root | null = null
 
       function renderFloatingMascot(activeRepo: FloatingMascotRepo | null) {
@@ -82,12 +132,18 @@ export default defineContentScript({
         const repo = parseGitHubRepo(currentUrl)
         lastUrl = currentUrl
 
+        const resolvedSha = repo
+          ? (/^[0-9a-f]{7,40}$/i.test(repo.ref || '')
+              ? repo.ref
+              : extractCommitShaFromDom(repo.owner, repo.repo)) || repo.ref
+          : undefined
+
         renderFloatingMascot(
           repo
             ? {
                 owner: repo.owner,
                 repo: repo.repo,
-                ...(repo.ref ? { commitSha: repo.ref } : {}),
+                ...(resolvedSha ? { commitSha: resolvedSha } : {}),
               }
             : null
         )

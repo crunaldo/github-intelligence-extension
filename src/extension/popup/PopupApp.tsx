@@ -21,8 +21,12 @@ import {
   analyzeGitHubRepository,
   parseFlexibleGitHubUrl,
   extractRepoReference,
-  getLatestRateLimit,
 } from '../../features/repository/github'
+import {
+  clearLocalIntelligenceCache,
+  fetchRemoteConfig,
+  type RemoteConfig,
+} from '../api/backendClient'
 import { createReportExport } from '../../features/repository/export'
 import {
   getStoredPreferences,
@@ -74,15 +78,17 @@ export function PopupApp() {
   const [copiedMd, setCopiedMd] = useState<boolean>(false)
   const [isFavorite, setIsFavorite] = useState<boolean>(false)
   const [activeSubTab, setActiveSubTab] = useState<'hardware' | 'roadmap' | 'details' | null>(null)
-  const [rateLimit, setRateLimit] = useState<{ remaining: number | null; resetAt: string | null }>(getLatestRateLimit())
+  const [remoteConfig, setRemoteConfig] = useState<RemoteConfig | null>(null)
+  const [refreshNonce, setRefreshNonce] = useState<number>(0)
   const [showSearch, setShowSearch] = useState<boolean>(false)
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false)
   const [hardware, setHardware] = useState<HardwareInfo | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
 
-  // Detect system hardware on mount
+  // Detect system hardware and remote config on mount
   useEffect(() => {
     void detectSystemHardware().then(setHardware)
+    void fetchRemoteConfig().then(setRemoteConfig).catch(() => {})
   }, [])
 
   const compat = useMemo(() => {
@@ -113,7 +119,6 @@ export function PopupApp() {
       const cached = await getCachedReport(target.originalUrl)
       if (cached) {
         setReport(cached)
-        setRateLimit(cached.apiRateLimit)
         return
       }
     }
@@ -129,8 +134,10 @@ export function PopupApp() {
     setLoading(true)
     try {
       const res = await analyzeGitHubRepository(target, controller.signal)
+      if (force) {
+        setRefreshNonce((n) => n + 1)
+      }
       setReport(res)
-      setRateLimit(res.apiRateLimit)
       await saveCachedReport(res)
       await addStoredRecent(res)
     } catch (err) {
@@ -331,12 +338,11 @@ export function PopupApp() {
           <div
             onClick={() => setShowSettingsModal(true)}
             style={{ cursor: 'pointer' }}
-            title={activeLocale === 'es' ? 'Ver límite de solicitudes y configurar GitHub Token' : 'View rate limit and configure GitHub Token'}
+            title={activeLocale === 'es' ? 'Estado de GitHub Token (clic para configurar)' : 'GitHub Token status (click to configure)'}
           >
             <RateLimitGauge
-              remaining={rateLimit?.remaining ?? null}
-              resetAt={rateLimit?.resetAt ?? null}
               hasToken={Boolean(preferences.githubToken)}
+              locale={activeLocale}
             />
           </div>
 
@@ -383,7 +389,37 @@ export function PopupApp() {
         </div>
       </header>
 
-      {/* API Rate Limit Alert Banner if no token configured */}
+      {/* Remote Admin Banner Message (maintenance or broadcast) */}
+      {remoteConfig?.featureFlags.bannerMessage && (
+        <div
+          className="ext-api-alert-banner"
+          style={
+            remoteConfig.featureFlags.maintenanceMode
+              ? {
+                  borderColor: 'rgba(244, 63, 94, 0.35)',
+                  background: 'rgba(244, 63, 94, 0.1)',
+                }
+              : undefined
+          }
+        >
+          <div className="ext-api-alert-content">
+            <AlertCircle
+              size={14}
+              className="ext-api-alert-icon"
+              style={
+                remoteConfig.featureFlags.maintenanceMode
+                  ? { color: 'var(--accent-rose)' }
+                  : undefined
+              }
+            />
+            <div className="ext-api-alert-text">
+              {remoteConfig.featureFlags.bannerMessage}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* API Token Alert Banner if no token configured */}
       {!preferences.githubToken && (
         <div className="ext-api-alert-banner">
           <div className="ext-api-alert-content">
@@ -512,6 +548,7 @@ export function PopupApp() {
                   setPreferences(updated)
                 }}
                 onClearCache={async () => {
+                  await clearLocalIntelligenceCache()
                   if (typeof chrome !== 'undefined' && chrome.storage?.local) {
                     await chrome.storage.local.remove(['gpi_reports', 'gpi_recent'])
                   } else {
@@ -584,7 +621,7 @@ export function PopupApp() {
             <div className="repo-hero-integrated-card" style={{ marginTop: 10 }}>
               {/* Explicación del Repo Integrada Aquí Mismo */}
               <div className="integrated-summary-section" style={{ borderTop: 'none', paddingTop: 0 }}>
-                <ColloquialSummaryCard report={report} locale={activeLocale} />
+                <ColloquialSummaryCard report={report} locale={activeLocale} refreshNonce={refreshNonce} />
               </div>
 
               {/* 📦 Comando de Instalación en 1-Clic */}
@@ -648,8 +685,12 @@ export function PopupApp() {
             {/* Módulo Desplegable: Detalles Técnicos & Lenguajes */}
             {activeSubTab === 'details' && (
               <div className="subtab-view-container animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {/* 📊 4. Diagrama Visual de Arquitectura Interactivo con Mermaid.js */}
-                <ArchitectureDiagramView report={report} locale={activeLocale} />
+                {/* 📊 4. Diagrama Visual de Arquitectura Pro & Auditoría Profunda */}
+                <ArchitectureDiagramView
+                  report={report}
+                  locale={activeLocale}
+                  diagramsEnabled={remoteConfig?.featureFlags.enableDiagrams}
+                />
 
                 {/* 🩺 3. Índice de Salud & Actividad Detallado */}
                 <RepoHealthCard report={report} locale={activeLocale} />

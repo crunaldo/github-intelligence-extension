@@ -1,40 +1,34 @@
 import { Shield } from 'lucide-react'
+import type { ActiveLocale } from '../i18n'
 
 type RateLimitGaugeProps = {
-  remaining: number | null
-  resetAt: string | null
   hasToken?: boolean
+  locale?: ActiveLocale
 }
 
-export function RateLimitGauge({ remaining, resetAt, hasToken }: RateLimitGaugeProps) {
-  const max = hasToken ? 5000 : 60
-  const count = remaining !== null ? remaining : max
-  const ratio = count / max
+export function RateLimitGauge({ hasToken, locale = 'es' }: RateLimitGaugeProps) {
+  const isEs = locale === 'es'
+  const label = hasToken
+    ? isEs
+      ? 'Token activo'
+      : 'Token ready'
+    : isEs
+      ? 'Token requerido'
+      : 'Token needed'
 
-  let statusClass = 'good'
-  if (ratio < 0.2) statusClass = 'low'
-  else if (ratio < 0.5) statusClass = 'warn'
-
-  let resetLabel = ''
-  if (resetAt) {
-    try {
-      const date = new Date(resetAt)
-      resetLabel = `Reinicia a las ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-    } catch {
-      // ignore
-    }
-  }
+  const tooltip = hasToken
+    ? isEs
+      ? 'GitHub Personal Access Token conectado localmente para inspección profunda de repositorios.'
+      : 'GitHub Personal Access Token connected locally for deep repository inspection.'
+    : isEs
+      ? 'Configura tu GitHub Personal Access Token en Ajustes para inspeccionar árboles y dependencias.'
+      : 'Configure your GitHub Personal Access Token in Settings to inspect repository trees and dependencies.'
 
   return (
-    <div
-      className="rate-limit-pill"
-      title={`GitHub API: ${count} de ${max} peticiones disponibles${resetLabel ? ` (${resetLabel})` : ''}${hasToken ? ' [Token activo]' : ' [Sin token: límite de 60/h]'}`}
-    >
+    <div className="rate-limit-pill" title={tooltip}>
       <Shield size={12} style={{ color: 'var(--text-muted)' }} />
-      <span className={`rate-indicator ${statusClass}`} />
-      <span>
-        {remaining !== null ? remaining : '--'}/{max}
-      </span>
+      <span className={`rate-indicator ${hasToken ? 'good' : 'warn'}`} />
+      <span>{label}</span>
     </div>
   )
 }

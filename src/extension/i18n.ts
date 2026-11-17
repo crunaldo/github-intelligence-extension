@@ -195,6 +195,12 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     upgrade_to_pro_btn: 'Mejorar a Pro ($4.99)',
     ai_error_notice: 'No se pudo cargar el resumen inteligente en este momento.',
     retry_btn: 'Reintentar',
+    maintenance_title: 'Modo mantenimiento',
+    pro_arch_locked_title: 'Diagrama de Arquitectura & Auditoría Pro',
+    pro_arch_locked_desc: 'Desbloquea diagramas Mermaid generados por IA y auditoría técnica profunda de fortalezas y riesgos con el Plan Pro.',
+    pro_diagrams_disabled_notice: 'Los diagramas de arquitectura están temporalmente deshabilitados por el administrador.',
+    auth_cancelled_notice: 'El inicio de sesión con GitHub fue cancelado o no se completó.',
+    upgrade_cancelled_notice: 'Completa el inicio de sesión con GitHub para abrir el checkout Pro.',
   },
 
   en: {
@@ -334,6 +340,12 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     upgrade_to_pro_btn: 'Upgrade to Pro ($4.99)',
     ai_error_notice: 'Could not load AI intelligence right now.',
     retry_btn: 'Retry',
+    maintenance_title: 'Maintenance Mode',
+    pro_arch_locked_title: 'Pro Architecture Diagram & Deep Audit',
+    pro_arch_locked_desc: 'Unlock AI-generated Mermaid architecture diagrams and deep technical strengths & concerns audits with Pro.',
+    pro_diagrams_disabled_notice: 'Architecture diagrams are temporarily disabled by the administrator.',
+    auth_cancelled_notice: 'GitHub sign-in was cancelled or did not complete.',
+    upgrade_cancelled_notice: 'Complete GitHub sign-in to proceed to Pro checkout.',
   },
 }
 

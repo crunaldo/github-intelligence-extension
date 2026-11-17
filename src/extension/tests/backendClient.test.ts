@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   BackendApiError,
+  clearLocalIntelligenceCache,
   fetchRepoIntelligence,
   fetchRemoteConfig,
   sanitizeCommitRef,
@@ -530,6 +531,119 @@ describe('Extension Backend Client & Auth', () => {
     expect(
       classifySummaryError(new BackendApiError('Service unavailable', 503, 'AI_PROVIDERS_EXHAUSTED'))
     ).toEqual({ quotaExceeded: false, errorMessage: 'Service unavailable' })
+
+    expect(
+      classifySummaryError(
+        new BackendApiError('Planned maintenance window', 503, 'MAINTENANCE_MODE')
+      )
+    ).toEqual({
+      quotaExceeded: false,
+      maintenanceMode: true,
+      errorMessage: 'Planned maintenance window',
+    })
+  })
+
+  it('caches fetchRepoIntelligence locally per owner/repo@commitSha:tier and supports forceRefresh', async () => {
+    await clearLocalIntelligenceCache()
+
+    const freePayload = {
+      summary: {
+        headline: 'Vite',
+        whatItIs: 'Build tool.',
+        whyItMatters: 'Fast.',
+        practicalUse: 'Bundle.',
+        targetAudience: 'Web devs',
+        stackPills: ['TS'],
+      },
+      providerUsed: 'gemini',
+      tokensConsumed: 120,
+    }
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      ok: true,
+      json: async () => freePayload,
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    // 1. Concurrent + subsequent calls share a single /v1/analyze request
+    const [first, second] = await Promise.all([
+      fetchRepoIntelligence('vitejs', 'vite', 'sha-vite-1'),
+      fetchRepoIntelligence('vitejs', 'vite', 'sha-vite-1'),
+    ])
+    const third = await fetchRepoIntelligence('ViteJS', 'Vite', 'sha-vite-1')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(first.summary.headline).toBe('Vite')
+    expect(second.summary.headline).toBe('Vite')
+    expect(third.summary.headline).toBe('Vite')
+
+    // 2. forceRefresh bypasses cache
+    await fetchRepoIntelligence('vitejs', 'vite', 'sha-vite-1', { forceRefresh: true })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    // 3. Tier change (anonymous -> Pro user) isolates cache key and fetches Pro payload
+    await saveAuthSession({
+      accessToken: 'jwt-pro-cache',
+      expiresAt: Date.now() + 60_000,
+      user: { id: 'pro-cache-user' },
+      isPro: true,
+    })
+    fetchMock.mockResolvedValueOnce({
+      status: 200,
+      ok: true,
+      json: async () => ({
+        ...freePayload,
+        architectureDiagram: 'graph TD; Vite-->Rollup;',
+      }),
+    })
+
+    const proResult = await fetchRepoIntelligence('vitejs', 'vite', 'sha-vite-1')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(proResult.architectureDiagram).toBe('graph TD; Vite-->Rollup;')
+  })
+
+  it('preserves refreshToken on transient 5xx or offline network errors during token refresh', async () => {
+    const expiredSession: AuthSession = {
+      accessToken: 'expired-jwt-offline',
+      refreshToken: 'keep-me-refresh-token',
+      expiresAt: Date.now() - 10_000,
+      user: { id: 'user-offline-1', userName: 'offline-dev' },
+      isPro: true,
+    }
+    await saveAuthSession(expiredSession)
+
+    // 1. Transient 503 -> returns null without wiping stored refreshToken
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: 'service_unavailable' }),
+    }) as unknown as typeof fetch
+
+    expect(await getAuthSession()).toBeNull()
+    const storageLocal = (
+      globalThis as unknown as {
+        chrome: { storage: { local: { get: (k: string) => Promise<Record<string, AuthSession>> } } }
+      }
+    ).chrome.storage.local
+    const after503 = await storageLocal.get('gpi_auth_session')
+    expect(after503.gpi_auth_session?.refreshToken).toBe('keep-me-refresh-token')
+
+    // 2. Network throw -> returns null without wiping stored refreshToken
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network offline')) as unknown as typeof fetch
+    expect(await getAuthSession()).toBeNull()
+    const afterNetworkErr = await storageLocal.get('gpi_auth_session')
+    expect(afterNetworkErr.gpi_auth_session?.refreshToken).toBe('keep-me-refresh-token')
+
+    // 3. Explicit 400 invalid_grant -> clears stored session
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'invalid_grant' }),
+    }) as unknown as typeof fetch
+    expect(await getAuthSession()).toBeNull()
+    const after400 = await storageLocal.get('gpi_auth_session')
+    expect(after400.gpi_auth_session).toBeUndefined()
   })
 
   it('removes 60 and 5,000 requests/hour explanations from GitHub PAT i18n copy', () => {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
+  AlertCircle,
   Sparkles,
   Search,
   RefreshCw,
@@ -22,8 +23,12 @@ import {
   analyzeGitHubRepository,
   parseFlexibleGitHubUrl,
   extractRepoReference,
-  getLatestRateLimit,
 } from '../../features/repository/github'
+import {
+  clearLocalIntelligenceCache,
+  fetchRemoteConfig,
+  type RemoteConfig,
+} from '../api/backendClient'
 import { createReportExport, downloadReport } from '../../features/repository/export'
 import {
   getStoredPreferences,
@@ -80,12 +85,14 @@ export function SidepanelApp() {
   const [reportSection, setReportSection] = useState<ReportSection>('overview')
   const [fileFilter, setFileFilter] = useState<string>('')
   const [copiedMd, setCopiedMd] = useState<boolean>(false)
-  const [rateLimit, setRateLimit] = useState<{ remaining: number | null; resetAt: string | null }>(getLatestRateLimit())
+  const [remoteConfig, setRemoteConfig] = useState<RemoteConfig | null>(null)
+  const [refreshNonce, setRefreshNonce] = useState<number>(0)
   const [hardware, setHardware] = useState<HardwareInfo | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     void detectSystemHardware().then(setHardware)
+    void fetchRemoteConfig().then(setRemoteConfig).catch(() => {})
   }, [])
 
   const compat = useMemo(() => {
@@ -135,7 +142,6 @@ export function SidepanelApp() {
         const cached = await getCachedReport(target.originalUrl)
         if (cached) {
           setReport(cached)
-          setRateLimit(cached.apiRateLimit)
           setNav('analyze')
           return
         }
@@ -152,8 +158,10 @@ export function SidepanelApp() {
       setLoading(true)
       try {
         const res = await analyzeGitHubRepository(target, controller.signal)
+        if (force) {
+          setRefreshNonce((n) => n + 1)
+        }
         setReport(res)
-        setRateLimit(res.apiRateLimit)
         await saveCachedReport(res)
         await addStoredRecent(res)
         const updatedList = await getAllSavedReports()
@@ -359,13 +367,48 @@ export function SidepanelApp() {
         <ExtHeaderBrand tag="Side Panel" />
 
         <div className="ext-header-actions">
-          <RateLimitGauge
-            remaining={rateLimit?.remaining ?? null}
-            resetAt={rateLimit?.resetAt ?? null}
-            hasToken={Boolean(preferences.githubToken)}
-          />
+          <div
+            onClick={() => setNav('settings')}
+            style={{ cursor: 'pointer' }}
+            title={activeLocale === 'es' ? 'Estado de GitHub Token (clic para configurar)' : 'GitHub Token status (click to configure)'}
+          >
+            <RateLimitGauge
+              hasToken={Boolean(preferences.githubToken)}
+              locale={activeLocale}
+            />
+          </div>
         </div>
       </header>
+
+      {/* Remote Admin Banner Message (maintenance or broadcast) */}
+      {remoteConfig?.featureFlags.bannerMessage && (
+        <div
+          className="ext-api-alert-banner"
+          style={
+            remoteConfig.featureFlags.maintenanceMode
+              ? {
+                  borderColor: 'rgba(244, 63, 94, 0.35)',
+                  background: 'rgba(244, 63, 94, 0.1)',
+                }
+              : undefined
+          }
+        >
+          <div className="ext-api-alert-content">
+            <AlertCircle
+              size={14}
+              className="ext-api-alert-icon"
+              style={
+                remoteConfig.featureFlags.maintenanceMode
+                  ? { color: 'var(--accent-rose)' }
+                  : undefined
+              }
+            />
+            <div className="ext-api-alert-text">
+              {remoteConfig.featureFlags.bannerMessage}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Nuevo repositorio detectado al cambiar de pestaña */}
       {activeTabRepo && report && `${activeTabRepo.owner}/${activeTabRepo.repository}`.toLowerCase() !== (report.repository?.fullName || '').toLowerCase() && dismissedDetectedRepo !== activeTabRepo.originalUrl && (
@@ -541,7 +584,7 @@ export function SidepanelApp() {
                 <div className="repo-hero-integrated-card">
                   {/* Explicación del Repo Integrada Aquí Mismo de Primero */}
                   <div className="integrated-summary-section" style={{ borderTop: 'none', paddingTop: 0 }}>
-                    <ColloquialSummaryCard report={report} locale={activeLocale} />
+                    <ColloquialSummaryCard report={report} locale={activeLocale} refreshNonce={refreshNonce} />
                   </div>
 
                   {/* 📦 Comando de Instalación en 1-Clic */}
@@ -602,8 +645,12 @@ export function SidepanelApp() {
 
                 {reportSection === 'architecture' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {/* 📊 4. Diagrama Visual de Arquitectura Interactivo con Mermaid.js */}
-                    <ArchitectureDiagramView report={report} locale={activeLocale} />
+                    {/* 📊 4. Diagrama Visual de Arquitectura Pro & Auditoría Profunda */}
+                    <ArchitectureDiagramView
+                      report={report}
+                      locale={activeLocale}
+                      diagramsEnabled={remoteConfig?.featureFlags.enableDiagrams}
+                    />
 
                     <div className="insight-card">
                       <div className="insight-title" style={{ color: 'var(--text-secondary)' }}>
@@ -908,6 +955,7 @@ export function SidepanelApp() {
               document.documentElement.setAttribute('data-theme', updated.theme === 'system' ? 'dark' : updated.theme)
             }}
             onClearCache={async () => {
+              await clearLocalIntelligenceCache()
               for (const r of savedReports) {
                 await deleteSavedReport(r.repository.fullName)
               }

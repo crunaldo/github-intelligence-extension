@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
-import { AlertCircle, BookOpen, Lightbulb, RefreshCw, Sparkles, Terminal, Users } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { AlertCircle, BookOpen, Lightbulb, RefreshCw, Sparkles, Terminal, Users, Wrench } from 'lucide-react'
 import type { RepositoryReport } from '../../features/repository/types'
 import { fetchRepoIntelligence, sanitizeCommitRef } from '../api/backendClient'
 import { initiateProUpgrade } from '../auth/supabaseAuth'
@@ -16,9 +16,15 @@ type Props = {
   report: RepositoryReport
   locale?: ActiveLocale
   hideTopBanner?: boolean
+  refreshNonce?: number
 }
 
-export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = false }: Props) {
+export function ColloquialSummaryCard({
+  report,
+  locale = 'es',
+  hideTopBanner = false,
+  refreshNonce = 0,
+}: Props) {
   const loadingSummary = useMemo(
     () => generateColloquialSpanishSummary(report, locale),
     [report, locale]
@@ -31,9 +37,13 @@ export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = f
   const [summary, setSummary] = useState<ColloquialExplanation>(loadingSummary)
   const [loading, setLoading] = useState(true)
   const [quotaExceeded, setQuotaExceeded] = useState(false)
+  const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [upgrading, setUpgrading] = useState(false)
+  const [upgradeNotice, setUpgradeNotice] = useState<string | null>(null)
   const [retryTick, setRetryTick] = useState(0)
+  const lastRefreshNonceRef = useRef(refreshNonce)
+  const lastRetryTickRef = useRef(retryTick)
 
   useEffect(() => {
     let isCancelled = false
@@ -43,20 +53,32 @@ export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = f
       report.latestCommit?.sha || report.resolvedRef || report.repository?.defaultBranch
     )
 
+    const shouldForceRefresh =
+      refreshNonce !== lastRefreshNonceRef.current || retryTick !== lastRetryTickRef.current
+    lastRefreshNonceRef.current = refreshNonce
+    lastRetryTickRef.current = retryTick
+
     if (!owner || !repo) {
       setSummary(fallbackSummary)
       setLoading(false)
       setQuotaExceeded(false)
+      setMaintenanceMessage(null)
       setAnalysisError(null)
       return
     }
 
     setLoading(true)
     setQuotaExceeded(false)
+    setMaintenanceMessage(null)
     setAnalysisError(null)
     setSummary(loadingSummary)
 
-    void fetchRepoIntelligence(owner, repo, commitSha)
+    void fetchRepoIntelligence(
+      owner,
+      repo,
+      commitSha,
+      shouldForceRefresh ? { forceRefresh: true } : undefined
+    )
       .then((analysis) => {
         if (!isCancelled) {
           setSummary(mapAnalysisToColloquialSummary(analysis, locale))
@@ -67,7 +89,8 @@ export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = f
         if (isCancelled) return
         const errorState = classifySummaryError(err)
         setQuotaExceeded(errorState.quotaExceeded)
-        setAnalysisError(errorState.errorMessage)
+        setMaintenanceMessage(errorState.maintenanceMode ? errorState.errorMessage : null)
+        setAnalysisError(errorState.maintenanceMode ? null : errorState.errorMessage)
         setSummary(fallbackSummary)
         setLoading(false)
       })
@@ -75,12 +98,20 @@ export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = f
     return () => {
       isCancelled = true
     }
-  }, [report, locale, loadingSummary, fallbackSummary, retryTick])
+  }, [report, locale, loadingSummary, fallbackSummary, retryTick, refreshNonce])
 
   const handleUpgrade = async () => {
+    setUpgradeNotice(null)
     setUpgrading(true)
     try {
-      await initiateProUpgrade()
+      const session = await initiateProUpgrade()
+      if (!session) {
+        setUpgradeNotice(t('upgrade_cancelled_notice', locale))
+      }
+    } catch (err) {
+      setUpgradeNotice(
+        err instanceof Error && err.message ? err.message : t('upgrade_cancelled_notice', locale)
+      )
     } finally {
       setUpgrading(false)
     }
@@ -133,10 +164,38 @@ export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = f
             <Sparkles size={13} />
             <span>{t('upgrade_to_pro_btn', locale)}</span>
           </button>
+          {upgradeNotice && (
+            <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--accent-amber)', lineHeight: 1.4 }}>
+              {upgradeNotice}
+            </p>
+          )}
         </div>
       )}
 
-      {analysisError && !quotaExceeded && (
+      {maintenanceMessage && (
+        <div
+          className="insight-card"
+          style={{
+            border: '1px solid rgba(244, 63, 94, 0.35)',
+            background: 'rgba(244, 63, 94, 0.08)',
+            marginBottom: 10,
+            padding: 10,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 8,
+          }}
+        >
+          <Wrench size={14} style={{ color: 'var(--accent-rose)', flexShrink: 0, marginTop: 2 }} />
+          <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+            <strong style={{ color: 'var(--text-primary)', display: 'block', marginBottom: 2 }}>
+              {t('maintenance_title', locale)}
+            </strong>
+            <span>{maintenanceMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {analysisError && !quotaExceeded && !maintenanceMessage && (
         <div
           className="insight-card"
           style={{

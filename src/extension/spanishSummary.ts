@@ -14,6 +14,7 @@ export type ColloquialExplanation = {
 
 export interface SummaryErrorState {
   quotaExceeded: boolean
+  maintenanceMode?: boolean
   errorMessage: string | null
 }
 
@@ -52,9 +53,8 @@ export function mapAnalysisToColloquialSummary(
   locale: ActiveLocale = 'es'
 ): ColloquialExplanation {
   const s = analysis.summary
-  const fallbackPill = locale === 'en' ? 'Software' : 'Software'
   const stackPills =
-    Array.isArray(s.stackPills) && s.stackPills.length > 0 ? s.stackPills : [fallbackPill]
+    Array.isArray(s.stackPills) && s.stackPills.length > 0 ? s.stackPills : ['Software']
 
   return {
     headline: s.headline,
@@ -134,7 +134,7 @@ export function generateFallbackSummary(
 }
 
 /**
- * Classifies a backend error into quota-exceeded vs transient/non-429 error state.
+ * Classifies a backend error into quota-exceeded, maintenance-mode, or transient error state.
  */
 export function classifySummaryError(err: unknown): SummaryErrorState {
   if (
@@ -144,6 +144,14 @@ export function classifySummaryError(err: unknown): SummaryErrorState {
     return {
       quotaExceeded: true,
       errorMessage: null,
+    }
+  }
+
+  if (err instanceof BackendApiError && err.code === 'MAINTENANCE_MODE') {
+    return {
+      quotaExceeded: false,
+      maintenanceMode: true,
+      errorMessage: err.message || 'Service is temporarily under maintenance.',
     }
   }
 

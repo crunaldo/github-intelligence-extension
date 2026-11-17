@@ -1,4 +1,4 @@
-import { getAuthSession } from '../auth/supabaseAuth'
+import { getAuthSession, type AuthSession } from '../auth/supabaseAuth'
 
 export interface AnalysisSummary {
   headline: string
@@ -46,10 +46,21 @@ export class BackendApiError extends Error {
 }
 
 const CLIENT_ID_STORAGE_KEY = 'gpi_client_id'
+const INTELLIGENCE_CACHE_STORAGE_KEY = 'gpi_intelligence_cache'
 const DEFAULT_BACKEND_API_URL = 'https://github-intelligence-api.workers.dev'
 const SAFE_COMMIT_REF_PATTERN = /^[A-Za-z0-9_.-]+$/
+const MAX_LOCAL_INTELLIGENCE_ENTRIES = 50
+const HEAD_CACHE_TTL_MS = 60 * 60 * 1000
+const COMMIT_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+
+interface CachedIntelligenceEntry {
+  data: FilteredAnalysisResult
+  cachedAt: number
+}
 
 let memoryClientId: string | null = null
+const memoryIntelligenceCache = new Map<string, CachedIntelligenceEntry>()
+const inFlightIntelligenceRequests = new Map<string, Promise<FilteredAnalysisResult>>()
 
 /**
  * Validates that a commit SHA or branch ref satisfies the backend's safe segment rule
@@ -199,40 +210,171 @@ async function parseErrorResponse(res: Response): Promise<BackendApiError> {
   return new BackendApiError(message, res.status, errJson.error)
 }
 
+export interface FetchRepoIntelligenceOptions {
+  forceRefresh?: boolean
+}
+
+function buildIntelligenceCacheKey(
+  owner: string,
+  repo: string,
+  commitSha: string,
+  session: AuthSession | null
+): string {
+  const tier = session?.user?.id
+    ? `${session.isPro ? 'pro' : 'free'}:${session.user.id}`
+    : 'anon'
+  return `${owner.toLowerCase()}/${repo.toLowerCase()}@${commitSha}:${tier}`
+}
+
+function isCacheEntryFresh(entry: CachedIntelligenceEntry | undefined, commitSha: string): boolean {
+  if (!entry || !entry.data || typeof entry.cachedAt !== 'number') {
+    return false
+  }
+  const ttl = commitSha === 'HEAD' ? HEAD_CACHE_TTL_MS : COMMIT_CACHE_TTL_MS
+  return Date.now() - entry.cachedAt < ttl
+}
+
+async function readLocalIntelligenceCacheEntry(
+  cacheKey: string,
+  commitSha: string
+): Promise<FilteredAnalysisResult | null> {
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    try {
+      const stored = (await storage.get(INTELLIGENCE_CACHE_STORAGE_KEY)) as Record<string, unknown>
+      const map = stored[INTELLIGENCE_CACHE_STORAGE_KEY] as
+        | Record<string, CachedIntelligenceEntry>
+        | undefined
+      const entry = map?.[cacheKey]
+      if (isCacheEntryFresh(entry, commitSha)) {
+        return entry!.data
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  const memEntry = memoryIntelligenceCache.get(cacheKey)
+  return isCacheEntryFresh(memEntry, commitSha) ? memEntry!.data : null
+}
+
+async function writeLocalIntelligenceCacheEntry(
+  cacheKey: string,
+  data: FilteredAnalysisResult
+): Promise<void> {
+  const entry: CachedIntelligenceEntry = { data, cachedAt: Date.now() }
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    try {
+      const stored = (await storage.get(INTELLIGENCE_CACHE_STORAGE_KEY)) as Record<string, unknown>
+      const rawMap = stored[INTELLIGENCE_CACHE_STORAGE_KEY]
+      const map: Record<string, CachedIntelligenceEntry> =
+        rawMap && typeof rawMap === 'object' && !Array.isArray(rawMap)
+          ? { ...(rawMap as Record<string, CachedIntelligenceEntry>) }
+          : {}
+
+      map[cacheKey] = entry
+      const keys = Object.keys(map)
+      if (keys.length > MAX_LOCAL_INTELLIGENCE_ENTRIES) {
+        keys.sort((a, b) => (map[a]?.cachedAt ?? 0) - (map[b]?.cachedAt ?? 0))
+        const toDelete = keys.slice(0, keys.length - MAX_LOCAL_INTELLIGENCE_ENTRIES)
+        for (const k of toDelete) {
+          delete map[k]
+        }
+      }
+
+      await storage.set({ [INTELLIGENCE_CACHE_STORAGE_KEY]: map })
+      return
+    } catch {
+      // Fall back silently if storage write fails
+    }
+  }
+
+  memoryIntelligenceCache.set(cacheKey, entry)
+  if (memoryIntelligenceCache.size > MAX_LOCAL_INTELLIGENCE_ENTRIES) {
+    const oldestKey = memoryIntelligenceCache.keys().next().value
+    if (oldestKey) memoryIntelligenceCache.delete(oldestKey)
+  }
+}
+
+/**
+ * Clears locally cached `/v1/analyze` responses (used on manual cache clear or tests).
+ */
+export async function clearLocalIntelligenceCache(): Promise<void> {
+  memoryIntelligenceCache.clear()
+  inFlightIntelligenceRequests.clear()
+  const storage = getChromeStorageLocal()
+  if (storage && typeof storage.remove === 'function') {
+    try {
+      await storage.remove(INTELLIGENCE_CACHE_STORAGE_KEY)
+    } catch {
+      // Ignore storage removal errors
+    }
+  }
+}
+
 /**
  * Fetches AI-generated repository intelligence from the Edge Worker `/v1/analyze` endpoint.
- * Always includes `X-Client-Signature`, includes `Authorization: Bearer <jwt>` when signed in,
- * and never transmits local GitHub PAT credentials.
+ * Shares a per-`owner/repo@commitSha:tier` local cache across mounts/tab switches (unless
+ * `options.forceRefresh` is true), deduplicates concurrent requests, always includes
+ * `X-Client-Signature`, includes `Authorization: Bearer <jwt>` when signed in, and never
+ * transmits local GitHub PAT credentials.
  */
 export async function fetchRepoIntelligence(
   owner: string,
   repo: string,
-  commitSha: string
+  commitSha: string,
+  options?: FetchRepoIntelligenceOptions
 ): Promise<FilteredAnalysisResult> {
-  const [signature, session] = await Promise.all([getClientSignature(), getAuthSession()])
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-Client-Signature': signature,
-  }
-
-  if (session?.accessToken) {
-    headers.Authorization = `Bearer ${session.accessToken}`
-  }
-
   const safeCommitSha = sanitizeCommitRef(commitSha)
+  const session = await getAuthSession()
+  const cacheKey = buildIntelligenceCacheKey(owner, repo, safeCommitSha, session)
 
-  const res = await fetch(`${getBackendBaseUrl()}/v1/analyze`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ owner, repo, commitSha: safeCommitSha }),
+  if (!options?.forceRefresh) {
+    const cached = await readLocalIntelligenceCacheEntry(cacheKey, safeCommitSha)
+    if (cached) {
+      return cached
+    }
+
+    const existingInFlight = inFlightIntelligenceRequests.get(cacheKey)
+    if (existingInFlight) {
+      return existingInFlight
+    }
+  }
+
+  const requestPromise = (async () => {
+    const signature = await getClientSignature()
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Client-Signature': signature,
+    }
+
+    if (session?.accessToken) {
+      headers.Authorization = `Bearer ${session.accessToken}`
+    }
+
+    const res = await fetch(`${getBackendBaseUrl()}/v1/analyze`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ owner, repo, commitSha: safeCommitSha }),
+    })
+
+    if (!res.ok) {
+      throw await parseErrorResponse(res)
+    }
+
+    const result = (await res.json()) as FilteredAnalysisResult
+    await writeLocalIntelligenceCacheEntry(cacheKey, result)
+    return result
+  })().finally(() => {
+    if (inFlightIntelligenceRequests.get(cacheKey) === requestPromise) {
+      inFlightIntelligenceRequests.delete(cacheKey)
+    }
   })
 
-  if (!res.ok) {
-    throw await parseErrorResponse(res)
-  }
-
-  return (await res.json()) as FilteredAnalysisResult
+  inFlightIntelligenceRequests.set(cacheKey, requestPromise)
+  return requestPromise
 }
 
 /**

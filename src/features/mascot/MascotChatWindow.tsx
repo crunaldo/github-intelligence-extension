@@ -8,6 +8,7 @@ import {
   getAuthSession,
   refreshProStatus,
   requestProUpgradeFromContentScript,
+  saveAuthSession,
   type AuthSession,
 } from '../../extension/auth/supabaseAuth'
 
@@ -57,6 +58,7 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
   const [session, setSession] = useState<AuthSession | null>(null)
   const [authLoaded, setAuthLoaded] = useState(false)
   const [upgrading, setUpgrading] = useState(false)
+  const [refreshingStatus, setRefreshingStatus] = useState(false)
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const requestIdRef = useRef(0)
@@ -204,10 +206,27 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
       if (err instanceof BackendApiError) {
         if (err.status === 403 && err.code === 'PRO_REQUIRED') {
           setSession((prev) => (prev ? { ...prev, isPro: false } : null))
+          void refreshProStatus().then(async (updated) => {
+            if (!updated) {
+              setSession(null)
+              return
+            }
+            if (updated.isPro) {
+              const downgraded = { ...updated, isPro: false }
+              await saveAuthSession(downgraded)
+              setSession(downgraded)
+            } else {
+              setSession(updated)
+            }
+          })
           return
         }
         if (err.status === 403 && err.code === 'MASCOT_DISABLED') {
           setError('Mascot chat is currently disabled by administrator.')
+          return
+        }
+        if (err.code === 'MAINTENANCE_MODE') {
+          setError(err.message || 'Service is temporarily under maintenance.')
           return
         }
         if (err.status === 429) {
@@ -253,8 +272,25 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
   }
 
   const handleRefreshStatus = async () => {
-    const refreshed = await refreshProStatus()
-    setSession(refreshed)
+    setError(null)
+    setRefreshingStatus(true)
+    try {
+      const refreshed = await refreshProStatus()
+      setSession(refreshed)
+      if (!refreshed) {
+        setError('Session expired or not signed in. Please sign in with GitHub again.')
+      } else if (!refreshed.isPro) {
+        setError('No active Pro subscription found yet. Complete checkout or retry shortly.')
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not refresh Pro status. Please try again.'
+      )
+    } finally {
+      setRefreshingStatus(false)
+    }
   }
 
   const isPro = Boolean(session?.isPro)
@@ -331,9 +367,10 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
             <button
               type="button"
               className="gpi-refresh-btn"
+              disabled={refreshingStatus || upgrading}
               onClick={() => void handleRefreshStatus()}
             >
-              Already upgraded? Refresh status
+              {refreshingStatus ? 'Checking Pro status...' : 'Already upgraded? Refresh status'}
             </button>
           )}
           {error && (
@@ -388,6 +425,7 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
             <input
               type="text"
               className="gpi-chat-input"
+              aria-label={`Ask a question about ${owner}/${repo}`}
               placeholder={`Ask about ${repo}...`}
               value={input}
               onChange={(e) => setInput(e.target.value)}

@@ -87,14 +87,16 @@ function generateCodeVerifier(): string {
   return toBase64Url(bytes)
 }
 
-async function createPkceChallenge(verifier: string): Promise<string> {
+async function createPkceChallenge(
+  verifier: string
+): Promise<{ challenge: string; method: 's256' | 'plain' }> {
   const subtle = globalThis.crypto?.subtle
   if (subtle && typeof subtle.digest === 'function') {
     const encoded = new TextEncoder().encode(verifier)
     const digest = await subtle.digest('SHA-256', encoded)
-    return toBase64Url(new Uint8Array(digest))
+    return { challenge: toBase64Url(new Uint8Array(digest)), method: 's256' }
   }
-  return verifier
+  return { challenge: verifier, method: 'plain' }
 }
 
 function extractAuthParamsFromUrl(redirectUrl: string): {
@@ -233,7 +235,9 @@ async function refreshSessionToken(session: AuthSession): Promise<AuthSession | 
     })
 
     if (!res.ok) {
-      await signOut()
+      if (res.status === 400 || res.status === 401 || res.status === 403) {
+        await signOut()
+      }
       return null
     }
 
@@ -245,7 +249,6 @@ async function refreshSessionToken(session: AuthSession): Promise<AuthSession | 
     }
 
     if (!tokenPayload?.access_token) {
-      await signOut()
       return null
     }
 
@@ -265,7 +268,7 @@ async function refreshSessionToken(session: AuthSession): Promise<AuthSession | 
     await saveAuthSession(refreshedSession)
     return refreshedSession
   } catch {
-    await signOut()
+    // Preserve stored refreshToken across transient offline/network errors
     return null
   }
 }
@@ -401,12 +404,12 @@ export async function signInWithGitHub(): Promise<AuthSession | null> {
       : undefined
 
   const codeVerifier = generateCodeVerifier()
-  const codeChallenge = await createPkceChallenge(codeVerifier)
+  const { challenge: codeChallenge, method: codeChallengeMethod } = await createPkceChallenge(codeVerifier)
 
   const authUrl = new URL(`${supabaseUrl}/auth/v1/authorize`)
   authUrl.searchParams.set('provider', 'github')
   authUrl.searchParams.set('code_challenge', codeChallenge)
-  authUrl.searchParams.set('code_challenge_method', 's256')
+  authUrl.searchParams.set('code_challenge_method', codeChallengeMethod)
 
   if (identity?.launchWebAuthFlow) {
     const redirectTo =
@@ -484,11 +487,12 @@ export async function signInWithGitHub(): Promise<AuthSession | null> {
  * Initiates a Pro upgrade checkout flow via Lemon Squeezy.
  * Enforces pre-purchase authentication: triggers GitHub OAuth if no session exists,
  * and passes `checkout[custom][user_id]` once authenticated.
+ * Returns the authenticated session if checkout was opened, or `null` if sign-in did not complete.
  */
 export async function initiateProUpgrade(deps?: {
   signIn?: () => Promise<AuthSession | null>
   openUrl?: (url: string) => Promise<void> | void
-}): Promise<void> {
+}): Promise<AuthSession | null> {
   let session = await getAuthSession()
 
   if (!session?.user?.id) {
@@ -498,7 +502,7 @@ export async function initiateProUpgrade(deps?: {
 
   if (!session?.user?.id) {
     // Interactive OAuth did not complete yet; wait for auth completion before checkout.
-    return
+    return null
   }
 
   const checkoutUrl = new URL(getLemonSqueezyCheckoutUrl())
@@ -509,6 +513,7 @@ export async function initiateProUpgrade(deps?: {
 
   const openUrl = deps?.openUrl ?? openExternalUrl
   await openUrl(checkoutUrl.toString())
+  return session
 }
 
 export interface AuthRuntimeResponse {
@@ -526,7 +531,7 @@ export async function handleAuthRuntimeMessage(
   message: { type?: unknown } | null | undefined,
   deps?: {
     signIn?: () => Promise<AuthSession | null>
-    upgrade?: () => Promise<void>
+    upgrade?: () => Promise<AuthSession | null | void>
     getSession?: () => Promise<AuthSession | null>
   }
 ): Promise<AuthRuntimeResponse | null> {
@@ -537,6 +542,13 @@ export async function handleAuthRuntimeMessage(
   if (message.type === 'SIGN_IN_WITH_GITHUB') {
     try {
       const session = await (deps?.signIn ?? signInWithGitHub)()
+      if (!session) {
+        return {
+          ok: false,
+          session: null,
+          error: 'GitHub sign-in was cancelled or did not complete.',
+        }
+      }
       return { ok: true, session }
     } catch (error) {
       return {
@@ -548,8 +560,15 @@ export async function handleAuthRuntimeMessage(
 
   if (message.type === 'INITIATE_PRO_UPGRADE') {
     try {
-      await (deps?.upgrade ?? initiateProUpgrade)()
+      const upgradeResult = await (deps?.upgrade ?? initiateProUpgrade)()
       const session = await (deps?.getSession ?? getAuthSession)()
+      if (upgradeResult === null || !session?.user?.id) {
+        return {
+          ok: false,
+          session: session ?? null,
+          error: 'GitHub sign-in was cancelled or did not complete.',
+        }
+      }
       return { ok: true, session }
     } catch (error) {
       return {
@@ -619,9 +638,16 @@ export async function requestProUpgradeFromContentScript(): Promise<AuthRuntimeR
   }
 
   try {
-    await initiateProUpgrade()
+    const upgradedSession = await initiateProUpgrade()
+    if (!upgradedSession) {
+      return {
+        ok: false,
+        session: null,
+        error: 'GitHub sign-in was cancelled or did not complete.',
+      }
+    }
     const session = await getAuthSession()
-    return { ok: true, session }
+    return { ok: true, session: session ?? upgradedSession }
   } catch (err) {
     return {
       ok: false,
