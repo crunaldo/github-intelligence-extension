@@ -25,6 +25,11 @@ export interface AdminSupabaseConfig {
   accessToken?: string
 }
 
+export interface SupabaseDataResult<T> {
+  data: T
+  error: string | null
+}
+
 const SESSION_STORAGE_KEY = 'gpi_admin_session'
 
 function readPublicEnv(keys: string[]): string {
@@ -51,8 +56,12 @@ function readPublicEnv(keys: string[]): string {
 
 export function getPublicSupabaseConfig(): AdminSupabaseConfig {
   return {
-    supabaseUrl: readPublicEnv(['NEXT_PUBLIC_SUPABASE_URL', 'VITE_SUPABASE_URL']),
-    supabaseAnonKey: readPublicEnv(['NEXT_PUBLIC_SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY'])
+    supabaseUrl: readPublicEnv(['NEXT_PUBLIC_SUPABASE_URL', 'VITE_SUPABASE_URL', 'SUPABASE_URL']),
+    supabaseAnonKey: readPublicEnv([
+      'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+      'VITE_SUPABASE_ANON_KEY',
+      'SUPABASE_ANON_KEY'
+    ])
   }
 }
 
@@ -118,23 +127,27 @@ export async function fetchAuthUser(
     return null
   }
 
-  const baseUrl = config.supabaseUrl.replace(/\/+$/, '')
-  const res = await fetch(`${baseUrl}/auth/v1/user`, {
-    headers: {
-      apikey: config.supabaseAnonKey,
-      Authorization: `Bearer ${accessToken}`
+  try {
+    const baseUrl = config.supabaseUrl.replace(/\/+$/, '')
+    const res = await fetch(`${baseUrl}/auth/v1/user`, {
+      headers: {
+        apikey: config.supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`
+      }
+    })
+    if (!res.ok) {
+      return null
     }
-  })
-  if (!res.ok) {
+    const data = (await res.json()) as { id?: string; email?: string }
+    if (!data?.id) {
+      return null
+    }
+    return {
+      id: data.id,
+      email: data.email ?? ''
+    }
+  } catch {
     return null
-  }
-  const data = (await res.json()) as { id?: string; email?: string }
-  if (!data.id) {
-    return null
-  }
-  return {
-    id: data.id,
-    email: data.email ?? ''
   }
 }
 
@@ -147,37 +160,44 @@ export async function signInWithEmailPassword(
     return { session: null, error: 'Supabase environment variables are not configured' }
   }
 
-  const baseUrl = config.supabaseUrl.replace(/\/+$/, '')
-  const res = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: config.supabaseAnonKey
-    },
-    body: JSON.stringify({ email, password })
-  })
+  try {
+    const baseUrl = config.supabaseUrl.replace(/\/+$/, '')
+    const res = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: config.supabaseAnonKey
+      },
+      body: JSON.stringify({ email, password })
+    })
 
-  if (!res.ok) {
-    const errText = await res.text()
-    return { session: null, error: errText || `Sign-in failed (${res.status})` }
-  }
+    if (!res.ok) {
+      const errText = await res.text()
+      return { session: null, error: errText || `Sign-in failed (${res.status})` }
+    }
 
-  const payload = (await res.json()) as {
-    access_token?: string
-    user?: { id?: string; email?: string }
-  }
+    const payload = (await res.json()) as {
+      access_token?: string
+      user?: { id?: string; email?: string }
+    }
 
-  if (!payload.access_token || !payload.user?.id) {
-    return { session: null, error: 'Invalid auth response from Supabase' }
-  }
+    if (!payload.access_token || !payload.user?.id) {
+      return { session: null, error: 'Invalid auth response from Supabase' }
+    }
 
-  const session: AdminSession = {
-    accessToken: payload.access_token,
-    userId: payload.user.id,
-    email: payload.user.email ?? email
+    const session: AdminSession = {
+      accessToken: payload.access_token,
+      userId: payload.user.id,
+      email: payload.user.email ?? email
+    }
+    storeAdminSession(session)
+    return { session }
+  } catch (error) {
+    return {
+      session: null,
+      error: error instanceof Error ? error.message : 'Network error signing in'
+    }
   }
-  storeAdminSession(session)
-  return { session }
 }
 
 export function startGitHubOAuthSignIn(config = getPublicSupabaseConfig()): void {
@@ -241,42 +261,49 @@ export function createBrowserSupabaseClient(
       return { data: null, error: { message: 'Supabase configuration missing' } }
     }
 
-    const params = [...filters]
-    if (options.select !== undefined) {
-      params.push(`select=${encodeURIComponent(options.select)}`)
-    }
-    if (options.order) {
-      params.push(`order=${encodeURIComponent(options.order)}`)
-    }
-    if (typeof options.limit === 'number') {
-      params.push(`limit=${options.limit}`)
-    }
+    try {
+      const params = [...filters]
+      if (options.select !== undefined) {
+        params.push(`select=${encodeURIComponent(options.select)}`)
+      }
+      if (options.order) {
+        params.push(`order=${encodeURIComponent(options.order)}`)
+      }
+      if (typeof options.limit === 'number') {
+        params.push(`limit=${options.limit}`)
+      }
 
-    const queryString = params.length > 0 ? `?${params.join('&')}` : ''
-    const res = await fetch(`${baseUrl}/rest/v1/${table}${queryString}`, {
-      method,
-      headers: buildHeaders(
-        method === 'PATCH'
-          ? { 'Content-Type': 'application/json', Prefer: 'return=minimal' }
-          : undefined
-      ),
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined
-    })
+      const queryString = params.length > 0 ? `?${params.join('&')}` : ''
+      const res = await fetch(`${baseUrl}/rest/v1/${table}${queryString}`, {
+        method,
+        headers: buildHeaders(
+          method === 'PATCH'
+            ? { 'Content-Type': 'application/json', Prefer: 'return=minimal' }
+            : undefined
+        ),
+        body: options.body !== undefined ? JSON.stringify(options.body) : undefined
+      })
 
-    if (!res.ok) {
-      const msg = await res.text()
-      return { data: null, error: { message: msg || `HTTP ${res.status}` } }
-    }
+      if (!res.ok) {
+        const msg = await res.text()
+        return { data: null, error: { message: msg || `HTTP ${res.status}` } }
+      }
 
-    if (method !== 'GET') {
-      return { data: null, error: null }
-    }
+      if (method !== 'GET') {
+        return { data: null, error: null }
+      }
 
-    const rows = (await res.json()) as Array<Record<string, unknown>>
-    if (options.singleRow) {
-      return { data: rows[0] ?? null, error: null }
+      const rows = (await res.json()) as Array<Record<string, unknown>>
+      if (options.singleRow) {
+        return { data: rows[0] ?? null, error: null }
+      }
+      return { data: rows, error: null }
+    } catch (error) {
+      return {
+        data: null,
+        error: { message: error instanceof Error ? error.message : 'Network error querying Supabase' }
+      }
     }
-    return { data: rows, error: null }
   }
 
   const createFilterBuilder = (
@@ -350,22 +377,28 @@ export function createBrowserSupabaseClient(
           if (!baseUrl || !config.supabaseAnonKey) {
             return { error: { message: 'Supabase configuration missing' } }
           }
-          const conflictQuery = options?.onConflict
-            ? `?on_conflict=${encodeURIComponent(options.onConflict)}`
-            : ''
-          const res = await fetch(`${baseUrl}/rest/v1/${table}${conflictQuery}`, {
-            method: 'POST',
-            headers: buildHeaders({
-              'Content-Type': 'application/json',
-              Prefer: 'resolution=merge-duplicates,return=minimal'
-            }),
-            body: JSON.stringify(values)
-          })
-          if (!res.ok) {
-            const msg = await res.text()
-            return { error: { message: msg || `HTTP ${res.status}` } }
+          try {
+            const conflictQuery = options?.onConflict
+              ? `?on_conflict=${encodeURIComponent(options.onConflict)}`
+              : ''
+            const res = await fetch(`${baseUrl}/rest/v1/${table}${conflictQuery}`, {
+              method: 'POST',
+              headers: buildHeaders({
+                'Content-Type': 'application/json',
+                Prefer: 'resolution=merge-duplicates,return=minimal'
+              }),
+              body: JSON.stringify(values)
+            })
+            if (!res.ok) {
+              const msg = await res.text()
+              return { error: { message: msg || `HTTP ${res.status}` } }
+            }
+            return { error: null }
+          } catch (error) {
+            return {
+              error: { message: error instanceof Error ? error.message : 'Network error saving to Supabase' }
+            }
           }
-          return { error: null }
         }
       }
     }
@@ -374,10 +407,16 @@ export function createBrowserSupabaseClient(
 
 export async function fetchRemoteConfigsMap(
   client: AdminSupabaseClient
-): Promise<Record<string, unknown>> {
+): Promise<SupabaseDataResult<Record<string, unknown>>> {
   const { data, error } = await client.from('remote_configs').select('key,value,updated_at')
-  if (error || !Array.isArray(data)) {
-    return {}
+  if (error) {
+    return {
+      data: {},
+      error: error.message || 'Failed to load remote_configs'
+    }
+  }
+  if (!Array.isArray(data)) {
+    return { data: {}, error: null }
   }
   const map: Record<string, unknown> = {}
   for (const row of data as unknown as RemoteConfigRow[]) {
@@ -385,28 +424,34 @@ export async function fetchRemoteConfigsMap(
       map[row.key] = row.value
     }
   }
-  return map
+  return { data: map, error: null }
 }
 
 export async function fetchRecentQueryLogs(
   client: AdminSupabaseClient,
   limit = 500
-): Promise<QueryLogRow[]> {
+): Promise<SupabaseDataResult<QueryLogRow[]>> {
   const { data, error } = await client
     .from('query_logs')
     .select('*')
     .order('created_at', { ascending: false })
     .limit(limit)
-  if (error || !Array.isArray(data)) {
-    return []
+  if (error) {
+    return {
+      data: [],
+      error: error.message || 'Failed to load query_logs'
+    }
   }
-  return data as unknown as QueryLogRow[]
+  return {
+    data: Array.isArray(data) ? (data as unknown as QueryLogRow[]) : [],
+    error: null
+  }
 }
 
 export async function fetchProfiles(
   client: AdminSupabaseClient,
   search = ''
-): Promise<ProfileRow[]> {
+): Promise<SupabaseDataResult<ProfileRow[]>> {
   let query = client.from('profiles').select('*').order('created_at', { ascending: false }).limit(50)
   const trimmed = search.trim()
   if (trimmed) {
@@ -417,16 +462,22 @@ export async function fetchProfiles(
     }
   }
   const { data, error } = await query
-  if (error || !Array.isArray(data)) {
-    return []
+  if (error) {
+    return {
+      data: [],
+      error: error.message || 'Failed to load profiles'
+    }
   }
-  return data as unknown as ProfileRow[]
+  return {
+    data: Array.isArray(data) ? (data as unknown as ProfileRow[]) : [],
+    error: null
+  }
 }
 
 export async function fetchSubscriptions(
   client: AdminSupabaseClient,
   userId?: string
-): Promise<SubscriptionRow[]> {
+): Promise<SupabaseDataResult<SubscriptionRow[]>> {
   let query = client
     .from('subscriptions')
     .select('*')
@@ -436,16 +487,22 @@ export async function fetchSubscriptions(
     query = query.eq('user_id', userId)
   }
   const { data, error } = await query
-  if (error || !Array.isArray(data)) {
-    return []
+  if (error) {
+    return {
+      data: [],
+      error: error.message || 'Failed to load subscriptions'
+    }
   }
-  return data as unknown as SubscriptionRow[]
+  return {
+    data: Array.isArray(data) ? (data as unknown as SubscriptionRow[]) : [],
+    error: null
+  }
 }
 
 export async function fetchRepoAnalyses(
   client: AdminSupabaseClient,
   repoQuery = ''
-): Promise<RepoAnalysisRow[]> {
+): Promise<SupabaseDataResult<RepoAnalysisRow[]>> {
   let query = client
     .from('repo_analyses')
     .select('*')
@@ -455,10 +512,16 @@ export async function fetchRepoAnalyses(
     query = query.ilike('repo_full_name', `*${repoQuery.trim()}*`)
   }
   const { data, error } = await query
-  if (error || !Array.isArray(data)) {
-    return []
+  if (error) {
+    return {
+      data: [],
+      error: error.message || 'Failed to load repo_analyses'
+    }
   }
-  return data as unknown as RepoAnalysisRow[]
+  return {
+    data: Array.isArray(data) ? (data as unknown as RepoAnalysisRow[]) : [],
+    error: null
+  }
 }
 
 /**

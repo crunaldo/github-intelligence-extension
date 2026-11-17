@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useCallback, useEffect, useState } from 'react'
 import { CreditCard, Crown, RefreshCw, Search, Shield, UserCheck } from 'lucide-react'
 import { AdminShell, SectionCard, StatusBanner } from '../../lib/admin-shell'
@@ -28,12 +30,16 @@ function UsersManagementContent({ client }: { client: AdminSupabaseClient; sessi
   const loadData = useCallback(
     async (queryText = search, userFilter = selectedUserId) => {
       setLoading(true)
-      const [profileRows, subRows] = await Promise.all([
+      const [profilesRes, subsRes] = await Promise.all([
         fetchProfiles(client, queryText),
         fetchSubscriptions(client, userFilter ?? undefined)
       ])
-      setProfiles(profileRows)
-      setSubscriptions(subRows)
+      const errors = [profilesRes.error, subsRes.error].filter(Boolean)
+      if (errors.length > 0) {
+        setStatus({ type: 'error', message: `Failed to load user records: ${errors.join(' | ')}` })
+      }
+      setProfiles(profilesRes.data)
+      setSubscriptions(subsRes.data)
       setLoading(false)
     },
     [client, search, selectedUserId]
@@ -76,8 +82,11 @@ function UsersManagementContent({ client }: { client: AdminSupabaseClient; sessi
 
   async function handleSelectUser(userId: string | null) {
     setSelectedUserId(userId)
-    const subRows = await fetchSubscriptions(client, userId ?? undefined)
-    setSubscriptions(subRows)
+    const subsRes = await fetchSubscriptions(client, userId ?? undefined)
+    if (subsRes.error) {
+      setStatus({ type: 'error', message: `Failed to load subscriptions: ${subsRes.error}` })
+    }
+    setSubscriptions(subsRes.data)
   }
 
   return (
@@ -280,7 +289,7 @@ function UsersManagementContent({ client }: { client: AdminSupabaseClient; sessi
   )
 }
 
-export default function UsersManagementPage({
+export function UsersManagementView({
   injectedClient,
   injectedSession
 }: {
@@ -298,4 +307,8 @@ export default function UsersManagementPage({
       {({ client, session }) => <UsersManagementContent client={client} session={session} />}
     </AdminShell>
   )
+}
+
+export default function UsersManagementPage() {
+  return <UsersManagementView />
 }

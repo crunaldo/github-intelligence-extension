@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Activity,
@@ -67,17 +69,29 @@ function DashboardContent({
   const [priority, setPriority] = useState<ProviderName[]>([...ALL_PROVIDERS])
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
-    const [recentLogs, configs] = await Promise.all([
+    setLoadError(null)
+    const [logsRes, configsRes] = await Promise.all([
       fetchRecentQueryLogs(client, 500),
       fetchRemoteConfigsMap(client)
     ])
-    setLogs(recentLogs)
-    setPriority(normalizeProviderPriority(configs.provider_priority))
+
+    const errors = [logsRes.error, configsRes.error].filter(Boolean)
+    if (errors.length > 0) {
+      const msg = errors.join(' | ')
+      setLoadError(msg)
+      setStatus({ type: 'error', message: `Failed to load dashboard data: ${msg}` })
+    }
+
+    setLogs(logsRes.data)
+    if (!configsRes.error) {
+      setPriority(normalizeProviderPriority(configsRes.data.provider_priority))
+    }
     setLoading(false)
   }, [client])
 
@@ -176,6 +190,7 @@ function DashboardContent({
   }
 
   async function handleSavePriority() {
+    if (loadError) return
     setSaving(true)
     setStatus(null)
     const res = await dispatchServerConfigSync('provider_priority', priority, session.accessToken)
@@ -321,7 +336,7 @@ function DashboardContent({
           <button
             type="button"
             onClick={() => void handleSavePriority()}
-            disabled={saving}
+            disabled={loading || saving || loadError !== null}
             className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 text-xs font-semibold text-white transition"
           >
             <Save className="w-3.5 h-3.5" />
@@ -380,7 +395,7 @@ function DashboardContent({
   )
 }
 
-export default function AdminDashboardPage({
+export function AdminDashboardView({
   injectedClient,
   injectedSession
 }: {
@@ -398,4 +413,8 @@ export default function AdminDashboardPage({
       {({ client, session }) => <DashboardContent client={client} session={session} />}
     </AdminShell>
   )
+}
+
+export default function AdminDashboardPage() {
+  return <AdminDashboardView />
 }

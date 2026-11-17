@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useCallback, useEffect, useState } from 'react'
 import { AlertOctagon, GitBranch, MessageSquare, Save, Sliders } from 'lucide-react'
 import { AdminShell, SectionCard, StatusBanner } from '../../lib/admin-shell'
@@ -105,15 +107,26 @@ function FlagsQuotasContent({
   const [proLimit, setProLimit] = useState(DEFAULT_PRO_DAILY_LIMIT)
   const [flags, setFlags] = useState<FeatureFlagsConfig>({ ...DEFAULT_FEATURE_FLAGS })
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   const loadConfig = useCallback(async () => {
     setLoading(true)
-    const configs = await fetchRemoteConfigsMap(client)
-    setFreeLimit(parseLimit(configs.free_daily_limit, DEFAULT_FREE_DAILY_LIMIT))
-    setProLimit(parseLimit(configs.pro_daily_limit, DEFAULT_PRO_DAILY_LIMIT))
-    setFlags(parseFlags(configs.feature_flags))
+    setLoadError(null)
+    const configsRes = await fetchRemoteConfigsMap(client)
+    if (configsRes.error) {
+      setLoadError(configsRes.error)
+      setStatus({
+        type: 'error',
+        message: `Failed to load remote flags: ${configsRes.error}. Saving is disabled to prevent overwriting live configuration.`
+      })
+      setLoading(false)
+      return
+    }
+    setFreeLimit(parseLimit(configsRes.data.free_daily_limit, DEFAULT_FREE_DAILY_LIMIT))
+    setProLimit(parseLimit(configsRes.data.pro_daily_limit, DEFAULT_PRO_DAILY_LIMIT))
+    setFlags(parseFlags(configsRes.data.feature_flags))
     setLoading(false)
   }, [client])
 
@@ -122,6 +135,7 @@ function FlagsQuotasContent({
   }, [loadConfig])
 
   async function handleSaveAll() {
+    if (loadError) return
     setSaving(true)
     setStatus(null)
 
@@ -159,7 +173,7 @@ function FlagsQuotasContent({
         <button
           type="button"
           onClick={() => void handleSaveAll()}
-          disabled={loading || saving}
+          disabled={loading || saving || loadError !== null}
           className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 text-sm font-semibold text-white transition"
         >
           <Save className="w-4 h-4" />
@@ -282,7 +296,7 @@ function FlagsQuotasContent({
   )
 }
 
-export default function FeatureFlagsPage({
+export function FeatureFlagsView({
   injectedClient,
   injectedSession
 }: {
@@ -300,4 +314,8 @@ export default function FeatureFlagsPage({
       {({ client, session }) => <FlagsQuotasContent client={client} session={session} />}
     </AdminShell>
   )
+}
+
+export default function FeatureFlagsPage() {
+  return <FeatureFlagsView />
 }

@@ -1,3 +1,4 @@
+import { ALL_PROVIDERS, type ProviderName } from './admin-types'
 import {
   type CloudflareKVOptions,
   purgeRepoCacheFromKVAndDB,
@@ -9,13 +10,104 @@ import { createBrowserSupabaseClient, fetchAuthUser } from './supabase-client'
 export interface AdminServerEnv extends CloudflareKVOptions {
   supabaseUrl?: string
   supabaseAnonKey?: string
+  CLOUDFLARE_ACCOUNT_ID?: string
+  CLOUDFLARE_KV_NAMESPACE_ID?: string
+  CLOUDFLARE_API_TOKEN?: string
+  SUPABASE_URL?: string
+  SUPABASE_ANON_KEY?: string
+  SUPABASE_SERVICE_ROLE_KEY?: string
 }
+
+const VALID_PROVIDERS = new Set<string>(ALL_PROVIDERS)
+
+const ALLOWED_CONFIG_KEYS = new Set<string>([
+  'free_daily_limit',
+  'pro_daily_limit',
+  'system_prompt_repo',
+  'system_prompt_mascot',
+  'feature_flags',
+  'provider_priority'
+])
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' }
   })
+}
+
+function resolveSupabaseConfig(env?: AdminServerEnv) {
+  const supabaseUrl = env?.supabaseUrl ?? env?.SUPABASE_URL
+  const supabaseAnonKey =
+    env?.supabaseAnonKey ?? env?.SUPABASE_ANON_KEY ?? env?.SUPABASE_SERVICE_ROLE_KEY
+
+  if (supabaseUrl && supabaseAnonKey) {
+    return { supabaseUrl, supabaseAnonKey }
+  }
+  return undefined
+}
+
+function resolveKVOptions(env?: AdminServerEnv): CloudflareKVOptions | undefined {
+  if (!env) return undefined
+  const accountId = env.accountId ?? env.CLOUDFLARE_ACCOUNT_ID
+  const namespaceId = env.namespaceId ?? env.CLOUDFLARE_KV_NAMESPACE_ID
+  const apiToken = env.apiToken ?? env.CLOUDFLARE_API_TOKEN
+
+  if (accountId === undefined && namespaceId === undefined && apiToken === undefined) {
+    return undefined
+  }
+  return { accountId, namespaceId, apiToken }
+}
+
+function validateRemoteConfigEntry(key: string, value: unknown): string | null {
+  if (!ALLOWED_CONFIG_KEYS.has(key)) {
+    return `Unsupported configuration key: ${key}`
+  }
+
+  switch (key) {
+    case 'free_daily_limit':
+    case 'pro_daily_limit':
+      if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+        return `${key} must be a positive integer`
+      }
+      return null
+
+    case 'system_prompt_repo':
+    case 'system_prompt_mascot':
+      if (typeof value !== 'string' || value.trim().length === 0) {
+        return `${key} must be a non-empty string`
+      }
+      return null
+
+    case 'feature_flags': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'feature_flags must be a plain JSON object'
+      }
+      const flags = value as Record<string, unknown>
+      for (const flagKey of ['mascot_enabled', 'diagrams_enabled', 'maintenance_mode']) {
+        if (flagKey in flags && typeof flags[flagKey] !== 'boolean') {
+          return `feature_flags.${flagKey} must be a boolean`
+        }
+      }
+      if ('banner_message' in flags && typeof flags.banner_message !== 'string') {
+        return 'feature_flags.banner_message must be a string'
+      }
+      return null
+    }
+
+    case 'provider_priority':
+      if (
+        !Array.isArray(value) ||
+        value.length === 0 ||
+        !value.every((item): item is ProviderName => typeof item === 'string' && VALID_PROVIDERS.has(item))
+      ) {
+        return 'provider_priority must be a non-empty array of valid provider names'
+      }
+      return null
+
+    default:
+      return `Unsupported configuration key: ${key}`
+  }
 }
 
 async function authorizeAdminRequest(request: Request, env?: AdminServerEnv) {
@@ -26,11 +118,7 @@ async function authorizeAdminRequest(request: Request, env?: AdminServerEnv) {
     return { ok: false as const, response: jsonResponse({ success: false, error: 'Unauthorized' }, 401) }
   }
 
-  const supabaseConfig =
-    env?.supabaseUrl && env?.supabaseAnonKey
-      ? { supabaseUrl: env.supabaseUrl, supabaseAnonKey: env.supabaseAnonKey }
-      : undefined
-
+  const supabaseConfig = resolveSupabaseConfig(env)
   const user = await fetchAuthUser(accessToken, supabaseConfig)
   if (!user) {
     return { ok: false as const, response: jsonResponse({ success: false, error: 'Invalid session' }, 401) }
@@ -46,40 +134,67 @@ async function authorizeAdminRequest(request: Request, env?: AdminServerEnv) {
 }
 
 /**
- * Server-side handler for `/api/admin/kv-sync` verifying admin JWT before dual-writing
- * configuration changes to Supabase and Cloudflare KV.
+ * Server-side handler for `/api/admin/kv-sync` enforcing POST, admin JWT, and config schema
+ * validation before dual-writing configuration changes to Cloudflare KV and Supabase.
  */
 export async function handleAdminKvSyncRequest(
   request: Request,
   env?: AdminServerEnv
 ): Promise<Response> {
+  if (request.method !== 'POST') {
+    return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
+  }
+
   const auth = await authorizeAdminRequest(request, env)
   if (!auth.ok) return auth.response
 
-  const body = (await request.json().catch(() => null)) as { key?: unknown; value?: unknown } | null
-  if (!body || typeof body.key !== 'string') {
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+  if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.key !== 'string') {
     return jsonResponse({ success: false, error: 'key and value are required' }, 400)
   }
+  if (!('value' in body) || body.value === undefined) {
+    return jsonResponse({ success: false, error: 'value is required' }, 400)
+  }
 
-  const result = await syncConfigToCloudflareKV(body.key, body.value, auth.client, env)
+  const validationError = validateRemoteConfigEntry(body.key.trim(), body.value)
+  if (validationError) {
+    return jsonResponse({ success: false, error: validationError }, 400)
+  }
+
+  const result = await syncConfigToCloudflareKV(
+    body.key.trim(),
+    body.value,
+    auth.client,
+    resolveKVOptions(env)
+  )
   return jsonResponse(result, result.success ? 200 : 500)
 }
 
 /**
- * Server-side handler for `/api/admin/cache-purge` verifying admin JWT before removing
- * a repository analysis from Supabase `repo_analyses` and Cloudflare KV.
+ * Server-side handler for `/api/admin/cache-purge` enforcing POST and admin JWT before removing
+ * a repository analysis from Cloudflare KV and Supabase `repo_analyses`.
  */
 export async function handleAdminCachePurgeRequest(
   request: Request,
   env?: AdminServerEnv
 ): Promise<Response> {
+  if (request.method !== 'POST') {
+    return jsonResponse({ success: false, error: 'Method not allowed' }, 405)
+  }
+
   const auth = await authorizeAdminRequest(request, env)
   if (!auth.ok) return auth.response
 
   const body = (await request.json().catch(() => null)) as
     | { repoFullName?: unknown; commitSha?: unknown }
     | null
-  if (!body || typeof body.repoFullName !== 'string' || typeof body.commitSha !== 'string') {
+  if (
+    !body ||
+    typeof body.repoFullName !== 'string' ||
+    !body.repoFullName.trim() ||
+    typeof body.commitSha !== 'string' ||
+    !body.commitSha.trim()
+  ) {
     return jsonResponse({ success: false, error: 'repoFullName and commitSha are required' }, 400)
   }
 
@@ -87,7 +202,7 @@ export async function handleAdminCachePurgeRequest(
     body.repoFullName,
     body.commitSha,
     auth.client,
-    env
+    resolveKVOptions(env)
   )
   return jsonResponse(result, result.success ? 200 : 500)
 }

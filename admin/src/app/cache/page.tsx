@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useCallback, useEffect, useState } from 'react'
 import { Code2, Database, Eye, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { AdminShell, SectionCard, StatusBanner } from '../../lib/admin-shell'
@@ -27,8 +29,11 @@ function CacheExplorerContent({
   const loadEntries = useCallback(
     async (searchText = query) => {
       setLoading(true)
-      const rows = await fetchRepoAnalyses(client, searchText)
-      setEntries(rows)
+      const res = await fetchRepoAnalyses(client, searchText)
+      if (res.error) {
+        setStatus({ type: 'error', message: `Failed to load cached analyses: ${res.error}` })
+      }
+      setEntries(res.data)
       setLoading(false)
     },
     [client, query]
@@ -68,7 +73,7 @@ function CacheExplorerContent({
     const kvKey = buildRepoCacheKey(row.repo_full_name, row.commit_sha)
     setStatus({
       type: 'success',
-      message: `Purged ${row.repo_full_name}@${row.commit_sha.slice(0, 7)} from Supabase and KV (${kvKey}).`
+      message: `Purged ${row.repo_full_name}@${row.commit_sha.slice(0, 7)} from KV (${kvKey}) and Supabase.`
     })
   }
 
@@ -206,7 +211,7 @@ function CacheExplorerContent({
   )
 }
 
-export default function CacheExplorerPage({
+export function CacheExplorerView({
   injectedClient,
   injectedSession
 }: {
@@ -217,11 +222,15 @@ export default function CacheExplorerPage({
     <AdminShell
       activeRoute="/cache"
       title="Cache Explorer & Invalidation"
-      subtitle="Inspect cached repository analyses and purge entries from Supabase and Cloudflare KV simultaneously."
+      subtitle="Inspect cached repository analyses and purge entries from Cloudflare KV and Supabase simultaneously."
       injectedClient={injectedClient}
       injectedSession={injectedSession}
     >
       {({ client, session }) => <CacheExplorerContent client={client} session={session} />}
     </AdminShell>
   )
+}
+
+export default function CacheExplorerPage() {
+  return <CacheExplorerView />
 }

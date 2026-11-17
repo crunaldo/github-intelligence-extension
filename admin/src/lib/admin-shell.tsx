@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   Activity,
@@ -94,20 +96,23 @@ export function AdminShell({
         return
       }
 
-      let resolved = stored
-      if (!resolved.userId) {
-        const user = await fetchAuthUser(resolved.accessToken)
-        if (!user) {
-          storeAdminSession(null)
-          if (!active) return
-          setAuthStatus('unauthenticated')
-          return
-        }
-        resolved = { ...resolved, userId: user.id, email: user.email }
-        storeAdminSession(resolved)
-        if (typeof window !== 'undefined' && window.location.hash) {
-          window.history.replaceState(null, '', window.location.pathname + window.location.search)
-        }
+      const user = await fetchAuthUser(stored.accessToken)
+      if (!user) {
+        storeAdminSession(null)
+        if (!active) return
+        setSession(null)
+        setAuthStatus('unauthenticated')
+        return
+      }
+
+      const resolved: AdminSession = {
+        accessToken: stored.accessToken,
+        userId: user.id,
+        email: user.email
+      }
+      storeAdminSession(resolved)
+      if (typeof window !== 'undefined' && window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search)
       }
 
       const client = injectedClient ?? createBrowserSupabaseClient(resolved.accessToken)

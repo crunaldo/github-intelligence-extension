@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useCallback, useEffect, useState } from 'react'
 import { Bot, FileCode2, RotateCcw, Save, Sparkles } from 'lucide-react'
 import { AdminShell, SectionCard, StatusBanner } from '../../lib/admin-shell'
@@ -26,14 +28,27 @@ function PromptsStudioContent({
   const [repoPrompt, setRepoPrompt] = useState(DEFAULT_SYSTEM_PROMPT_REPO)
   const [mascotPrompt, setMascotPrompt] = useState(DEFAULT_SYSTEM_PROMPT_MASCOT)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   const loadPrompts = useCallback(async () => {
     setLoading(true)
-    const configs = await fetchRemoteConfigsMap(client)
-    setRepoPrompt(extractStringConfig(configs.system_prompt_repo, DEFAULT_SYSTEM_PROMPT_REPO))
-    setMascotPrompt(extractStringConfig(configs.system_prompt_mascot, DEFAULT_SYSTEM_PROMPT_MASCOT))
+    setLoadError(null)
+    const configsRes = await fetchRemoteConfigsMap(client)
+    if (configsRes.error) {
+      setLoadError(configsRes.error)
+      setStatus({
+        type: 'error',
+        message: `Failed to load remote prompts: ${configsRes.error}. Saving is disabled to prevent overwriting live configuration.`
+      })
+      setLoading(false)
+      return
+    }
+    setRepoPrompt(extractStringConfig(configsRes.data.system_prompt_repo, DEFAULT_SYSTEM_PROMPT_REPO))
+    setMascotPrompt(
+      extractStringConfig(configsRes.data.system_prompt_mascot, DEFAULT_SYSTEM_PROMPT_MASCOT)
+    )
     setLoading(false)
   }, [client])
 
@@ -42,6 +57,7 @@ function PromptsStudioContent({
   }, [loadPrompts])
 
   async function savePrompt(key: 'system_prompt_repo' | 'system_prompt_mascot', value: string) {
+    if (loadError) return
     setSavingKey(key)
     setStatus(null)
     const res = await dispatchServerConfigSync(key, value, session.accessToken)
@@ -54,6 +70,7 @@ function PromptsStudioContent({
   }
 
   async function saveAllPrompts() {
+    if (loadError) return
     setSavingKey('all')
     setStatus(null)
     const [repoRes, mascotRes] = await Promise.all([
@@ -74,6 +91,8 @@ function PromptsStudioContent({
     }
   }
 
+  const saveDisabled = loading || savingKey !== null || loadError !== null
+
   return (
     <div className="space-y-6">
       <StatusBanner status={status} onDismiss={() => setStatus(null)} />
@@ -82,7 +101,7 @@ function PromptsStudioContent({
         <button
           type="button"
           onClick={() => void saveAllPrompts()}
-          disabled={loading || savingKey !== null}
+          disabled={saveDisabled}
           className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 text-sm font-semibold text-white transition"
         >
           <Sparkles className="w-4 h-4" />
@@ -98,7 +117,8 @@ function PromptsStudioContent({
             <button
               type="button"
               onClick={() => setRepoPrompt(DEFAULT_SYSTEM_PROMPT_REPO)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300"
+              disabled={loadError !== null}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-slate-300"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Reset
@@ -106,7 +126,7 @@ function PromptsStudioContent({
             <button
               type="button"
               onClick={() => void savePrompt('system_prompt_repo', repoPrompt)}
-              disabled={loading || savingKey !== null}
+              disabled={saveDisabled}
               className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3.5 py-1.5 text-xs font-semibold text-white"
             >
               <Save className="w-3.5 h-3.5" />
@@ -129,8 +149,8 @@ function PromptsStudioContent({
             rows={8}
             value={repoPrompt}
             onChange={(e) => setRepoPrompt(e.target.value)}
-            disabled={loading}
-            className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3.5 font-mono text-xs leading-relaxed text-slate-100 focus:border-indigo-500 focus:outline-none"
+            disabled={loading || loadError !== null}
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3.5 font-mono text-xs leading-relaxed text-slate-100 focus:border-indigo-500 focus:outline-none disabled:opacity-50"
           />
         </div>
       </SectionCard>
@@ -143,7 +163,8 @@ function PromptsStudioContent({
             <button
               type="button"
               onClick={() => setMascotPrompt(DEFAULT_SYSTEM_PROMPT_MASCOT)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300"
+              disabled={loadError !== null}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-slate-300"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Reset
@@ -151,7 +172,7 @@ function PromptsStudioContent({
             <button
               type="button"
               onClick={() => void savePrompt('system_prompt_mascot', mascotPrompt)}
-              disabled={loading || savingKey !== null}
+              disabled={saveDisabled}
               className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3.5 py-1.5 text-xs font-semibold text-white"
             >
               <Save className="w-3.5 h-3.5" />
@@ -174,8 +195,8 @@ function PromptsStudioContent({
             rows={8}
             value={mascotPrompt}
             onChange={(e) => setMascotPrompt(e.target.value)}
-            disabled={loading}
-            className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3.5 font-mono text-xs leading-relaxed text-slate-100 focus:border-indigo-500 focus:outline-none"
+            disabled={loading || loadError !== null}
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3.5 font-mono text-xs leading-relaxed text-slate-100 focus:border-indigo-500 focus:outline-none disabled:opacity-50"
           />
         </div>
       </SectionCard>
@@ -183,7 +204,7 @@ function PromptsStudioContent({
   )
 }
 
-export default function PromptsStudioPage({
+export function PromptsStudioView({
   injectedClient,
   injectedSession
 }: {
@@ -201,4 +222,8 @@ export default function PromptsStudioPage({
       {({ client, session }) => <PromptsStudioContent client={client} session={session} />}
     </AdminShell>
   )
+}
+
+export default function PromptsStudioPage() {
+  return <PromptsStudioView />
 }
