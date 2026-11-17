@@ -43,11 +43,17 @@ const STORAGE_KEYS = {
   REPORTS: 'gpi_reports',
 }
 
-const hasChromeStorage = typeof chrome !== 'undefined' && Boolean(chrome.storage?.local)
+function getChromeStorageLocal(): chrome.storage.StorageArea | null {
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    return chrome.storage.local
+  }
+  return null
+}
 
 export async function getStoredPreferences(): Promise<ExtensionPreferences> {
-  if (hasChromeStorage) {
-    const result = await chrome.storage.local.get(STORAGE_KEYS.PREFERENCES)
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    const result = await storage.get(STORAGE_KEYS.PREFERENCES)
     const prefs = { ...DEFAULT_EXTENSION_PREFERENCES, ...((result[STORAGE_KEYS.PREFERENCES] as Record<string, unknown>) || {}) }
     if (prefs.githubToken) {
       setConfiguredGitHubToken(prefs.githubToken)
@@ -67,15 +73,25 @@ export async function getStoredPreferences(): Promise<ExtensionPreferences> {
   }
 }
 
+/**
+ * Reads the user's locally stored GitHub Personal Access Token.
+ * Kept strictly in local browser storage and never transmitted to the backend API.
+ */
+export async function getStoredGitHubToken(): Promise<string> {
+  const prefs = await getStoredPreferences()
+  return (prefs.githubToken || '').trim()
+}
+
 export async function saveStoredPreferences(prefs: Partial<ExtensionPreferences>): Promise<ExtensionPreferences> {
   const current = await getStoredPreferences()
   const updated = { ...current, ...prefs }
   if (updated.githubToken !== undefined) {
     setConfiguredGitHubToken(updated.githubToken)
   }
-  if (hasChromeStorage) {
-    await chrome.storage.local.set({ [STORAGE_KEYS.PREFERENCES]: updated })
-  } else {
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    await storage.set({ [STORAGE_KEYS.PREFERENCES]: updated })
+  } else if (typeof localStorage !== 'undefined') {
     localStorage.setItem(STORAGE_KEYS.PREFERENCES, JSON.stringify(updated))
   }
   return updated
@@ -83,8 +99,9 @@ export async function saveStoredPreferences(prefs: Partial<ExtensionPreferences>
 
 export async function getStoredFavorites(): Promise<FavoriteItem[]> {
   let rawList: any[] = []
-  if (hasChromeStorage) {
-    const result = (await chrome.storage.local.get(STORAGE_KEYS.FAVORITES)) as Record<string, any>
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    const result = (await storage.get(STORAGE_KEYS.FAVORITES)) as Record<string, any>
     rawList = Array.isArray(result[STORAGE_KEYS.FAVORITES]) ? result[STORAGE_KEYS.FAVORITES] : []
   } else {
     try {
@@ -153,8 +170,9 @@ export async function toggleStoredFavorite(
     next = [newItem, ...list]
   }
 
-  if (hasChromeStorage) {
-    await chrome.storage.local.set({ [STORAGE_KEYS.FAVORITES]: next })
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    await storage.set({ [STORAGE_KEYS.FAVORITES]: next })
   } else {
     localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(next))
   }
@@ -162,8 +180,9 @@ export async function toggleStoredFavorite(
 }
 
 export async function getStoredRecent(): Promise<RecentAnalysis[]> {
-  if (hasChromeStorage) {
-    const result = (await chrome.storage.local.get(STORAGE_KEYS.RECENT)) as Record<string, any>
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    const result = (await storage.get(STORAGE_KEYS.RECENT)) as Record<string, any>
     return Array.isArray(result[STORAGE_KEYS.RECENT]) ? result[STORAGE_KEYS.RECENT] : []
   }
   try {
@@ -187,8 +206,9 @@ export async function addStoredRecent(report: RepositoryReport): Promise<void> {
   const current = await getStoredRecent()
   const filtered = current.filter((item) => item.fullName.toLowerCase() !== recentItem.fullName.toLowerCase())
   const updated = [recentItem, ...filtered].slice(0, 30)
-  if (hasChromeStorage) {
-    await chrome.storage.local.set({ [STORAGE_KEYS.RECENT]: updated })
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    await storage.set({ [STORAGE_KEYS.RECENT]: updated })
   } else {
     localStorage.setItem(STORAGE_KEYS.RECENT, JSON.stringify(updated))
   }
@@ -197,8 +217,9 @@ export async function addStoredRecent(report: RepositoryReport): Promise<void> {
 export async function getCachedReport(fullName: string): Promise<RepositoryReport | null> {
   const key = fullName.toLowerCase()
   let report: any = null
-  if (hasChromeStorage) {
-    const result = (await chrome.storage.local.get(STORAGE_KEYS.REPORTS)) as Record<string, any>
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    const result = (await storage.get(STORAGE_KEYS.REPORTS)) as Record<string, any>
     const reports: Record<string, any> = result[STORAGE_KEYS.REPORTS] || {}
     report = reports[key] || null
   } else {
@@ -224,8 +245,9 @@ export async function getCachedReport(fullName: string): Promise<RepositoryRepor
 
 export async function saveCachedReport(report: RepositoryReport): Promise<void> {
   const key = report.repository.fullName.toLowerCase()
-  if (hasChromeStorage) {
-    const result = (await chrome.storage.local.get(STORAGE_KEYS.REPORTS)) as Record<string, any>
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    const result = (await storage.get(STORAGE_KEYS.REPORTS)) as Record<string, any>
     const reports: Record<string, any> = result[STORAGE_KEYS.REPORTS] || {}
     reports[key] = report
     // Keep max 25 saved cached reports
@@ -233,7 +255,7 @@ export async function saveCachedReport(report: RepositoryReport): Promise<void> 
     if (keys.length > 25) {
       delete reports[keys[0]]
     }
-    await chrome.storage.local.set({ [STORAGE_KEYS.REPORTS]: reports })
+    await storage.set({ [STORAGE_KEYS.REPORTS]: reports })
   } else {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.REPORTS)
@@ -248,8 +270,9 @@ export async function saveCachedReport(report: RepositoryReport): Promise<void> 
 
 export async function getAllSavedReports(): Promise<RepositoryReport[]> {
   let rawReports: Record<string, any> = {}
-  if (hasChromeStorage) {
-    const result = (await chrome.storage.local.get(STORAGE_KEYS.REPORTS)) as Record<string, any>
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    const result = (await storage.get(STORAGE_KEYS.REPORTS)) as Record<string, any>
     rawReports = result[STORAGE_KEYS.REPORTS] || {}
   } else {
     try {
@@ -272,11 +295,12 @@ export async function getAllSavedReports(): Promise<RepositoryReport[]> {
 
 export async function deleteSavedReport(fullName: string): Promise<void> {
   const key = fullName.toLowerCase()
-  if (hasChromeStorage) {
-    const result = (await chrome.storage.local.get(STORAGE_KEYS.REPORTS)) as Record<string, any>
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    const result = (await storage.get(STORAGE_KEYS.REPORTS)) as Record<string, any>
     const reports: Record<string, any> = result[STORAGE_KEYS.REPORTS] || {}
     delete reports[key]
-    await chrome.storage.local.set({ [STORAGE_KEYS.REPORTS]: reports })
+    await storage.set({ [STORAGE_KEYS.REPORTS]: reports })
   } else {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.REPORTS)

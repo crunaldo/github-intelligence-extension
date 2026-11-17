@@ -24,6 +24,8 @@ export default defineConfig({
       'https://api.osv.dev/*',
       'https://translate.googleapis.com/*',
       'https://api.mymemory.translated.net/*',
+      'https://*.workers.dev/*',
+      'https://*.supabase.co/*',
     ],
     icons: {
       '16': 'icons/icon16.png',
