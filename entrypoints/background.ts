@@ -1,3 +1,4 @@
+import { handleAuthRuntimeMessage } from '../src/extension/auth/supabaseAuth'
 import { extractRepoReference, parseFlexibleGitHubUrl } from '../src/features/repository/github'
 import type { GitHubTarget } from '../src/features/repository/types'
 
@@ -264,6 +265,13 @@ export default defineBackground(() => {
         const repo = await getActiveRepoSession()
         sendResponse({ repo })
       })()
+      return true
+    }
+
+    if (message?.type === 'SIGN_IN_WITH_GITHUB' || message?.type === 'INITIATE_PRO_UPGRADE') {
+      void handleAuthRuntimeMessage(message).then((result) => {
+        sendResponse(result ?? { ok: false, error: 'Unsupported auth message' })
+      })
       return true
     }
   })

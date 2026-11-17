@@ -1,5 +1,4 @@
 import { checkAndIncrementQuota } from '../middleware/rate-limiter'
-import { createTimeoutSignal } from './providers/shared'
 import {
   AIProvidersExhaustedError,
   type AnalysisResult,
@@ -11,6 +10,8 @@ import {
 const MAX_CHAT_MESSAGES = 20
 const MAX_MESSAGE_CHARS = 4000
 const MAX_CHAT_OUTPUT_TOKENS = 1024
+const DEFAULT_CONNECT_TIMEOUT_MS = 15000
+const DEFAULT_CHUNK_IDLE_TIMEOUT_MS = 30000
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions'
 const GROQ_CHAT_MODEL = 'llama-3.3-70b-versatile'
@@ -74,6 +75,8 @@ export interface MascotChatOptions {
   cfAiBinding?: { run: (model: string, input: unknown) => Promise<unknown> }
   openRouterApiKey?: string
   timeoutMs?: number
+  chunkIdleTimeoutMs?: number
+  streamSignal?: AbortSignal
 }
 
 export class InvalidMascotRequestError extends Error {
@@ -176,18 +179,82 @@ function buildMascotPrompt(
   }
 }
 
+async function fetchWithConnectTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs?: number
+): Promise<Response> {
+  const effectiveTimeout =
+    typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? timeoutMs
+      : DEFAULT_CONNECT_TIMEOUT_MS
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => {
+    controller.abort(new Error(`Provider connection timeout after ${effectiveTimeout}ms`))
+  }, effectiveTimeout)
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal
+    })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function readChunkWithIdleTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  idleTimeoutMs: number
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`Provider stream idle timeout after ${idleTimeoutMs}ms`))
+        }, idleTimeoutMs)
+      })
+    ])
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer)
+    }
+  }
+}
+
 async function* parseSseByteStream(
   body: ReadableStream<Uint8Array>,
-  extractDelta: (dataPayload: string) => string | null
+  extractDelta: (dataPayload: string) => string | null,
+  streamOptions?: { chunkIdleTimeoutMs?: number; signal?: AbortSignal }
 ): AsyncGenerator<string> {
   const reader = body.getReader()
   const decoder = new TextDecoder('utf-8')
+  const idleTimeoutMs =
+    typeof streamOptions?.chunkIdleTimeoutMs === 'number' &&
+    Number.isFinite(streamOptions.chunkIdleTimeoutMs) &&
+    streamOptions.chunkIdleTimeoutMs > 0
+      ? streamOptions.chunkIdleTimeoutMs
+      : DEFAULT_CHUNK_IDLE_TIMEOUT_MS
+
   let buffer = ''
+  let streamDone = false
+  const signal = streamOptions?.signal
+
+  const onAbort = () => {
+    void reader.cancel().catch(() => {})
+  }
+  signal?.addEventListener('abort', onAbort, { once: true })
 
   try {
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
+    while (!signal?.aborted) {
+      const { value, done } = await readChunkWithIdleTimeout(reader, idleTimeoutMs)
+      if (done) {
+        streamDone = true
+        break
+      }
       if (value) {
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split(/\r?\n/)
@@ -204,16 +271,22 @@ async function* parseSseByteStream(
       }
     }
 
-    buffer += decoder.decode()
-    for (const line of buffer.split(/\r?\n/)) {
-      const trimmed = line.trim()
-      if (!trimmed.startsWith('data:')) continue
-      const payload = trimmed.slice(5).trim()
-      if (!payload || payload === '[DONE]') continue
-      const delta = extractDelta(payload)
-      if (delta) yield delta
+    if (streamDone) {
+      buffer += decoder.decode()
+      for (const line of buffer.split(/\r?\n/)) {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith('data:')) continue
+        const payload = trimmed.slice(5).trim()
+        if (!payload || payload === '[DONE]') continue
+        const delta = extractDelta(payload)
+        if (delta) yield delta
+      }
     }
   } finally {
+    signal?.removeEventListener('abort', onAbort)
+    if (!streamDone) {
+      await reader.cancel().catch(() => {})
+    }
     reader.releaseLock()
   }
 }
@@ -263,31 +336,36 @@ async function callOpenAICompatibleStream(options: {
   model: string
   prompt: MascotChatPrompt
   timeoutMs?: number
+  chunkIdleTimeoutMs?: number
+  streamSignal?: AbortSignal
   extraHeaders?: Record<string, string>
 }): Promise<AsyncIterable<string>> {
   if (!options.apiKey) {
     throw new Error(`${options.provider} API key is not configured`)
   }
 
-  const response = await fetch(options.endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${options.apiKey}`,
-      ...options.extraHeaders
+  const response = await fetchWithConnectTimeout(
+    options.endpoint,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${options.apiKey}`,
+        ...options.extraHeaders
+      },
+      body: JSON.stringify({
+        model: options.model,
+        messages: [
+          { role: 'system', content: options.prompt.system },
+          ...options.prompt.messages
+        ],
+        stream: true,
+        max_tokens: MAX_CHAT_OUTPUT_TOKENS,
+        temperature: 0.3
+      })
     },
-    signal: createTimeoutSignal(options.timeoutMs),
-    body: JSON.stringify({
-      model: options.model,
-      messages: [
-        { role: 'system', content: options.prompt.system },
-        ...options.prompt.messages
-      ],
-      stream: true,
-      max_tokens: MAX_CHAT_OUTPUT_TOKENS,
-      temperature: 0.3
-    })
-  })
+    options.timeoutMs
+  )
 
   if (!response.ok) {
     throw new Error(`${options.provider} HTTP ${response.status}`)
@@ -311,7 +389,10 @@ async function callOpenAICompatibleStream(options: {
     throw new Error(`${options.provider} response missing stream body`)
   }
 
-  return parseSseByteStream(response.body, extractOpenAIDelta)
+  return parseSseByteStream(response.body, extractOpenAIDelta, {
+    chunkIdleTimeoutMs: options.chunkIdleTimeoutMs,
+    signal: options.streamSignal
+  })
 }
 
 async function streamWithGroq(
@@ -324,7 +405,9 @@ async function streamWithGroq(
     apiKey: options.groqApiKey,
     model: GROQ_CHAT_MODEL,
     prompt,
-    timeoutMs: options.timeoutMs
+    timeoutMs: options.timeoutMs,
+    chunkIdleTimeoutMs: options.chunkIdleTimeoutMs,
+    streamSignal: options.streamSignal
   })
 }
 
@@ -339,6 +422,8 @@ async function streamWithOpenRouter(
     model: OPENROUTER_CHAT_MODEL,
     prompt,
     timeoutMs: options.timeoutMs,
+    chunkIdleTimeoutMs: options.chunkIdleTimeoutMs,
+    streamSignal: options.streamSignal,
     extraHeaders: {
       'X-Title': 'GitHub Intelligence Extension'
     }
@@ -353,27 +438,30 @@ async function streamWithGemini(
     throw new Error('gemini API key is not configured')
   }
 
-  const response = await fetch(GEMINI_STREAM_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': options.geminiApiKey
-    },
-    signal: createTimeoutSignal(options.timeoutMs),
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: prompt.system }]
+  const response = await fetchWithConnectTimeout(
+    GEMINI_STREAM_ENDPOINT,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': options.geminiApiKey
       },
-      contents: prompt.messages.map((m) => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-      })),
-      generationConfig: {
-        maxOutputTokens: MAX_CHAT_OUTPUT_TOKENS,
-        temperature: 0.3
-      }
-    })
-  })
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: prompt.system }]
+        },
+        contents: prompt.messages.map((m) => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }]
+        })),
+        generationConfig: {
+          maxOutputTokens: MAX_CHAT_OUTPUT_TOKENS,
+          temperature: 0.3
+        }
+      })
+    },
+    options.timeoutMs
+  )
 
   if (!response.ok) {
     throw new Error(`gemini HTTP ${response.status}`)
@@ -398,7 +486,10 @@ async function streamWithGemini(
     throw new Error('gemini response missing stream body')
   }
 
-  return parseSseByteStream(response.body, extractGeminiDelta)
+  return parseSseByteStream(response.body, extractGeminiDelta, {
+    chunkIdleTimeoutMs: options.chunkIdleTimeoutMs,
+    signal: options.streamSignal
+  })
 }
 
 async function streamWithCloudflareAi(
@@ -416,7 +507,14 @@ async function streamWithCloudflareAi(
   })
 
   if (rawResult instanceof ReadableStream) {
-    return parseSseByteStream(rawResult as ReadableStream<Uint8Array>, extractCloudflareDelta)
+    return parseSseByteStream(
+      rawResult as ReadableStream<Uint8Array>,
+      extractCloudflareDelta,
+      {
+        chunkIdleTimeoutMs: options.chunkIdleTimeoutMs,
+        signal: options.streamSignal
+      }
+    )
   }
 
   if (typeof rawResult === 'string' && rawResult.length > 0) {
@@ -470,7 +568,8 @@ async function pullFirstNonEmptyDelta(
 
 function createSseReadableStream(
   firstDelta: string,
-  iterator: AsyncIterator<string>
+  iterator: AsyncIterator<string>,
+  cancelController?: AbortController
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder()
   const encodeDelta = (delta: string) =>
@@ -496,6 +595,7 @@ function createSseReadableStream(
       }
     },
     async cancel() {
+      cancelController?.abort()
       if (typeof iterator.return === 'function') {
         try {
           await iterator.return()
@@ -553,12 +653,22 @@ export async function handleMascotChatRequest(
       continue
     }
 
+    const streamCancelController = new AbortController()
+    let iterator: AsyncIterator<string> | null = null
+
     try {
-      const output = await providerFn(prompt, options)
-      const iterator = toAsyncIterator(output)
+      const output = await providerFn(prompt, {
+        ...options,
+        streamSignal: streamCancelController.signal
+      })
+      iterator = toAsyncIterator(output)
       const { firstDelta } = await pullFirstNonEmptyDelta(iterator)
-      return createSseReadableStream(firstDelta, iterator)
+      return createSseReadableStream(firstDelta, iterator, streamCancelController)
     } catch (error) {
+      streamCancelController.abort()
+      if (iterator && typeof iterator.return === 'function') {
+        await iterator.return().catch(() => {})
+      }
       const message = error instanceof Error ? error.message : String(error)
       failures.push({ provider: providerName, message })
     }

@@ -7,6 +7,10 @@ import {
   consumeSseDeltaStream,
   streamMascotChat
 } from '../../src/extension/api/backendClient'
+import {
+  handleAuthRuntimeMessage,
+  requestProUpgradeFromContentScript
+} from '../../src/extension/auth/supabaseAuth'
 
 function createMockKv(initial: Record<string, string> = {}): KVNamespace & {
   get: ReturnType<typeof vi.fn>
@@ -476,5 +480,266 @@ describe('Extension Mascot SSE Stream Client', () => {
       status: 429,
       code: 'QUOTA_EXCEEDED'
     } satisfies Partial<BackendApiError>)
+  })
+})
+
+describe('Mascot Provider HTTP/Binding Streaming Adapters & Lifecycle', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-17T12:00:00.000Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('streams SSE deltas from Groq and OpenRouter endpoints via fetch', async () => {
+    const encoder = new TextEncoder()
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('api.groq.com')) {
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                encoder.encode('data: {"choices":[{"delta":{"content":"Groq "}}]}\n\n')
+              )
+              controller.enqueue(
+                encoder.encode('data: {"choices":[{"delta":{"content":"live"}}]}\n\ndata: [DONE]\n\n')
+              )
+              controller.close()
+            }
+          }),
+          { status: 200, headers: { 'Content-Type': 'text/event-stream' } }
+        )
+      }
+      if (url.includes('openrouter.ai')) {
+        expect((init?.headers as Record<string, string>)['X-Title']).toBe(
+          'GitHub Intelligence Extension'
+        )
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: 'OpenRouter JSON fallback' } }] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      }
+      return new Response('Unexpected', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const kv = createMockKv()
+    const groqStream = await handleMascotChatRequest(
+      {
+        userId: 'pro-http-1',
+        messages: [{ role: 'user', content: 'Hi Groq' }],
+        repoContext: { owner: 'facebook', repo: 'react' }
+      },
+      kv,
+      { priorityOrder: ['groq'], groqApiKey: 'gsk_test' }
+    )
+    expect(await readStreamText(groqStream)).toBe(
+      'data: {"delta":"Groq "}\n\ndata: {"delta":"live"}\n\ndata: [DONE]\n\n'
+    )
+
+    const orStream = await handleMascotChatRequest(
+      {
+        userId: 'pro-http-1',
+        messages: [{ role: 'user', content: 'Hi OpenRouter' }],
+        repoContext: { owner: 'facebook', repo: 'react' }
+      },
+      kv,
+      { priorityOrder: ['openRouter'], openRouterApiKey: 'or_test' }
+    )
+    expect(await readStreamText(orStream)).toBe(
+      'data: {"delta":"OpenRouter JSON fallback"}\n\ndata: [DONE]\n\n'
+    )
+  })
+
+  it('streams SSE deltas and JSON fallback from Gemini and Cloudflare AI binding', async () => {
+    const encoder = new TextEncoder()
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = String(input)
+      expect(url).toContain('gemini-2.0-flash:streamGenerateContent?alt=sse')
+      const headers = init?.headers as Record<string, string>
+      expect(headers['x-goog-api-key']).toBe('gem_test')
+      const body = JSON.parse(String(init?.body)) as {
+        contents: Array<{ role: string; parts: Array<{ text: string }> }>
+      }
+      expect(body.contents.map((c) => c.role)).toEqual(['user', 'model', 'user'])
+
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                'data: {"candidates":[{"content":{"parts":[{"text":"Gemini "}]}}]}\n\n'
+              )
+            )
+            controller.enqueue(
+              encoder.encode(
+                'data: {"candidates":[{"content":{"parts":[{"text":"stream"}]}}]}\n\n'
+              )
+            )
+            controller.close()
+          }
+        }),
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } }
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const kv = createMockKv()
+    const gemStream = await handleMascotChatRequest(
+      {
+        userId: 'pro-http-2',
+        messages: [
+          { role: 'user', content: 'Hello' },
+          { role: 'assistant', content: 'Hi!' },
+          { role: 'user', content: 'Explain' }
+        ],
+        repoContext: { owner: 'vercel', repo: 'next.js' }
+      },
+      kv,
+      { priorityOrder: ['gemini'], geminiApiKey: 'gem_test' }
+    )
+    expect(await readStreamText(gemStream)).toBe(
+      'data: {"delta":"Gemini "}\n\ndata: {"delta":"stream"}\n\ndata: [DONE]\n\n'
+    )
+
+    const cfStream = await handleMascotChatRequest(
+      {
+        userId: 'pro-http-2',
+        messages: [{ role: 'user', content: 'Hi CF' }],
+        repoContext: { owner: 'vercel', repo: 'next.js' }
+      },
+      kv,
+      {
+        priorityOrder: ['cfAi'],
+        cfAiBinding: {
+          run: vi.fn().mockResolvedValue(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(encoder.encode('data: {"response":"CF "}\n\n'))
+                controller.enqueue(encoder.encode('data: {"response":"AI"}\n\ndata: [DONE]\n\n'))
+                controller.close()
+              }
+            })
+          )
+        }
+      }
+    )
+    expect(await readStreamText(cfStream)).toBe(
+      'data: {"delta":"CF "}\n\ndata: {"delta":"AI"}\n\ndata: [DONE]\n\n'
+    )
+  })
+
+  it('does not abort active SSE streams after the 15s initial-connect timeout and cancels upstream reader on client cancel', async () => {
+    const encoder = new TextEncoder()
+    const upstreamCancelSpy = vi.fn()
+    let upstreamController!: ReadableStreamDefaultController<Uint8Array>
+
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      // Initial connect signal should not be aborted once headers resolve
+      expect(init?.signal?.aborted).toBe(false)
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            upstreamController = controller
+            controller.enqueue(
+              encoder.encode('data: {"choices":[{"delta":{"content":"First "}}]}\n\n')
+            )
+          },
+          cancel() {
+            upstreamCancelSpy()
+          }
+        }),
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } }
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const kv = createMockKv()
+    const outStream = await handleMascotChatRequest(
+      {
+        userId: 'pro-stream-cancel',
+        messages: [{ role: 'user', content: 'Stream slowly' }],
+        repoContext: { owner: 'facebook', repo: 'react' }
+      },
+      kv,
+      { priorityOrder: ['groq'], groqApiKey: 'gsk_test', timeoutMs: 1000, chunkIdleTimeoutMs: 60_000 }
+    )
+
+    const reader = outStream.getReader()
+    const first = await reader.read()
+    expect(new TextDecoder().decode(first.value)).toBe('data: {"delta":"First "}\n\n')
+
+    // Advance well past the 1s connect timeout; stream must remain alive
+    await vi.advanceTimersByTimeAsync(5000)
+    upstreamController.enqueue(
+      encoder.encode('data: {"choices":[{"delta":{"content":"Second"}}]}\n\n')
+    )
+    const second = await reader.read()
+    expect(new TextDecoder().decode(second.value)).toBe('data: {"delta":"Second"}\n\n')
+
+    // Cancelling the downstream stream cancels the upstream reader
+    await reader.cancel()
+    expect(upstreamCancelSpy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Content Script -> Background Pro Upgrade Delegation', () => {
+  const originalChrome = (globalThis as { chrome?: unknown }).chrome
+
+  afterEach(() => {
+    ;(globalThis as { chrome?: unknown }).chrome = originalChrome
+    vi.restoreAllMocks()
+  })
+
+  it('delegates INITIATE_PRO_UPGRADE via chrome.runtime.sendMessage when chrome.identity/tabs are absent', async () => {
+    const mockSession = {
+      accessToken: 'jwt-bg-1',
+      user: { id: 'bg-user-1', email: 'pro@example.com' },
+      isPro: true
+    }
+    const sendMessage = vi.fn().mockResolvedValue({ ok: true, session: mockSession })
+    ;(globalThis as { chrome?: unknown }).chrome = {
+      runtime: { sendMessage }
+    }
+
+    const result = await requestProUpgradeFromContentScript()
+    expect(sendMessage).toHaveBeenCalledWith(
+      { type: 'INITIATE_PRO_UPGRADE' },
+      expect.any(Function)
+    )
+    expect(result).toEqual({ ok: true, session: mockSession })
+  })
+
+  it('handleAuthRuntimeMessage executes SIGN_IN_WITH_GITHUB and INITIATE_PRO_UPGRADE in background context', async () => {
+    const mockSession = {
+      accessToken: 'jwt-bg-2',
+      user: { id: 'bg-user-2' },
+      isPro: true
+    }
+    const signIn = vi.fn().mockResolvedValue(mockSession)
+    const upgrade = vi.fn().mockResolvedValue(undefined)
+    const getSession = vi.fn().mockResolvedValue(mockSession)
+
+    const signInRes = await handleAuthRuntimeMessage(
+      { type: 'SIGN_IN_WITH_GITHUB' },
+      { signIn }
+    )
+    expect(signIn).toHaveBeenCalledTimes(1)
+    expect(signInRes).toEqual({ ok: true, session: mockSession })
+
+    const upgradeRes = await handleAuthRuntimeMessage(
+      { type: 'INITIATE_PRO_UPGRADE' },
+      { upgrade, getSession }
+    )
+    expect(upgrade).toHaveBeenCalledTimes(1)
+    expect(getSession).toHaveBeenCalledTimes(1)
+    expect(upgradeRes).toEqual({ ok: true, session: mockSession })
+
+    expect(await handleAuthRuntimeMessage({ type: 'OTHER' })).toBeNull()
   })
 })

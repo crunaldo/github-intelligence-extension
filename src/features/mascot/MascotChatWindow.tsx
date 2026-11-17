@@ -6,8 +6,8 @@ import {
 } from '../../extension/api/backendClient'
 import {
   getAuthSession,
-  initiateProUpgrade,
   refreshProStatus,
+  requestProUpgradeFromContentScript,
   type AuthSession,
 } from '../../extension/auth/supabaseAuth'
 
@@ -59,6 +59,7 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
   const [upgrading, setUpgrading] = useState(false)
 
   const abortControllerRef = useRef<AbortController | null>(null)
+  const requestIdRef = useRef(0)
   const scrollAreaRef = useRef<HTMLDivElement | null>(null)
 
   // Check auth session on mount and subscribe to storage changes
@@ -102,11 +103,13 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
 
   // Reset conversation and cancel in-flight stream when repo changes or on unmount
   useEffect(() => {
+    requestIdRef.current += 1
     setMessages([])
     setError(null)
     setIsStreaming(false)
 
     return () => {
+      requestIdRef.current += 1
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
         abortControllerRef.current = null
@@ -121,10 +124,18 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
   }, [messages, isStreaming])
 
   const stopStreaming = () => {
+    requestIdRef.current += 1
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
       abortControllerRef.current = null
     }
+    setMessages((prev) => {
+      const last = prev[prev.length - 1]
+      if (last && last.role === 'assistant' && !last.content) {
+        return prev.slice(0, -1)
+      }
+      return prev
+    })
     setIsStreaming(false)
   }
 
@@ -141,8 +152,11 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
     setMessages([...requestMessages, { role: 'assistant', content: '' }])
     setIsStreaming(true)
 
+    const requestId = ++requestIdRef.current
     const controller = new AbortController()
     abortControllerRef.current = controller
+    const isCurrentRequest = () =>
+      requestIdRef.current === requestId && abortControllerRef.current === controller
 
     try {
       await streamMascotChat({
@@ -154,6 +168,7 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
         },
         signal: controller.signal,
         onDelta: (delta) => {
+          if (!isCurrentRequest()) return
           setMessages((prev) => {
             if (prev.length === 0) return prev
             const updated = [...prev]
@@ -169,6 +184,10 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
         },
       })
     } catch (err) {
+      if (!isCurrentRequest()) {
+        return
+      }
+
       // Remove empty assistant placeholder if no delta arrived before abort/failure
       setMessages((prev) => {
         const last = prev[prev.length - 1]
@@ -205,10 +224,10 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
 
       setError('Could not connect to mascot chat. Please try again.')
     } finally {
-      if (abortControllerRef.current === controller) {
+      if (isCurrentRequest()) {
         abortControllerRef.current = null
+        setIsStreaming(false)
       }
-      setIsStreaming(false)
     }
   }
 
@@ -218,9 +237,16 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
   }
 
   const handleUpgrade = async () => {
+    setError(null)
     setUpgrading(true)
     try {
-      await initiateProUpgrade()
+      const result = await requestProUpgradeFromContentScript()
+      if (result.session !== undefined) {
+        setSession(result.session)
+      }
+      if (!result.ok && result.error) {
+        setError(result.error)
+      }
     } finally {
       setUpgrading(false)
     }
@@ -309,6 +335,11 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
             >
               Already upgraded? Refresh status
             </button>
+          )}
+          {error && (
+            <div className="gpi-chat-error" role="alert">
+              {error}
+            </div>
           )}
         </div>
       ) : (

@@ -510,3 +510,122 @@ export async function initiateProUpgrade(deps?: {
   const openUrl = deps?.openUrl ?? openExternalUrl
   await openUrl(checkoutUrl.toString())
 }
+
+export interface AuthRuntimeResponse {
+  ok: boolean
+  session?: AuthSession | null
+  error?: string
+}
+
+/**
+ * Handles background service worker runtime messages for GitHub OAuth sign-in
+ * and Lemon Squeezy Pro upgrade checkout where `chrome.identity` and `chrome.tabs`
+ * are available. Returns `null` if the message type is not an auth action.
+ */
+export async function handleAuthRuntimeMessage(
+  message: { type?: unknown } | null | undefined,
+  deps?: {
+    signIn?: () => Promise<AuthSession | null>
+    upgrade?: () => Promise<void>
+    getSession?: () => Promise<AuthSession | null>
+  }
+): Promise<AuthRuntimeResponse | null> {
+  if (!message || typeof message !== 'object') {
+    return null
+  }
+
+  if (message.type === 'SIGN_IN_WITH_GITHUB') {
+    try {
+      const session = await (deps?.signIn ?? signInWithGitHub)()
+      return { ok: true, session }
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'GitHub sign-in failed',
+      }
+    }
+  }
+
+  if (message.type === 'INITIATE_PRO_UPGRADE') {
+    try {
+      await (deps?.upgrade ?? initiateProUpgrade)()
+      const session = await (deps?.getSession ?? getAuthSession)()
+      return { ok: true, session }
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Failed to initiate Pro upgrade',
+      }
+    }
+  }
+
+  return null
+}
+
+/**
+ * Initiates Pro upgrade from content-script UIs where `chrome.identity` and `chrome.tabs`
+ * are unavailable by delegating `INITIATE_PRO_UPGRADE` to the MV3 background service worker.
+ */
+export async function requestProUpgradeFromContentScript(): Promise<AuthRuntimeResponse> {
+  const canRunLocally =
+    typeof chrome !== 'undefined' &&
+    Boolean(
+      (chrome as unknown as { identity?: { launchWebAuthFlow?: unknown } }).identity
+        ?.launchWebAuthFlow
+    ) &&
+    Boolean(chrome.tabs?.create)
+
+  if (!canRunLocally && typeof chrome !== 'undefined' && typeof chrome.runtime?.sendMessage === 'function') {
+    return new Promise<AuthRuntimeResponse>((resolve) => {
+      let settled = false
+      const settle = (result: AuthRuntimeResponse) => {
+        if (!settled) {
+          settled = true
+          resolve(result)
+        }
+      }
+
+      try {
+        const maybePromise = chrome.runtime.sendMessage(
+          { type: 'INITIATE_PRO_UPGRADE' },
+          (response?: AuthRuntimeResponse) => {
+            if (chrome.runtime?.lastError) {
+              settle({ ok: false, error: chrome.runtime.lastError.message })
+              return
+            }
+            settle(response ?? { ok: false, error: 'Empty response from background auth handler' })
+          }
+        ) as unknown
+
+        if (maybePromise && typeof (maybePromise as Promise<unknown>).then === 'function') {
+          ;(maybePromise as Promise<AuthRuntimeResponse>)
+            .then((response) => {
+              settle(response ?? { ok: false, error: 'Empty response from background auth handler' })
+            })
+            .catch((err) => {
+              settle({
+                ok: false,
+                error: err instanceof Error ? err.message : 'Background auth request failed',
+              })
+            })
+        }
+      } catch (err) {
+        settle({
+          ok: false,
+          error: err instanceof Error ? err.message : 'Background auth request failed',
+        })
+      }
+    })
+  }
+
+  try {
+    await initiateProUpgrade()
+    const session = await getAuthSession()
+    return { ok: true, session }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to initiate Pro upgrade',
+    }
+  }
+}
