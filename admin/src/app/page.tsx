@@ -395,7 +395,7 @@ function DashboardContent({
   )
 }
 
-export function AdminDashboardView({
+function AdminDashboardView({
   injectedClient,
   injectedSession
 }: {

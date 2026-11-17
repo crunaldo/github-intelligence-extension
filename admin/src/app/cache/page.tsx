@@ -211,7 +211,7 @@ function CacheExplorerContent({
   )
 }
 
-export function CacheExplorerView({
+function CacheExplorerView({
   injectedClient,
   injectedSession
 }: {

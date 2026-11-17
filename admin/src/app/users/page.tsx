@@ -289,7 +289,7 @@ function UsersManagementContent({ client }: { client: AdminSupabaseClient; sessi
   )
 }
 
-export function UsersManagementView({
+function UsersManagementView({
   injectedClient,
   injectedSession
 }: {

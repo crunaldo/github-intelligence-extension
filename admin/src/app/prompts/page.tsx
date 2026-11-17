@@ -204,7 +204,7 @@ function PromptsStudioContent({
   )
 }
 
-export function PromptsStudioView({
+function PromptsStudioView({
   injectedClient,
   injectedSession
 }: {

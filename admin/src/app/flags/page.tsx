@@ -296,7 +296,7 @@ function FlagsQuotasContent({
   )
 }
 
-export function FeatureFlagsView({
+function FeatureFlagsView({
   injectedClient,
   injectedSession
 }: {
