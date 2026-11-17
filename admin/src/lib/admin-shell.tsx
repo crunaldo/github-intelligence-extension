@@ -20,8 +20,10 @@ import {
   type AdminSession,
   type AdminSupabaseClient,
   createBrowserSupabaseClient,
+  exchangeAdminPkceCode,
   fetchAuthUser,
   getStoredAdminSession,
+  parseOAuthCallbackFromUrl,
   parseSessionFromUrlHash,
   signInWithEmailPassword,
   startGitHubOAuthSignIn,
@@ -88,6 +90,40 @@ export function AdminShell({
         return
       }
 
+      const callback = parseOAuthCallbackFromUrl()
+      if (callback.error) {
+        if (typeof window !== 'undefined') {
+          window.history.replaceState(null, '', window.location.pathname)
+        }
+        if (!active) return
+        setAuthError(callback.error)
+        setSession(null)
+        setAuthStatus('unauthenticated')
+        return
+      }
+
+      if (callback.code) {
+        if (typeof window !== 'undefined') {
+          window.history.replaceState(null, '', window.location.pathname)
+        }
+        const pkceResult = await exchangeAdminPkceCode(callback.code)
+        if (!active) return
+        if (!pkceResult.session) {
+          storeAdminSession(null)
+          setSession(null)
+          setAuthError(pkceResult.error ?? 'GitHub OAuth code exchange failed')
+          setAuthStatus('unauthenticated')
+          return
+        }
+
+        const client = injectedClient ?? createBrowserSupabaseClient(pkceResult.session.accessToken)
+        const isAdmin = await verifyAdminRole(pkceResult.session.userId, client)
+        if (!active) return
+        setSession(pkceResult.session)
+        setAuthStatus(isAdmin ? 'authorized' : 'forbidden')
+        return
+      }
+
       const hashSession = parseSessionFromUrlHash()
       const stored = hashSession ?? getStoredAdminSession()
       if (!stored) {
@@ -101,6 +137,9 @@ export function AdminShell({
         storeAdminSession(null)
         if (!active) return
         setSession(null)
+        if (hashSession) {
+          setAuthError('Unable to verify GitHub OAuth session. Please sign in again.')
+        }
         setAuthStatus('unauthenticated')
         return
       }
@@ -151,6 +190,14 @@ export function AdminShell({
     setAuthStatus(isAdmin ? 'authorized' : 'forbidden')
   }
 
+  async function handleGitHubOAuthSignIn() {
+    setAuthError(null)
+    const result = await startGitHubOAuthSignIn()
+    if (!result.ok) {
+      setAuthError(result.error ?? 'Unable to start GitHub OAuth sign-in')
+    }
+  }
+
   function handleSignOut() {
     storeAdminSession(null)
     setSession(null)
@@ -190,7 +237,7 @@ export function AdminShell({
 
           <button
             type="button"
-            onClick={() => startGitHubOAuthSignIn()}
+            onClick={() => void handleGitHubOAuthSignIn()}
             className="w-full flex items-center justify-center gap-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 px-4 py-2.5 text-sm font-medium text-white transition"
           >
             <GitBranch className="w-4 h-4" />

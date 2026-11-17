@@ -27,7 +27,7 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlagsConfig = {
 }
 
 export const DEFAULT_SYSTEM_PROMPT_REPO =
-  'You are GitHub Project Intelligence. Analyze the repository README and package manifests to produce structured technical insights, architecture Mermaid diagram, strengths, and concerns in valid JSON.'
+  'You are an expert software architect for GitHub Project Intelligence. Analyze the repository README and package manifests to produce concise, accurate technical insights, a Mermaid architecture diagram, strengths, and concerns. (The required JSON output schema is automatically enforced by the Edge Worker.)'
 
 export const DEFAULT_SYSTEM_PROMPT_MASCOT =
   'You are the GitHub Intelligence Mascot assistant. Answer questions about the current repository concisely, accurately, and in a friendly engineering tone grounded in the repository summary context.'

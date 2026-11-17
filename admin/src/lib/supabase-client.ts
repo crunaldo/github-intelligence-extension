@@ -31,37 +31,51 @@ export interface SupabaseDataResult<T> {
 }
 
 const SESSION_STORAGE_KEY = 'gpi_admin_session'
+const PKCE_VERIFIER_STORAGE_KEY = 'gpi_admin_pkce_verifier'
 
-function readPublicEnv(keys: string[]): string {
+function readStaticEnv(getter: () => string | undefined): string | undefined {
+  try {
+    const value = getter()
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function firstNonEmpty(...values: Array<string | undefined>): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim()
+    }
+  }
+  return ''
+}
+
+export function getPublicSupabaseConfig(): AdminSupabaseConfig {
   const globalEnv =
     typeof window !== 'undefined'
       ? (window as unknown as { __ADMIN_ENV__?: Record<string, string | undefined> }).__ADMIN_ENV__
       : undefined
 
-  for (const key of keys) {
-    const fromWindow = globalEnv?.[key]
-    if (typeof fromWindow === 'string' && fromWindow.trim().length > 0) {
-      return fromWindow.trim()
-    }
-    if (typeof process !== 'undefined' && process.env) {
-      const fromProcess = process.env[key]
-      if (typeof fromProcess === 'string' && fromProcess.trim().length > 0) {
-        return fromProcess.trim()
-      }
-    }
-  }
-
-  return ''
-}
-
-export function getPublicSupabaseConfig(): AdminSupabaseConfig {
   return {
-    supabaseUrl: readPublicEnv(['NEXT_PUBLIC_SUPABASE_URL', 'VITE_SUPABASE_URL', 'SUPABASE_URL']),
-    supabaseAnonKey: readPublicEnv([
-      'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-      'VITE_SUPABASE_ANON_KEY',
-      'SUPABASE_ANON_KEY'
-    ])
+    supabaseUrl: firstNonEmpty(
+      globalEnv?.NEXT_PUBLIC_SUPABASE_URL,
+      globalEnv?.VITE_SUPABASE_URL,
+      globalEnv?.SUPABASE_URL,
+      readStaticEnv(() => process.env.NEXT_PUBLIC_SUPABASE_URL),
+      readStaticEnv(() => process.env.VITE_SUPABASE_URL),
+      readStaticEnv(() => process.env.SUPABASE_URL),
+      readStaticEnv(() => import.meta.env?.VITE_SUPABASE_URL)
+    ),
+    supabaseAnonKey: firstNonEmpty(
+      globalEnv?.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      globalEnv?.VITE_SUPABASE_ANON_KEY,
+      globalEnv?.SUPABASE_ANON_KEY,
+      readStaticEnv(() => process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+      readStaticEnv(() => process.env.VITE_SUPABASE_ANON_KEY),
+      readStaticEnv(() => process.env.SUPABASE_ANON_KEY),
+      readStaticEnv(() => import.meta.env?.VITE_SUPABASE_ANON_KEY)
+    )
   }
 }
 
@@ -102,14 +116,34 @@ export function storeAdminSession(session: AdminSession | null): void {
   window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session))
 }
 
-export function parseSessionFromUrlHash(): AdminSession | null {
-  if (typeof window === 'undefined' || !window.location.hash) {
-    return null
+export interface OAuthCallbackParams {
+  accessToken: string | null
+  code: string | null
+  error: string | null
+}
+
+export function parseOAuthCallbackFromUrl(): OAuthCallbackParams {
+  if (typeof window === 'undefined') {
+    return { accessToken: null, code: null, error: null }
   }
-  const hash = window.location.hash.replace(/^#/, '')
-  if (!hash) return null
-  const params = new URLSearchParams(hash)
-  const accessToken = params.get('access_token')
+
+  const searchParams = new URLSearchParams(window.location.search || '')
+  const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''))
+
+  const errorDescription =
+    searchParams.get('error_description') || hashParams.get('error_description')
+  const errorCode = searchParams.get('error') || hashParams.get('error')
+  const error = errorDescription || errorCode || null
+
+  const code = searchParams.get('code') || hashParams.get('code') || null
+  const accessToken =
+    hashParams.get('access_token') || searchParams.get('access_token') || null
+
+  return { accessToken, code, error }
+}
+
+export function parseSessionFromUrlHash(): AdminSession | null {
+  const { accessToken } = parseOAuthCallbackFromUrl()
   if (!accessToken) return null
 
   return {
@@ -200,13 +234,141 @@ export async function signInWithEmailPassword(
   }
 }
 
-export function startGitHubOAuthSignIn(config = getPublicSupabaseConfig()): void {
-  if (typeof window === 'undefined' || !config.supabaseUrl) {
-    return
+function toBase64Url(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i] ?? 0)
   }
+  const base64 =
+    typeof btoa === 'function' ? btoa(binary) : Buffer.from(bytes).toString('base64')
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function generatePkceVerifier(): string {
+  const bytes = new Uint8Array(32)
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues(bytes)
+  } else {
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = Math.floor(Math.random() * 256)
+    }
+  }
+  return toBase64Url(bytes)
+}
+
+async function createPkceChallenge(
+  verifier: string
+): Promise<{ challenge: string; method: 's256' | 'plain' }> {
+  const subtle = globalThis.crypto?.subtle
+  if (subtle && typeof subtle.digest === 'function') {
+    const encoded = new TextEncoder().encode(verifier)
+    const digest = await subtle.digest('SHA-256', encoded)
+    return { challenge: toBase64Url(new Uint8Array(digest)), method: 's256' }
+  }
+  return { challenge: verifier, method: 'plain' }
+}
+
+export async function exchangeAdminPkceCode(
+  code: string,
+  config = getPublicSupabaseConfig()
+): Promise<{ session: AdminSession | null; error?: string }> {
+  if (!config.supabaseUrl || !config.supabaseAnonKey) {
+    return { session: null, error: 'Supabase environment variables are not configured' }
+  }
+
+  let codeVerifier: string | null = null
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      codeVerifier = window.sessionStorage.getItem(PKCE_VERIFIER_STORAGE_KEY)
+      window.sessionStorage.removeItem(PKCE_VERIFIER_STORAGE_KEY)
+    }
+  } catch {
+    codeVerifier = null
+  }
+
+  try {
+    const baseUrl = config.supabaseUrl.replace(/\/+$/, '')
+    const res = await fetch(`${baseUrl}/auth/v1/token?grant_type=pkce`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: config.supabaseAnonKey
+      },
+      body: JSON.stringify({
+        auth_code: code,
+        ...(codeVerifier ? { code_verifier: codeVerifier } : {})
+      })
+    })
+
+    if (!res.ok) {
+      const errText = await res.text()
+      return { session: null, error: errText || `OAuth PKCE exchange failed (${res.status})` }
+    }
+
+    const payload = (await res.json()) as {
+      access_token?: string
+      user?: { id?: string; email?: string }
+    }
+
+    if (!payload.access_token) {
+      return { session: null, error: 'Supabase PKCE response missing access_token' }
+    }
+
+    const resolvedUser = payload.user?.id
+      ? { id: payload.user.id, email: payload.user.email ?? '' }
+      : await fetchAuthUser(payload.access_token, config)
+
+    if (!resolvedUser) {
+      return { session: null, error: 'Unable to load authenticated user after OAuth callback' }
+    }
+
+    const session: AdminSession = {
+      accessToken: payload.access_token,
+      userId: resolvedUser.id,
+      email: resolvedUser.email
+    }
+    storeAdminSession(session)
+    return { session }
+  } catch (error) {
+    return {
+      session: null,
+      error: error instanceof Error ? error.message : 'Network error completing GitHub OAuth'
+    }
+  }
+}
+
+export async function startGitHubOAuthSignIn(
+  config = getPublicSupabaseConfig()
+): Promise<{ ok: boolean; error?: string }> {
+  if (!config.supabaseUrl || !config.supabaseAnonKey) {
+    return {
+      ok: false,
+      error: 'Supabase environment variables are not configured (missing SUPABASE_URL or SUPABASE_ANON_KEY).'
+    }
+  }
+  if (typeof window === 'undefined') {
+    return { ok: false, error: 'GitHub OAuth sign-in is only available in the browser.' }
+  }
+
   const baseUrl = config.supabaseUrl.replace(/\/+$/, '')
-  const redirectTo = encodeURIComponent(window.location.href.split('#')[0] ?? window.location.origin)
-  window.location.assign(`${baseUrl}/auth/v1/authorize?provider=github&redirect_to=${redirectTo}`)
+  const currentUrl = window.location.href.split('#')[0]?.split('?')[0] ?? window.location.origin
+  const verifier = generatePkceVerifier()
+  const { challenge, method } = await createPkceChallenge(verifier)
+
+  try {
+    window.sessionStorage?.setItem(PKCE_VERIFIER_STORAGE_KEY, verifier)
+  } catch {
+    // Ignore sessionStorage restrictions
+  }
+
+  const authUrl = new URL(`${baseUrl}/auth/v1/authorize`)
+  authUrl.searchParams.set('provider', 'github')
+  authUrl.searchParams.set('redirect_to', currentUrl)
+  authUrl.searchParams.set('code_challenge', challenge)
+  authUrl.searchParams.set('code_challenge_method', method)
+
+  window.location.assign(authUrl.toString())
+  return { ok: true }
 }
 
 export interface ExtendedFilterBuilder<T = Record<string, unknown>> extends SupabaseFilterBuilder<T> {

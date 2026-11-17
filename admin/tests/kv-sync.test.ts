@@ -12,12 +12,16 @@ import {
   createBrowserSupabaseClient,
   dispatchServerCachePurge,
   dispatchServerConfigSync,
+  exchangeAdminPkceCode,
   fetchAuthUser,
   fetchProfiles,
   fetchRecentQueryLogs,
   fetchRemoteConfigsMap,
   fetchRepoAnalyses,
-  fetchSubscriptions
+  fetchSubscriptions,
+  getPublicSupabaseConfig,
+  parseOAuthCallbackFromUrl,
+  startGitHubOAuthSignIn
 } from '../src/lib/supabase-client'
 import { POST as kvSyncRoutePost } from '../src/app/api/admin/kv-sync/route'
 import { POST as cachePurgeRoutePost } from '../src/app/api/admin/cache-purge/route'
@@ -582,5 +586,81 @@ describe('supabase-client error propagation & network resilience', () => {
     const configsRes = await fetchRemoteConfigsMap(client)
     expect(configsRes.error).toContain('JWT expired')
     expect(configsRes.data).toEqual({})
+  })
+
+  it('resolves static env vars and surfaces missing config, OAuth callback errors, and PKCE ?code= exchange', async () => {
+    const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const prevAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://static-next.supabase.co'
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'static-anon-key'
+
+    try {
+      expect(getPublicSupabaseConfig()).toEqual({
+        supabaseUrl: 'https://static-next.supabase.co',
+        supabaseAnonKey: 'static-anon-key'
+      })
+    } finally {
+      if (prevUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL
+      else process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl
+      if (prevAnon === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      else process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = prevAnon
+    }
+
+    const missingRes = await startGitHubOAuthSignIn({ supabaseUrl: '', supabaseAnonKey: '' })
+    expect(missingRes.ok).toBe(false)
+    expect(missingRes.error).toContain('Supabase environment variables')
+
+    const originalWindow = (globalThis as { window?: unknown }).window
+    try {
+      ;(globalThis as { window?: unknown }).window = {
+        location: {
+          search: '?error=access_denied&code=pkce-123',
+          hash: '#error_description=User%20cancelled%20login'
+        }
+      }
+      expect(parseOAuthCallbackFromUrl()).toEqual({
+        accessToken: null,
+        code: 'pkce-123',
+        error: 'User cancelled login'
+      })
+
+      const sessionStore = new Map<string, string>([['gpi_admin_pkce_verifier', 'verifier-xyz']])
+      ;(globalThis as { window?: unknown }).window = {
+        location: { search: '?code=pkce-123', hash: '' },
+        sessionStorage: {
+          getItem: (k: string) => sessionStore.get(k) ?? null,
+          setItem: (k: string, v: string) => sessionStore.set(k, v),
+          removeItem: (k: string) => sessionStore.delete(k)
+        },
+        localStorage: {
+          getItem: () => null,
+          setItem: vi.fn(),
+          removeItem: vi.fn()
+        }
+      }
+
+      global.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            access_token: 'admin-pkce-jwt',
+            user: { id: 'admin-uuid-9', email: 'admin@example.com' }
+          }),
+          { status: 200 }
+        )
+      )
+
+      const exchanged = await exchangeAdminPkceCode('pkce-123', {
+        supabaseUrl: 'https://proj.supabase.co',
+        supabaseAnonKey: 'anon-key'
+      })
+      expect(exchanged.session).toEqual({
+        accessToken: 'admin-pkce-jwt',
+        userId: 'admin-uuid-9',
+        email: 'admin@example.com'
+      })
+      expect(sessionStore.has('gpi_admin_pkce_verifier')).toBe(false)
+    } finally {
+      ;(globalThis as { window?: unknown }).window = originalWindow
+    }
   })
 })
