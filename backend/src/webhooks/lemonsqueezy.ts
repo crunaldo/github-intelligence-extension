@@ -2,6 +2,11 @@ export interface SupabaseQueryResult {
   error?: { message?: string } | null
 }
 
+export interface SupabaseSelectQueryResult<T = Record<string, unknown>> {
+  data?: T[] | null
+  error?: { message?: string } | null
+}
+
 export interface SupabaseTableClient {
   upsert(
     values: Record<string, unknown>,
@@ -9,6 +14,9 @@ export interface SupabaseTableClient {
   ): Promise<SupabaseQueryResult> | SupabaseTableClient
   update(values: Record<string, unknown>): {
     eq(column: string, value: string): Promise<SupabaseQueryResult>
+  }
+  select?(columns: string): {
+    eq(column: string, value: string): Promise<SupabaseSelectQueryResult>
   }
 }
 
@@ -142,23 +150,43 @@ export async function handleLemonSqueezyWebhook(
     attributes.renews_at ?? attributes.ends_at ?? attributes.current_period_end ?? null
 
   if (lemonSubId) {
-    const upsertRes = await supabase.from('subscriptions').upsert(
-      {
-        user_id: userId ?? null,
-        lemon_subscription_id: lemonSubId,
-        status,
-        variant_id: variantId,
-        current_period_end: currentPeriodEnd,
-        updated_at: new Date().toISOString()
-      },
-      { onConflict: 'lemon_subscription_id' }
-    )
+    const subscriptionRow: Record<string, unknown> = {
+      lemon_subscription_id: lemonSubId,
+      status,
+      variant_id: variantId,
+      current_period_end: currentPeriodEnd,
+      updated_at: new Date().toISOString()
+    }
+    if (userId) {
+      subscriptionRow.user_id = String(userId)
+    }
+
+    const upsertRes = await supabase
+      .from('subscriptions')
+      .upsert(subscriptionRow, { onConflict: 'lemon_subscription_id' })
     if (upsertRes && 'error' in upsertRes && upsertRes.error) {
       throw new Error(`SUBSCRIPTION_UPSERT_FAILED: ${upsertRes.error.message ?? 'unknown error'}`)
     }
   }
 
-  if (userId) {
+  let targetUserId: string | null = userId ? String(userId) : null
+  if (!targetUserId && lemonSubId) {
+    const subscriptionsTable = supabase.from('subscriptions')
+    if (typeof subscriptionsTable.select === 'function') {
+      const lookupRes = await subscriptionsTable
+        .select('user_id')
+        .eq('lemon_subscription_id', lemonSubId)
+      if (lookupRes && 'error' in lookupRes && lookupRes.error) {
+        throw new Error(`SUBSCRIPTION_LOOKUP_FAILED: ${lookupRes.error.message ?? 'unknown error'}`)
+      }
+      const existingUserId = lookupRes?.data?.[0]?.user_id
+      if (typeof existingUserId === 'string' && existingUserId.length > 0) {
+        targetUserId = existingUserId
+      }
+    }
+  }
+
+  if (targetUserId) {
     const profilePatch: Record<string, unknown> = { is_pro: isPro }
     if (customerId !== null) {
       profilePatch.lemon_customer_id = customerId
@@ -166,7 +194,7 @@ export async function handleLemonSqueezyWebhook(
     const updateRes = await supabase
       .from('profiles')
       .update(profilePatch)
-      .eq('id', String(userId))
+      .eq('id', targetUserId)
 
     if (updateRes && 'error' in updateRes && updateRes.error) {
       throw new Error(`PROFILE_UPDATE_FAILED: ${updateRes.error.message ?? 'unknown error'}`)

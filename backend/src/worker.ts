@@ -10,7 +10,8 @@ import { filterResponseForRole } from './middleware/role-filter'
 import {
   handleLemonSqueezyWebhook,
   type SupabaseClientLike,
-  type SupabaseQueryResult
+  type SupabaseQueryResult,
+  type SupabaseSelectQueryResult
 } from './webhooks/lemonsqueezy'
 
 export interface WorkerEnv {
@@ -91,47 +92,51 @@ async function verifySupabaseUser(
   token: string,
   env: WorkerEnv
 ): Promise<{ isPro: boolean; userId: string | null }> {
-  if (env.verifyProUser) {
-    return env.verifyProUser(token, env)
-  }
-
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-    return { isPro: false, userId: null }
-  }
-
-  const baseUrl = env.SUPABASE_URL.replace(/\/+$/, '')
-  const authRes = await fetch(`${baseUrl}/auth/v1/user`, {
-    headers: {
-      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${token}`
+  try {
+    if (env.verifyProUser) {
+      return await env.verifyProUser(token, env)
     }
-  })
-  if (!authRes.ok) {
-    return { isPro: false, userId: null }
-  }
 
-  const authUser = (await authRes.json()) as { id?: string }
-  if (!authUser?.id) {
-    return { isPro: false, userId: null }
-  }
+    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+      return { isPro: false, userId: null }
+    }
 
-  const profileRes = await fetch(
-    `${baseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(authUser.id)}&select=is_pro`,
-    {
+    const baseUrl = env.SUPABASE_URL.replace(/\/+$/, '')
+    const authRes = await fetch(`${baseUrl}/auth/v1/user`, {
       headers: {
         apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`
+        Authorization: `Bearer ${token}`
       }
+    })
+    if (!authRes.ok) {
+      return { isPro: false, userId: null }
     }
-  )
-  if (!profileRes.ok) {
-    return { isPro: false, userId: authUser.id }
-  }
 
-  const profiles = (await profileRes.json()) as Array<{ is_pro?: boolean }>
-  return {
-    isPro: Boolean(profiles?.[0]?.is_pro),
-    userId: authUser.id
+    const authUser = (await authRes.json()) as { id?: string }
+    if (!authUser?.id) {
+      return { isPro: false, userId: null }
+    }
+
+    const profileRes = await fetch(
+      `${baseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(authUser.id)}&select=is_pro`,
+      {
+        headers: {
+          apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`
+        }
+      }
+    )
+    if (!profileRes.ok) {
+      return { isPro: false, userId: authUser.id }
+    }
+
+    const profiles = (await profileRes.json()) as Array<{ is_pro?: boolean }>
+    return {
+      isPro: Boolean(profiles?.[0]?.is_pro),
+      userId: authUser.id
+    }
+  } catch {
+    return { isPro: false, userId: null }
   }
 }
 
@@ -194,6 +199,29 @@ function createRestSupabaseClient(env: WorkerEnv): SupabaseClientLike {
                 }
               )
               return toQueryResult(res)
+            }
+          }
+        },
+        select(columns: string) {
+          return {
+            async eq(column: string, value: string): Promise<SupabaseSelectQueryResult> {
+              const { baseUrl, serviceKey } = getCredentials()
+              const res = await fetch(
+                `${baseUrl}/rest/v1/${table}?${encodeURIComponent(column)}=eq.${encodeURIComponent(value)}&select=${encodeURIComponent(columns)}`,
+                {
+                  method: 'GET',
+                  headers: {
+                    apikey: serviceKey,
+                    Authorization: `Bearer ${serviceKey}`
+                  }
+                }
+              )
+              if (!res.ok) {
+                const text = await res.text()
+                return { data: null, error: { message: text || `HTTP ${res.status}` } }
+              }
+              const data = (await res.json()) as Array<Record<string, unknown>>
+              return { data, error: null }
             }
           }
         }
@@ -450,28 +478,35 @@ export default {
       return new Response(null, { status: 204, headers: CORS_HEADERS })
     }
 
-    const url = new URL(request.url)
+    try {
+      const url = new URL(request.url)
 
-    if (request.method === 'GET' && url.pathname === '/v1/config') {
-      const config = await readRemoteConfig(env.KV)
-      return jsonResponse(config, 200)
-    }
+      if (request.method === 'GET' && url.pathname === '/v1/config') {
+        const config = await readRemoteConfig(env.KV)
+        return jsonResponse(config, 200)
+      }
 
-    if (request.method === 'POST' && url.pathname === '/v1/analyze') {
-      return handleAnalyze(request, env)
-    }
+      if (request.method === 'POST' && url.pathname === '/v1/analyze') {
+        return await handleAnalyze(request, env)
+      }
 
-    if (request.method === 'POST' && url.pathname === '/v1/webhooks/lemonsqueezy') {
-      return handleWebhookRequest(request, env)
-    }
+      if (request.method === 'POST' && url.pathname === '/v1/webhooks/lemonsqueezy') {
+        return await handleWebhookRequest(request, env)
+      }
 
-    if (request.method === 'POST' && url.pathname === '/v1/mascot/chat') {
+      if (request.method === 'POST' && url.pathname === '/v1/mascot/chat') {
+        return jsonResponse(
+          { error: 'NOT_IMPLEMENTED', message: 'Mascot chat endpoint wired in Task 6' },
+          501
+        )
+      }
+
+      return jsonResponse({ error: 'NOT_FOUND', message: 'Route not found' }, 404)
+    } catch {
       return jsonResponse(
-        { error: 'NOT_IMPLEMENTED', message: 'Mascot chat endpoint wired in Task 6' },
-        501
+        { error: 'INTERNAL_ERROR', message: 'Internal server error' },
+        500
       )
     }
-
-    return jsonResponse({ error: 'NOT_FOUND', message: 'Route not found' }, 404)
   }
 }

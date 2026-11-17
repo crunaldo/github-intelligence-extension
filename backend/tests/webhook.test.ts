@@ -57,12 +57,14 @@ function makeSampleAnalysis(providerUsed = 'gemini'): AnalysisResult {
   }
 }
 
-function createMockSupabase() {
+function createMockSupabase(lookupRows: Array<Record<string, unknown>> = []) {
   const eq = vi.fn().mockResolvedValue({ error: null })
   const update = vi.fn(() => ({ eq }))
   const upsert = vi.fn().mockResolvedValue({ error: null })
-  const from = vi.fn(() => ({ upsert, update, eq }))
-  return { from, upsert, update, eq }
+  const selectEq = vi.fn().mockResolvedValue({ data: lookupRows, error: null })
+  const select = vi.fn(() => ({ eq: selectEq }))
+  const from = vi.fn(() => ({ upsert, update, eq, select }))
+  return { from, upsert, update, eq, select, selectEq }
 }
 
 describe('Lemon Squeezy Webhook Handler', () => {
@@ -206,6 +208,37 @@ describe('Lemon Squeezy Webhook Handler', () => {
       is_pro: false,
       lemon_customer_id: 'cust_77'
     })
+  })
+
+  it('omits user_id on upsert and resolves user_id from subscriptions when custom_data.user_id is absent', async () => {
+    const mockSupabase = createMockSupabase([{ user_id: 'resolved-user-55' }])
+    const event = {
+      meta: { event_name: 'subscription_expired' },
+      data: {
+        id: 'sub_55',
+        attributes: { status: 'expired', customer_id: 'cust_55', variant_id: 'var_1' }
+      }
+    }
+    const rawBody = JSON.stringify(event)
+    const signature = await signPayload(rawBody, 'secret')
+
+    const result = await handleLemonSqueezyWebhook(event, signature, 'secret', mockSupabase, rawBody)
+
+    expect(result).toEqual({ handled: true, status: 'expired' })
+    expect(mockSupabase.upsert).toHaveBeenCalledOnce()
+    const upsertPayload = mockSupabase.upsert.mock.calls[0][0] as Record<string, unknown>
+    expect('user_id' in upsertPayload).toBe(false)
+    expect(upsertPayload).toMatchObject({
+      lemon_subscription_id: 'sub_55',
+      status: 'expired'
+    })
+    expect(mockSupabase.select).toHaveBeenCalledWith('user_id')
+    expect(mockSupabase.selectEq).toHaveBeenCalledWith('lemon_subscription_id', 'sub_55')
+    expect(mockSupabase.update).toHaveBeenCalledWith({
+      is_pro: false,
+      lemon_customer_id: 'cust_55'
+    })
+    expect(mockSupabase.eq).toHaveBeenCalledWith('id', 'resolved-user-55')
   })
 })
 
@@ -663,5 +696,192 @@ describe('Cloudflare Worker Entrypoint', () => {
     const body = (await res.json()) as AnalysisResult
     expect(body.architectureDiagram).toBe('graph TD; Client-->Worker;')
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('degrades gracefully on Supabase network error in verifySupabaseUser and returns CORS 500 on unexpected worker errors', async () => {
+    const fullResult = makeSampleAnalysis('gemini')
+    const kv = createMockKv({
+      'cache:repo:octocat:hello-world:abc1234': JSON.stringify(fullResult)
+    })
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Supabase network timeout')))
+
+    const resilientRes = await worker.fetch(
+      new Request('https://api.example.com/v1/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer supa-jwt-token',
+          'CF-Connecting-IP': '198.51.100.77',
+          'X-Client-Signature': 'fp-resilient'
+        },
+        body: JSON.stringify({ owner: 'octocat', repo: 'hello-world', commitSha: 'abc1234' })
+      }),
+      {
+        KV: kv,
+        SUPABASE_URL: 'https://proj.supabase.co',
+        SUPABASE_SERVICE_ROLE_KEY: 'srv-key'
+      }
+    )
+
+    expect(resilientRes.status).toBe(200)
+    const resilientBody = (await resilientRes.json()) as Record<string, unknown>
+    expect('architectureDiagram' in resilientBody).toBe(false)
+
+    const failingKv = createMockKv()
+    failingKv.get.mockRejectedValue(new Error('KV outage'))
+
+    const errorRes = await worker.fetch(new Request('https://api.example.com/v1/config'), {
+      KV: failingKv
+    })
+
+    expect(errorRes.status).toBe(500)
+    expect(errorRes.headers.get('Access-Control-Allow-Origin')).toBe('*')
+    expect(await errorRes.json()).toEqual({
+      error: 'INTERNAL_ERROR',
+      message: 'Internal server error'
+    })
+  })
+
+  it('POST /v1/webhooks/lemonsqueezy executes real PostgREST fetch calls via createRestSupabaseClient and handles upstream errors', async () => {
+    const kv = createMockKv()
+    const createdEvent = {
+      meta: { event_name: 'subscription_created', custom_data: { user_id: 'user-rest-1' } },
+      data: {
+        id: 'sub-rest-1',
+        attributes: { status: 'active', customer_id: 'cust-rest-1', variant_id: 'var-rest-1' }
+      }
+    }
+    const createdBody = JSON.stringify(createdEvent)
+    const createdSig = await signPayload(createdBody, 'wh-secret')
+
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === 'https://proj.supabase.co/rest/v1/subscriptions?on_conflict=lemon_subscription_id') {
+        return new Response(null, { status: 201 })
+      }
+      if (
+        url ===
+          'https://proj.supabase.co/rest/v1/subscriptions?lemon_subscription_id=eq.sub-rest-1&select=user_id' &&
+        init?.method === 'GET'
+      ) {
+        return new Response(JSON.stringify([{ user_id: 'user-rest-1' }]), { status: 200 })
+      }
+      if (url === 'https://proj.supabase.co/rest/v1/profiles?id=eq.user-rest-1') {
+        return new Response(null, { status: 204 })
+      }
+      return new Response('Unexpected URL', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const createdRes = await worker.fetch(
+      new Request('https://api.example.com/v1/webhooks/lemonsqueezy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Signature': createdSig },
+        body: createdBody
+      }),
+      {
+        KV: kv,
+        LEMON_SQUEEZY_WEBHOOK_SECRET: 'wh-secret',
+        SUPABASE_URL: 'https://proj.supabase.co/',
+        SUPABASE_SERVICE_ROLE_KEY: 'srv-key'
+      }
+    )
+
+    expect(createdRes.status).toBe(200)
+    expect(await createdRes.json()).toEqual({ handled: true, status: 'active' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://proj.supabase.co/rest/v1/subscriptions?on_conflict=lemon_subscription_id'
+    )
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: 'srv-key',
+        Authorization: 'Bearer srv-key',
+        Prefer: 'resolution=merge-duplicates,return=minimal'
+      }
+    })
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'https://proj.supabase.co/rest/v1/profiles?id=eq.user-rest-1'
+    )
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: 'srv-key',
+        Authorization: 'Bearer srv-key',
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify({ is_pro: true, lemon_customer_id: 'cust-rest-1' })
+    })
+
+    // Follow-up subscription_expired without custom_data.user_id resolves user_id via GET lookup
+    fetchMock.mockClear()
+    const expiredEvent = {
+      meta: { event_name: 'subscription_expired' },
+      data: {
+        id: 'sub-rest-1',
+        attributes: { status: 'expired', customer_id: 'cust-rest-1', variant_id: 'var-rest-1' }
+      }
+    }
+    const expiredBody = JSON.stringify(expiredEvent)
+    const expiredSig = await signPayload(expiredBody, 'wh-secret')
+
+    const expiredRes = await worker.fetch(
+      new Request('https://api.example.com/v1/webhooks/lemonsqueezy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Signature': expiredSig },
+        body: expiredBody
+      }),
+      {
+        KV: kv,
+        LEMON_SQUEEZY_WEBHOOK_SECRET: 'wh-secret',
+        SUPABASE_URL: 'https://proj.supabase.co',
+        SUPABASE_SERVICE_ROLE_KEY: 'srv-key'
+      }
+    )
+
+    expect(expiredRes.status).toBe(200)
+    expect(await expiredRes.json()).toEqual({ handled: true, status: 'expired' })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    const upsertBody = JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as Record<string, unknown>
+    expect('user_id' in upsertBody).toBe(false)
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'https://proj.supabase.co/rest/v1/subscriptions?lemon_subscription_id=eq.sub-rest-1&select=user_id'
+    )
+    expect(fetchMock.mock.calls[2][0]).toBe(
+      'https://proj.supabase.co/rest/v1/profiles?id=eq.user-rest-1'
+    )
+    expect(fetchMock.mock.calls[2][1]?.body).toBe(
+      JSON.stringify({ is_pro: false, lemon_customer_id: 'cust-rest-1' })
+    )
+
+    // Upstream PostgREST failure returns controlled 500 with CORS headers
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('Internal DB error', { status: 502 }))
+    )
+
+    const errorRes = await worker.fetch(
+      new Request('https://api.example.com/v1/webhooks/lemonsqueezy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Signature': createdSig },
+        body: createdBody
+      }),
+      {
+        KV: kv,
+        LEMON_SQUEEZY_WEBHOOK_SECRET: 'wh-secret',
+        SUPABASE_URL: 'https://proj.supabase.co',
+        SUPABASE_SERVICE_ROLE_KEY: 'srv-key'
+      }
+    )
+
+    expect(errorRes.status).toBe(500)
+    expect(errorRes.headers.get('Access-Control-Allow-Origin')).toBe('*')
+    expect(await errorRes.json()).toEqual({
+      error: 'WEBHOOK_PROCESSING_FAILED',
+      message: 'Failed to process webhook'
+    })
   })
 })
