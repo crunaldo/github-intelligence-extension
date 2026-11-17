@@ -42,13 +42,13 @@ export function parseAndTranslateError(
       isRateLimit: true,
       isBadCredentials: false,
       isNotFound: false,
-      title: isEs ? 'Límite de Solicitudes de GitHub Excedido' : 'GitHub API Rate Limit Exceeded',
+      title: isEs ? 'Token de GitHub Requerido para Continuar' : 'GitHub Token Required to Continue',
       description: isEs
-        ? 'Has alcanzado el límite gratuito de 60 peticiones/hora que GitHub asigna a consultas anónimas desde tu dirección IP.'
-        : 'You have reached the 60 requests/hour limit that GitHub assigns to unauthenticated requests from your IP address.',
+        ? 'GitHub requiere un token personal de acceso para inspeccionar de forma continua árboles de código, manifiestos y metadatos del repositorio.'
+        : 'GitHub requires a personal access token to inspect repository code trees, manifests, and metadata uninterrupted.',
       recommendation: isEs
-        ? 'Añade tu GitHub Personal Access Token gratuito en los ajustes para desbloquear inmediatamente 5,000 peticiones/hora y analizar sin interrupciones.'
-        : 'Add your free GitHub Personal Access Token in settings to immediately unlock 5,000 requests/hour and analyze without delays.',
+        ? 'Añade tu GitHub Personal Access Token gratuito (solo lectura) en los ajustes; se guarda 100% en local y habilita el análisis sin interrupciones.'
+        : 'Add your free read-only GitHub Personal Access Token in settings; it is stored 100% locally and enables uninterrupted repository analysis.',
       actionLabel: isEs ? 'Ir a Ajustes para añadir Token' : 'Go to Settings to add Token',
       rawMessage,
     }
@@ -65,8 +65,8 @@ export function parseAndTranslateError(
         ? 'GitHub no pudo validar tu token guardado. Puede haber sido revocado o haber caducado.'
         : 'GitHub could not validate your saved token. It may have expired or been revoked.',
       recommendation: isEs
-        ? 'Abre los ajustes para ingresar un token vigente con permisos de lectura pública (read:packages) o de repo.'
-        : 'Open settings to provide a valid token with read permissions.',
+        ? 'Abre los ajustes para ingresar un token vigente con permisos de lectura pública (public_repo).'
+        : 'Open settings to provide a valid token with public_repo read permissions.',
       actionLabel: isEs ? 'Ir a Ajustes para actualizar Token' : 'Go to Settings to update Token',
       rawMessage,
     }
@@ -78,13 +78,13 @@ export function parseAndTranslateError(
       isRateLimit: false,
       isBadCredentials: false,
       isNotFound: true,
-      title: isEs ? 'Repositorio no Encontrado o Privado' : 'Repository Not Found or Private',
+      title: isEs ? 'Repositorio no Encontrado o Inaccesible' : 'Repository Not Found or Inaccessible',
       description: isEs
-        ? 'GitHub no pudo localizar este repositorio. Puede no existir, haber cambiado de nombre o ser privado.'
-        : 'GitHub could not locate this repository. It may not exist, was renamed, or is private.',
+        ? 'GitHub no pudo localizar este repositorio público. Puede no existir, haber cambiado de nombre o no estar disponible.'
+        : 'GitHub could not locate this public repository. It may not exist, was renamed, or is unavailable.',
       recommendation: isEs
-        ? 'Si se trata de un repositorio privado, asegúrate de configurar un GitHub Token con alcance "repo" en los Ajustes.'
-        : 'If this is a private repository, ensure you configure a GitHub Token with "repo" scope in Settings.',
+        ? 'Verifica la URL o configura tu GitHub Token con alcance "public_repo" en los Ajustes para habilitar la inspección de metadatos y árboles.'
+        : 'Verify the repository URL or configure your GitHub Token with "public_repo" scope in Settings to enable tree and metadata inspection.',
       actionLabel: isEs ? 'Configurar Token en Ajustes' : 'Configure Token in Settings',
       rawMessage,
     }
@@ -269,7 +269,7 @@ export function ApiErrorCard({
 
         {parsed.isRateLimit && (
           <a
-            href="https://github.com/settings/tokens/new?description=GitHub%20Project%20Intelligence%20Assistant&scopes=repo,read:packages"
+            href="https://github.com/settings/tokens/new?scopes=public_repo&description=GitHub%20Project%20Intelligence%20Assistant"
             target="_blank"
             rel="noreferrer"
             style={{
