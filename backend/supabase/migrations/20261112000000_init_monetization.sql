@@ -67,6 +67,33 @@ create index if not exists idx_subscriptions_user_id on subscriptions(user_id);
 create index if not exists idx_query_logs_user_id on query_logs(user_id);
 create index if not exists idx_query_logs_created_at on query_logs(created_at desc);
 
+-- Sync new and updated Supabase Auth users into public.profiles
+create or replace function public.handle_new_auth_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, email)
+  values (new.id, coalesce(new.email, ''))
+  on conflict (id) do update
+    set email = excluded.email;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert or update of email on auth.users
+  for each row
+  execute function public.handle_new_auth_user();
+
+insert into public.profiles (id, email)
+select id, coalesce(email, '')
+from auth.users
+on conflict (id) do nothing;
+
 -- Helper function to check admin role without triggering recursive RLS checks on profiles
 create or replace function public.is_admin()
 returns boolean
@@ -118,11 +145,11 @@ create policy "Admins can view all subscriptions"
   to authenticated
   using (public.is_admin());
 
--- Repo analyses RLS policies (public repository cache; admins can manage/purge)
-create policy "Authenticated users can read repo analyses"
+-- Repo analyses RLS policies (admins only; Edge Worker reads/writes via service_role)
+create policy "Admins can read repo analyses"
   on repo_analyses for select
   to authenticated
-  using (true);
+  using (public.is_admin());
 
 create policy "Admins can manage repo analyses"
   on repo_analyses for all
@@ -141,11 +168,11 @@ create policy "Admins can view all query logs"
   to authenticated
   using (public.is_admin());
 
--- Remote configs RLS policies
-create policy "Authenticated users can read remote configs"
+-- Remote configs RLS policies (admins only; Edge Worker serves public /v1/config from KV)
+create policy "Admins can read remote configs"
   on remote_configs for select
   to authenticated
-  using (true);
+  using (public.is_admin());
 
 create policy "Admins can manage remote configs"
   on remote_configs for all

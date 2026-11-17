@@ -8,6 +8,10 @@ function buildRepoCacheKey(owner: string, repo: string, commitSha: string): stri
   return `cache:repo:${owner.toLowerCase()}:${repo.toLowerCase()}:${commitSha}`
 }
 
+function buildLatestCommitKey(owner: string, repo: string): string {
+  return `cache:repo-latest:${owner.toLowerCase()}:${repo.toLowerCase()}`
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -93,4 +97,32 @@ export async function invalidateCachedAnalysis(
   kv: KVNamespace
 ): Promise<void> {
   await kv.delete(buildRepoCacheKey(owner, repo, commitSha))
+}
+
+/**
+ * Reads the most recently analyzed commit SHA pointer for a repository.
+ */
+export async function getLatestCachedCommitSha(
+  owner: string,
+  repo: string,
+  kv: KVNamespace
+): Promise<string | null> {
+  const sha = await kv.get(buildLatestCommitKey(owner, repo))
+  return typeof sha === 'string' && sha.trim().length > 0 ? sha.trim() : null
+}
+
+/**
+ * Records the latest analyzed commit SHA pointer for a repository (30-day TTL).
+ */
+export async function setLatestCachedCommitSha(
+  owner: string,
+  repo: string,
+  commitSha: string,
+  kv: KVNamespace
+): Promise<void> {
+  const trimmed = commitSha.trim()
+  if (!trimmed) return
+  await kv.put(buildLatestCommitKey(owner, repo), trimmed, {
+    expirationTtl: REPO_CACHE_TTL_SECONDS
+  })
 }

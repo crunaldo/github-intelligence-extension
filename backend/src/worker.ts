@@ -7,18 +7,29 @@ import {
 import { generateRepoAnalysis } from './ai/router'
 import {
   AIProvidersExhaustedError,
+  type AnalysisResult,
   type KVNamespace,
   type ProviderName
 } from './ai/types'
-import { getCachedAnalysis, setCachedAnalysis } from './cache/repo-cache'
+import {
+  getCachedAnalysis,
+  getLatestCachedCommitSha,
+  setCachedAnalysis,
+  setLatestCachedCommitSha
+} from './cache/repo-cache'
 import { checkAndIncrementQuota, deriveAnonymousIdentifier } from './middleware/rate-limiter'
-import { filterResponseForRole } from './middleware/role-filter'
+import { filterResponseForRole, type FilteredAnalysisResult } from './middleware/role-filter'
 import {
   handleLemonSqueezyWebhook,
   type SupabaseClientLike,
   type SupabaseQueryResult,
+  type SupabaseSelectFilter,
   type SupabaseSelectQueryResult
 } from './webhooks/lemonsqueezy'
+
+export interface WorkerExecutionContext {
+  waitUntil?: (promise: Promise<unknown>) => void
+}
 
 export interface WorkerEnv {
   KV: KVNamespace
@@ -85,14 +96,33 @@ function parsePositiveInteger(raw: string | null, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
-async function deriveIpCeilingIdentifier(request: Request): Promise<string> {
+async function deriveIpHashHex(request: Request): Promise<string> {
   const ip = request.headers.get('CF-Connecting-IP')?.trim() || '0.0.0.0'
   const payload = new TextEncoder().encode(ip)
   const digest = await crypto.subtle.digest('SHA-256', payload)
-  const hexHash = Array.from(new Uint8Array(digest))
+  return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('')
-  return `ip:${hexHash}`
+}
+
+async function deriveIpCeilingIdentifier(request: Request): Promise<string> {
+  return `ip:${await deriveIpHashHex(request)}`
+}
+
+function isSupabaseConfigured(env: WorkerEnv): boolean {
+  return Boolean(env.createSupabaseClient || (env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY))
+}
+
+function scheduleBackgroundTask(
+  ctx: WorkerExecutionContext | undefined,
+  task: () => Promise<void>
+): void {
+  const safePromise = task().catch(() => {
+    // Persistence and telemetry writes must never fail user-facing Worker responses
+  })
+  if (typeof ctx?.waitUntil === 'function') {
+    ctx.waitUntil(safePromise)
+  }
 }
 
 async function verifySupabaseUser(
@@ -188,6 +218,20 @@ function createRestSupabaseClient(env: WorkerEnv): SupabaseClientLike {
           })
           return toQueryResult(res)
         },
+        async insert(values) {
+          const { baseUrl, serviceKey } = getCredentials()
+          const res = await fetch(`${baseUrl}/rest/v1/${table}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: serviceKey,
+              Authorization: `Bearer ${serviceKey}`,
+              Prefer: 'return=minimal'
+            },
+            body: JSON.stringify(values)
+          })
+          return toQueryResult(res)
+        },
         update(values) {
           return {
             async eq(column: string, value: string) {
@@ -210,25 +254,47 @@ function createRestSupabaseClient(env: WorkerEnv): SupabaseClientLike {
           }
         },
         select(columns: string) {
-          return {
-            async eq(column: string, value: string): Promise<SupabaseSelectQueryResult> {
+          const createFilter = (filters: string[], limitCount?: number): SupabaseSelectFilter => {
+            const execute = async (): Promise<SupabaseSelectQueryResult> => {
               const { baseUrl, serviceKey } = getCredentials()
-              const res = await fetch(
-                `${baseUrl}/rest/v1/${table}?${encodeURIComponent(column)}=eq.${encodeURIComponent(value)}&select=${encodeURIComponent(columns)}`,
-                {
-                  method: 'GET',
-                  headers: {
-                    apikey: serviceKey,
-                    Authorization: `Bearer ${serviceKey}`
-                  }
+              const params = [...filters, `select=${encodeURIComponent(columns)}`]
+              if (typeof limitCount === 'number') {
+                params.push(`limit=${limitCount}`)
+              }
+              const res = await fetch(`${baseUrl}/rest/v1/${table}?${params.join('&')}`, {
+                method: 'GET',
+                headers: {
+                  apikey: serviceKey,
+                  Authorization: `Bearer ${serviceKey}`
                 }
-              )
+              })
               if (!res.ok) {
                 const text = await res.text()
                 return { data: null, error: { message: text || `HTTP ${res.status}` } }
               }
               const data = (await res.json()) as Array<Record<string, unknown>>
               return { data, error: null }
+            }
+
+            return {
+              eq(column: string, value: string) {
+                return createFilter(
+                  [...filters, `${encodeURIComponent(column)}=eq.${encodeURIComponent(value)}`],
+                  limitCount
+                )
+              },
+              limit(count: number) {
+                return createFilter(filters, count)
+              },
+              then(onfulfilled, onrejected) {
+                return execute().then(onfulfilled, onrejected)
+              }
+            }
+          }
+
+          return {
+            eq(column: string, value: string) {
+              return createFilter([`${encodeURIComponent(column)}=eq.${encodeURIComponent(value)}`])
             }
           }
         }
@@ -324,7 +390,166 @@ async function readProviderPriority(kv: KVNamespace): Promise<ProviderName[] | u
   }
 }
 
-async function handleAnalyze(request: Request, env: WorkerEnv): Promise<Response> {
+function maintenanceModeResponse(config: RemoteConfigResponse): Response {
+  return jsonResponse(
+    {
+      error: 'MAINTENANCE_MODE',
+      message: String(
+        config.feature_flags.banner_message || 'Service is temporarily under maintenance.'
+      )
+    },
+    503
+  )
+}
+
+function buildAnalyzeResponsePayload(
+  analysis: AnalysisResult,
+  isPro: boolean,
+  config: RemoteConfigResponse
+): FilteredAnalysisResult {
+  const filtered = filterResponseForRole(analysis, isPro)
+  if (config.feature_flags.diagrams_enabled === false && 'architectureDiagram' in filtered) {
+    const { architectureDiagram: _omitted, ...withoutDiagram } = filtered
+    return withoutDiagram
+  }
+  return filtered
+}
+
+function persistRepoAnalysis(
+  env: WorkerEnv,
+  ctx: WorkerExecutionContext | undefined,
+  owner: string,
+  repo: string,
+  commitSha: string,
+  analysis: AnalysisResult
+): void {
+  if (!isSupabaseConfigured(env)) return
+  scheduleBackgroundTask(ctx, async () => {
+    const supabase = createRestSupabaseClient(env)
+    await supabase.from('repo_analyses').upsert(
+      {
+        repo_full_name: `${owner.toLowerCase()}/${repo.toLowerCase()}`,
+        commit_sha: commitSha,
+        summary_json: analysis.summary,
+        architecture_diagram: analysis.architectureDiagram,
+        provider_used: analysis.providerUsed,
+        tokens_consumed: analysis.tokensConsumed
+      },
+      { onConflict: 'repo_full_name,commit_sha' }
+    )
+  })
+}
+
+function recordQueryLog(
+  env: WorkerEnv,
+  ctx: WorkerExecutionContext | undefined,
+  request: Request,
+  entry: {
+    userId: string | null
+    owner: string
+    repo: string
+    isPro: boolean
+    cacheHit: boolean
+    provider: string | null
+    actionType: 'analysis' | 'mascot_chat'
+    startedAt: number
+  }
+): void {
+  if (!isSupabaseConfigured(env)) return
+  const clientFingerprint = request.headers.get('X-Client-Signature')?.trim() || null
+  const responseTimeMs = Math.max(0, Math.round(Date.now() - entry.startedAt))
+
+  scheduleBackgroundTask(ctx, async () => {
+    const ipHash = await deriveIpHashHex(request)
+    const supabase = createRestSupabaseClient(env)
+    const table = supabase.from('query_logs')
+    if (typeof table.insert === 'function') {
+      await table.insert({
+        user_id: entry.userId,
+        client_fingerprint: clientFingerprint,
+        ip_hash: ipHash,
+        repo_full_name: `${entry.owner.toLowerCase()}/${entry.repo.toLowerCase()}`,
+        is_pro: entry.isPro,
+        cache_hit: entry.cacheHit,
+        provider: entry.provider,
+        action_type: entry.actionType,
+        response_time_ms: responseTimeMs
+      })
+    }
+  })
+}
+
+async function tryReadRepoAnalysisFromSupabase(
+  owner: string,
+  repo: string,
+  commitSha: string,
+  env: WorkerEnv
+): Promise<AnalysisResult | null> {
+  if (!isSupabaseConfigured(env)) return null
+  try {
+    const supabase = createRestSupabaseClient(env)
+    const table = supabase.from('repo_analyses')
+    if (typeof table.select !== 'function') return null
+
+    const firstFilter = table
+      .select('summary_json,architecture_diagram,provider_used,tokens_consumed')
+      .eq('repo_full_name', `${owner.toLowerCase()}/${repo.toLowerCase()}`)
+    if (!firstFilter || typeof (firstFilter as SupabaseSelectFilter).eq !== 'function') {
+      return null
+    }
+
+    const secondFilter = (firstFilter as SupabaseSelectFilter).eq('commit_sha', commitSha)
+    const finalQuery =
+      typeof (secondFilter as SupabaseSelectFilter).limit === 'function'
+        ? (secondFilter as SupabaseSelectFilter).limit!(1)
+        : secondFilter
+    const res = await finalQuery
+    if (!res || res.error || !Array.isArray(res.data) || res.data.length === 0) {
+      return null
+    }
+
+    const row = res.data[0]
+    const summary = row?.summary_json as AnalysisResult['summary'] | undefined
+    const architectureDiagram = row?.architecture_diagram
+    if (
+      !summary ||
+      typeof summary !== 'object' ||
+      typeof summary.headline !== 'string' ||
+      typeof summary.whatItIs !== 'string' ||
+      typeof summary.whyItMatters !== 'string' ||
+      typeof summary.practicalUse !== 'string' ||
+      typeof summary.targetAudience !== 'string' ||
+      !Array.isArray(summary.stackPills) ||
+      typeof architectureDiagram !== 'string' ||
+      architectureDiagram.trim().length === 0
+    ) {
+      return null
+    }
+
+    return {
+      summary,
+      architectureDiagram,
+      deepAudit: { strengths: [], concerns: [] },
+      providerUsed:
+        typeof row.provider_used === 'string' && row.provider_used.length > 0
+          ? row.provider_used
+          : 'cache',
+      tokensConsumed:
+        typeof row.tokens_consumed === 'number' && Number.isFinite(row.tokens_consumed)
+          ? row.tokens_consumed
+          : 0
+    }
+  } catch {
+    return null
+  }
+}
+
+async function handleAnalyze(
+  request: Request,
+  env: WorkerEnv,
+  ctx?: WorkerExecutionContext
+): Promise<Response> {
+  const startedAt = Date.now()
   let body: Record<string, unknown>
   try {
     const parsed: unknown = await request.json()
@@ -347,6 +572,11 @@ async function handleAnalyze(request: Request, env: WorkerEnv): Promise<Response
     )
   }
 
+  const config = await readRemoteConfig(env.KV)
+  if (config.feature_flags.maintenance_mode === true) {
+    return maintenanceModeResponse(config)
+  }
+
   const authHeader = request.headers.get('Authorization') ?? ''
   const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i)
   const token = bearerMatch?.[1]?.trim()
@@ -354,8 +584,6 @@ async function handleAnalyze(request: Request, env: WorkerEnv): Promise<Response
   const { isPro, userId } = token
     ? await verifySupabaseUser(token, env)
     : { isPro: false, userId: null }
-
-  const config = await readRemoteConfig(env.KV)
 
   if (isPro && userId) {
     const proQuota = await checkAndIncrementQuota(`pro:${userId}`, true, env.KV, {
@@ -388,11 +616,41 @@ async function handleAnalyze(request: Request, env: WorkerEnv): Promise<Response
 
   const cached = await getCachedAnalysis(owner, repo, commitSha, env.KV)
   if (cached) {
-    return jsonResponse(filterResponseForRole(cached, isPro), 200)
+    await setLatestCachedCommitSha(owner, repo, commitSha, env.KV)
+    recordQueryLog(env, ctx, request, {
+      userId,
+      owner,
+      repo,
+      isPro,
+      cacheHit: true,
+      provider: null,
+      actionType: 'analysis',
+      startedAt
+    })
+    return jsonResponse(buildAnalyzeResponsePayload(cached, isPro, config), 200)
+  }
+
+  const dbCached = await tryReadRepoAnalysisFromSupabase(owner, repo, commitSha, env)
+  if (dbCached) {
+    await Promise.all([
+      setCachedAnalysis(owner, repo, commitSha, dbCached, env.KV),
+      setLatestCachedCommitSha(owner, repo, commitSha, env.KV)
+    ])
+    recordQueryLog(env, ctx, request, {
+      userId,
+      owner,
+      repo,
+      isPro,
+      cacheHit: true,
+      provider: null,
+      actionType: 'analysis',
+      startedAt
+    })
+    return jsonResponse(buildAnalyzeResponsePayload(dbCached, isPro, config), 200)
   }
 
   const { readme, manifests } = await ingestRepositoryContext(owner, repo, commitSha)
-  if (!readme && Object.keys(manifests).length === 0) {
+  if (!readme.trim() && Object.keys(manifests).length === 0) {
     return jsonResponse(
       {
         error: 'REPOSITORY_NOT_ACCESSIBLE',
@@ -422,8 +680,22 @@ async function handleAnalyze(request: Request, env: WorkerEnv): Promise<Response
       }
     )
 
-    await setCachedAnalysis(owner, repo, commitSha, analysis, env.KV)
-    return jsonResponse(filterResponseForRole(analysis, isPro), 200)
+    await Promise.all([
+      setCachedAnalysis(owner, repo, commitSha, analysis, env.KV),
+      setLatestCachedCommitSha(owner, repo, commitSha, env.KV)
+    ])
+    persistRepoAnalysis(env, ctx, owner, repo, commitSha, analysis)
+    recordQueryLog(env, ctx, request, {
+      userId,
+      owner,
+      repo,
+      isPro,
+      cacheHit: false,
+      provider: analysis.providerUsed,
+      actionType: 'analysis',
+      startedAt
+    })
+    return jsonResponse(buildAnalyzeResponsePayload(analysis, isPro, config), 200)
   } catch (error) {
     const code = (error as { code?: string })?.code
     if (error instanceof AIProvidersExhaustedError || code === 'AI_PROVIDERS_EXHAUSTED') {
@@ -448,17 +720,10 @@ async function handleWebhookRequest(request: Request, env: WorkerEnv): Promise<R
   const secret = env.LEMON_SQUEEZY_WEBHOOK_SECRET ?? ''
   const rawBody = await request.text()
 
-  let payload: unknown
-  try {
-    payload = JSON.parse(rawBody)
-  } catch {
-    return jsonResponse({ error: 'INVALID_REQUEST', message: 'Invalid webhook JSON' }, 400)
-  }
-
   try {
     const supabase = createRestSupabaseClient(env)
     const result = await handleLemonSqueezyWebhook(
-      payload as Record<string, unknown>,
+      rawBody,
       signature,
       secret,
       supabase,
@@ -472,6 +737,9 @@ async function handleWebhookRequest(request: Request, env: WorkerEnv): Promise<R
         401
       )
     }
+    if (error instanceof Error && error.message === 'INVALID_WEBHOOK_JSON') {
+      return jsonResponse({ error: 'INVALID_REQUEST', message: 'Invalid webhook JSON' }, 400)
+    }
     return jsonResponse(
       { error: 'WEBHOOK_PROCESSING_FAILED', message: 'Failed to process webhook' },
       500
@@ -479,7 +747,47 @@ async function handleWebhookRequest(request: Request, env: WorkerEnv): Promise<R
   }
 }
 
-async function handleMascotChat(request: Request, env: WorkerEnv): Promise<Response> {
+async function resolveMascotCachedAnalysis(
+  owner: string,
+  repo: string,
+  requestedSha: string | undefined,
+  kv: KVNamespace
+): Promise<{ commitSha?: string; cached: AnalysisResult | null }> {
+  if (requestedSha && requestedSha !== 'HEAD') {
+    const cached = await getCachedAnalysis(owner, repo, requestedSha, kv)
+    return { commitSha: requestedSha, cached }
+  }
+
+  const latestSha = await getLatestCachedCommitSha(owner, repo, kv)
+  if (latestSha && isSafeRepoSegment(latestSha)) {
+    const cachedLatest = await getCachedAnalysis(owner, repo, latestSha, kv)
+    if (cachedLatest) {
+      return { commitSha: latestSha, cached: cachedLatest }
+    }
+  }
+
+  if (requestedSha === 'HEAD') {
+    const cachedHead = await getCachedAnalysis(owner, repo, 'HEAD', kv)
+    return { commitSha: latestSha && isSafeRepoSegment(latestSha) ? latestSha : 'HEAD', cached: cachedHead }
+  }
+
+  return {
+    ...(latestSha && isSafeRepoSegment(latestSha) ? { commitSha: latestSha } : {}),
+    cached: null
+  }
+}
+
+async function handleMascotChat(
+  request: Request,
+  env: WorkerEnv,
+  ctx?: WorkerExecutionContext
+): Promise<Response> {
+  const startedAt = Date.now()
+  const config = await readRemoteConfig(env.KV)
+  if (config.feature_flags.maintenance_mode === true) {
+    return maintenanceModeResponse(config)
+  }
+
   const authHeader = request.headers.get('Authorization') ?? ''
   const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i)
   const token = bearerMatch?.[1]?.trim()
@@ -495,7 +803,6 @@ async function handleMascotChat(request: Request, env: WorkerEnv): Promise<Respo
     )
   }
 
-  const config = await readRemoteConfig(env.KV)
   if (config.feature_flags.mascot_enabled === false) {
     return jsonResponse(
       { error: 'MASCOT_DISABLED', message: 'Mascot chat is currently disabled' },
@@ -529,14 +836,16 @@ async function handleMascotChat(request: Request, env: WorkerEnv): Promise<Respo
     )
   }
 
-  const commitSha = isSafeRepoSegment(commitShaRaw) ? commitShaRaw : undefined
+  const requestedSha = isSafeRepoSegment(commitShaRaw) ? commitShaRaw : undefined
   const messages = body.messages as MascotChatMessage[]
 
-  const [systemPromptRaw, priorityOrder, cached] = await Promise.all([
+  const [systemPromptRaw, priorityOrder, resolvedCache] = await Promise.all([
     env.KV.get('system_prompt_mascot'),
     readProviderPriority(env.KV),
-    commitSha ? getCachedAnalysis(owner, repo, commitSha, env.KV) : Promise.resolve(null)
+    resolveMascotCachedAnalysis(owner, repo, requestedSha, env.KV)
   ])
+
+  let selectedProvider: ProviderName | null = null
 
   try {
     const stream = await handleMascotChatRequest(
@@ -546,8 +855,8 @@ async function handleMascotChat(request: Request, env: WorkerEnv): Promise<Respo
         repoContext: {
           owner,
           repo,
-          ...(commitSha ? { commitSha } : {}),
-          ...(cached?.summary ? { summary: cached.summary } : {})
+          ...(resolvedCache.commitSha ? { commitSha: resolvedCache.commitSha } : {}),
+          ...(resolvedCache.cached?.summary ? { summary: resolvedCache.cached.summary } : {})
         }
       },
       env.KV,
@@ -559,9 +868,23 @@ async function handleMascotChat(request: Request, env: WorkerEnv): Promise<Respo
         groqApiKey: env.GROQ_API_KEY,
         cfAiBinding: env.AI,
         openRouterApiKey: env.OPENROUTER_API_KEY,
-        chatProviders: env.chatProviders
+        chatProviders: env.chatProviders,
+        onProviderSelected: (provider) => {
+          selectedProvider = provider
+        }
       }
     )
+
+    recordQueryLog(env, ctx, request, {
+      userId,
+      owner,
+      repo,
+      isPro: true,
+      cacheHit: false,
+      provider: selectedProvider,
+      actionType: 'mascot_chat',
+      startedAt
+    })
 
     return new Response(stream, {
       status: 200,
@@ -607,7 +930,11 @@ async function handleMascotChat(request: Request, env: WorkerEnv): Promise<Respo
 }
 
 export default {
-  async fetch(request: Request, env: WorkerEnv): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: WorkerEnv,
+    ctx?: WorkerExecutionContext
+  ): Promise<Response> {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS_HEADERS })
     }
@@ -621,7 +948,7 @@ export default {
       }
 
       if (request.method === 'POST' && url.pathname === '/v1/analyze') {
-        return await handleAnalyze(request, env)
+        return await handleAnalyze(request, env, ctx)
       }
 
       if (request.method === 'POST' && url.pathname === '/v1/webhooks/lemonsqueezy') {
@@ -629,7 +956,7 @@ export default {
       }
 
       if (request.method === 'POST' && url.pathname === '/v1/mascot/chat') {
-        return await handleMascotChat(request, env)
+        return await handleMascotChat(request, env, ctx)
       }
 
       return jsonResponse({ error: 'NOT_FOUND', message: 'Route not found' }, 404)

@@ -77,6 +77,7 @@ export interface MascotChatOptions {
   timeoutMs?: number
   chunkIdleTimeoutMs?: number
   streamSignal?: AbortSignal
+  onProviderSelected?: (provider: ProviderName) => void
 }
 
 export class InvalidMascotRequestError extends Error {
@@ -131,8 +132,11 @@ function validateAndNormalizeRequest(req: MascotChatRequest): {
   }
 
   const cappedMessages = normalizedMessages.slice(-MAX_CHAT_MESSAGES)
+  while (cappedMessages.length > 0 && cappedMessages[0].role !== 'user') {
+    cappedMessages.shift()
+  }
   if (cappedMessages.length === 0) {
-    throw new InvalidMascotRequestError('At least one non-empty message is required')
+    throw new InvalidMascotRequestError('At least one user message is required')
   }
 
   return {
@@ -271,7 +275,7 @@ async function* parseSseByteStream(
       }
     }
 
-    if (streamDone) {
+    if (streamDone && !signal?.aborted) {
       buffer += decoder.decode()
       for (const line of buffer.split(/\r?\n/)) {
         const trimmed = line.trim()
@@ -663,6 +667,7 @@ export async function handleMascotChatRequest(
       })
       iterator = toAsyncIterator(output)
       const { firstDelta } = await pullFirstNonEmptyDelta(iterator)
+      options.onProviderSelected?.(providerName)
       return createSseReadableStream(firstDelta, iterator, streamCancelController)
     } catch (error) {
       streamCancelController.abort()

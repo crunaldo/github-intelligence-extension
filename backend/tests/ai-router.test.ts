@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { generateRepoAnalysis } from '../src/ai/router'
+import { buildRepoPrompt } from '../src/ai/providers/shared'
+import { DEFAULT_SYSTEM_PROMPT_REPO } from '../../admin/src/lib/admin-types'
 import type { AnalysisResult, RepoContext } from '../src/ai/types'
 
 const mockContext: RepoContext = {
@@ -271,11 +273,14 @@ describe('AI Multi-Provider Fallback Router', () => {
     expect(callArgs[0]).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast')
     expect(callArgs[1]).toMatchObject({
       messages: [
-        { role: 'system', content: 'Custom architecture prompt' },
+        { role: 'system', content: expect.stringContaining('Custom architecture prompt') },
         { role: 'user', content: expect.stringContaining('test-owner/test-repo') }
       ],
       max_tokens: 2048
     })
+    const systemSent = String((callArgs[1] as { messages: Array<{ content: string }> }).messages[0].content)
+    expect(systemSent).toContain('"architectureDiagram"')
+    expect(systemSent).toContain('"deepAudit"')
     expect(result.providerUsed).toBe('cfAi')
     expect(result.tokensConsumed).toBe(99)
     expect(result.summary.stackPills).toEqual(['TypeScript'])
@@ -301,5 +306,26 @@ describe('AI Multi-Provider Fallback Router', () => {
     })
 
     expect(timeoutSpy).toHaveBeenCalledWith(4200)
+  })
+
+  it('buildRepoPrompt retains required JSON schema instructions when a custom systemPrompt is passed', () => {
+    const custom = buildRepoPrompt(mockContext, 'Write explanations in Spanish for beginners.')
+    expect(custom.system).toContain('Write explanations in Spanish for beginners.')
+    expect(custom.system).toContain('"summary"')
+    expect(custom.system).toContain('"headline"')
+    expect(custom.system).toContain('"whatItIs"')
+    expect(custom.system).toContain('"whyItMatters"')
+    expect(custom.system).toContain('"practicalUse"')
+    expect(custom.system).toContain('"targetAudience"')
+    expect(custom.system).toContain('"stackPills"')
+    expect(custom.system).toContain('"architectureDiagram"')
+    expect(custom.system).toContain('"deepAudit"')
+    expect(custom.system).toContain('"strengths"')
+    expect(custom.system).toContain('"concerns"')
+
+    const adminDefault = buildRepoPrompt(mockContext, DEFAULT_SYSTEM_PROMPT_REPO)
+    expect(adminDefault.system).toContain(DEFAULT_SYSTEM_PROMPT_REPO)
+    expect(adminDefault.system).toContain('"architectureDiagram"')
+    expect(adminDefault.system).toContain('"deepAudit"')
   })
 })

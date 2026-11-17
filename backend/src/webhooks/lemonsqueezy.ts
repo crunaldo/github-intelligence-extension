@@ -7,16 +7,24 @@ export interface SupabaseSelectQueryResult<T = Record<string, unknown>> {
   error?: { message?: string } | null
 }
 
+export interface SupabaseSelectFilter extends PromiseLike<SupabaseSelectQueryResult> {
+  eq(column: string, value: string): Promise<SupabaseSelectQueryResult> | SupabaseSelectFilter
+  limit?(count: number): Promise<SupabaseSelectQueryResult> | SupabaseSelectFilter
+}
+
 export interface SupabaseTableClient {
   upsert(
     values: Record<string, unknown>,
     options?: { onConflict?: string }
   ): Promise<SupabaseQueryResult> | SupabaseTableClient
+  insert?(
+    values: Record<string, unknown> | Array<Record<string, unknown>>
+  ): Promise<SupabaseQueryResult>
   update(values: Record<string, unknown>): {
     eq(column: string, value: string): Promise<SupabaseQueryResult>
   }
   select?(columns: string): {
-    eq(column: string, value: string): Promise<SupabaseSelectQueryResult>
+    eq(column: string, value: string): Promise<SupabaseSelectQueryResult> | SupabaseSelectFilter
   }
 }
 
@@ -37,11 +45,13 @@ export interface LemonSqueezyWebhookEvent {
     id?: string | number
     attributes?: {
       status?: string
+      user_email?: string | null
       customer_id?: string | number
       variant_id?: string | number
       renews_at?: string | null
       ends_at?: string | null
       current_period_end?: string | null
+      updated_at?: string | null
       [key: string]: unknown
     }
     [key: string]: unknown
@@ -128,10 +138,20 @@ export async function handleLemonSqueezyWebhook(
     throw new Error('INVALID_WEBHOOK_SIGNATURE')
   }
 
-  const event: LemonSqueezyWebhookEvent =
-    typeof payload === 'string'
-      ? (JSON.parse(payload) as LemonSqueezyWebhookEvent)
-      : payload
+  let event: LemonSqueezyWebhookEvent
+  if (typeof payload === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(payload)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('INVALID_WEBHOOK_JSON')
+      }
+      event = parsed as LemonSqueezyWebhookEvent
+    } catch {
+      throw new Error('INVALID_WEBHOOK_JSON')
+    }
+  } else {
+    event = payload
+  }
 
   const eventName = event?.meta?.event_name ?? ''
   const attributes = event?.data?.attributes ?? {}
@@ -146,8 +166,71 @@ export async function handleLemonSqueezyWebhook(
   const lemonSubId = event?.data?.id != null ? String(event.data.id) : null
   const customerId = attributes.customer_id != null ? String(attributes.customer_id) : null
   const variantId = attributes.variant_id != null ? String(attributes.variant_id) : null
+  const userEmail =
+    typeof attributes.user_email === 'string' ? attributes.user_email.trim() : ''
+  const rawUpdatedAt =
+    typeof attributes.updated_at === 'string' ? attributes.updated_at.trim() : ''
+  const incomingUpdatedMs = rawUpdatedAt ? Date.parse(rawUpdatedAt) : NaN
+  const incomingUpdatedAt = Number.isFinite(incomingUpdatedMs) ? rawUpdatedAt : null
   const currentPeriodEnd =
     attributes.renews_at ?? attributes.ends_at ?? attributes.current_period_end ?? null
+
+  let resolvedExistingUserId: string | null = null
+  let checkedExistingSubscription = false
+
+  if (lemonSubId && incomingUpdatedAt !== null) {
+    const subscriptionsTable = supabase.from('subscriptions')
+    if (typeof subscriptionsTable.select === 'function') {
+      checkedExistingSubscription = true
+      const existingRes = await subscriptionsTable
+        .select('user_id, updated_at')
+        .eq('lemon_subscription_id', lemonSubId)
+      if (existingRes && 'error' in existingRes && existingRes.error) {
+        throw new Error(
+          `SUBSCRIPTION_LOOKUP_FAILED: ${existingRes.error.message ?? 'unknown error'}`
+        )
+      }
+      const existingRow = existingRes?.data?.[0]
+      if (existingRow) {
+        const storedUpdatedRaw =
+          typeof existingRow.updated_at === 'string' ? existingRow.updated_at.trim() : ''
+        const storedUpdatedMs = storedUpdatedRaw ? Date.parse(storedUpdatedRaw) : NaN
+        if (Number.isFinite(storedUpdatedMs) && incomingUpdatedMs < storedUpdatedMs) {
+          return { handled: true, status: 'ignored_stale' }
+        }
+        if (typeof existingRow.user_id === 'string' && existingRow.user_id.length > 0) {
+          resolvedExistingUserId = existingRow.user_id
+        }
+      }
+    }
+  }
+
+  if (userId && userEmail) {
+    const profilesTable = supabase.from('profiles')
+    let profileExists = false
+    if (typeof profilesTable.select === 'function') {
+      const profileCheck = await profilesTable.select('id').eq('id', String(userId))
+      if (
+        profileCheck &&
+        !profileCheck.error &&
+        Array.isArray(profileCheck.data) &&
+        profileCheck.data.length > 0
+      ) {
+        profileExists = true
+      }
+    }
+    if (!profileExists) {
+      const profileEnsureRes = await profilesTable.upsert(
+        { id: String(userId), email: userEmail },
+        { onConflict: 'id' }
+      )
+      if (profileEnsureRes && 'error' in profileEnsureRes && profileEnsureRes.error) {
+        throw new Error(
+          `PROFILE_UPSERT_FAILED: ${profileEnsureRes.error.message ?? 'unknown error'}`
+        )
+      }
+    }
+  }
 
   if (lemonSubId) {
     const subscriptionRow: Record<string, unknown> = {
@@ -155,7 +238,7 @@ export async function handleLemonSqueezyWebhook(
       status,
       variant_id: variantId,
       current_period_end: currentPeriodEnd,
-      updated_at: new Date().toISOString()
+      updated_at: incomingUpdatedAt ?? new Date().toISOString()
     }
     if (userId) {
       subscriptionRow.user_id = String(userId)
@@ -169,8 +252,8 @@ export async function handleLemonSqueezyWebhook(
     }
   }
 
-  let targetUserId: string | null = userId ? String(userId) : null
-  if (!targetUserId && lemonSubId) {
+  let targetUserId: string | null = userId ? String(userId) : resolvedExistingUserId
+  if (!targetUserId && lemonSubId && !checkedExistingSubscription) {
     const subscriptionsTable = supabase.from('subscriptions')
     if (typeof subscriptionsTable.select === 'function') {
       const lookupRes = await subscriptionsTable

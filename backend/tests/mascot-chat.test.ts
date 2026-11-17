@@ -686,6 +686,138 @@ describe('Mascot Provider HTTP/Binding Streaming Adapters & Lifecycle', () => {
     await reader.cancel()
     expect(upstreamCancelSpy).toHaveBeenCalledTimes(1)
   })
+
+  it('truncates >20 message history so the slice starts on a user turn (never Gemini role: model first)', async () => {
+    const encoder = new TextEncoder()
+    let capturedRoles: string[] = []
+
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        contents: Array<{ role: string; parts: Array<{ text: string }> }>
+      }
+      capturedRoles = body.contents.map((c) => c.role)
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode('data: {"candidates":[{"content":{"parts":[{"text":"OK"}]}}]}\n\n')
+            )
+            controller.close()
+          }
+        }),
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } }
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    // 21 alternating messages: index 0 is 'user', index 1 is 'assistant'.
+    // slice(-20) starts at index 1 ('assistant'), which must be shifted off so Gemini starts at 'user'.
+    const messages = Array.from({ length: 21 }, (_, idx) => ({
+      role: idx % 2 === 0 ? ('user' as const) : ('assistant' as const),
+      content: `msg-${idx}`
+    }))
+
+    const kv = createMockKv()
+    const stream = await handleMascotChatRequest(
+      {
+        userId: 'pro-slice-1',
+        messages,
+        repoContext: { owner: 'facebook', repo: 'react' }
+      },
+      kv,
+      { priorityOrder: ['gemini'], geminiApiKey: 'gem_test' }
+    )
+
+    expect(await readStreamText(stream)).toBe('data: {"delta":"OK"}\n\ndata: [DONE]\n\n')
+    expect(capturedRoles.length).toBe(19)
+    expect(capturedRoles[0]).toBe('user')
+
+    await expect(
+      handleMascotChatRequest(
+        {
+          userId: 'pro-slice-2',
+          messages: [{ role: 'assistant', content: 'Only assistant' }],
+          repoContext: { owner: 'facebook', repo: 'react' }
+        },
+        kv,
+        { priorityOrder: ['gemini'], geminiApiKey: 'gem_test' }
+      )
+    ).rejects.toThrow('At least one user message is required')
+  })
+
+  it('resolves latest analyzed commitSha pointer in /v1/mascot/chat when commitSha is omitted or HEAD', async () => {
+    const cached = makeCachedAnalysis()
+    const kv = createMockKv({
+      'cache:repo:facebook:react:sha999': JSON.stringify(cached)
+    })
+
+    const receivedSummaries: Array<unknown> = []
+    const receivedShas: Array<string | undefined> = []
+
+    const env: WorkerEnv = {
+      KV: kv,
+      verifyProUser: vi.fn().mockResolvedValue({ isPro: true, userId: 'u-latest' }),
+      chatProviders: {
+        groq: async (prompt) => {
+          receivedSummaries.push(prompt.system.includes('React UI Library'))
+          const shaLine = prompt.system.split('\n').find((l) => l.startsWith('Commit/Ref:'))
+          receivedShas.push(shaLine)
+          return chunksToAsyncIterable(['Summary attached!'])
+        }
+      }
+    }
+
+    // Trigger /v1/analyze cache hit to populate cache:repo-latest:facebook:react
+    const analyzeRes = await worker.fetch(
+      new Request('https://api.example.com/v1/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer pro-jwt'
+        },
+        body: JSON.stringify({ owner: 'Facebook', repo: 'React', commitSha: 'sha999' })
+      }),
+      env
+    )
+    expect(analyzeRes.status).toBe(200)
+    expect(kv.store.get('cache:repo-latest:facebook:react')).toBe('sha999')
+
+    // Mascot chat with omitted commitSha resolves summary from pointer
+    const chatNoSha = await worker.fetch(
+      new Request('https://api.example.com/v1/mascot/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer pro-jwt'
+        },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: 'What does this do?' }],
+          repoContext: { owner: 'facebook', repo: 'react' }
+        })
+      }),
+      env
+    )
+    expect(chatNoSha.status).toBe(200)
+
+    // Mascot chat with HEAD also resolves summary from pointer
+    const chatHead = await worker.fetch(
+      new Request('https://api.example.com/v1/mascot/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer pro-jwt'
+        },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: 'And architecture?' }],
+          repoContext: { owner: 'facebook', repo: 'react', commitSha: 'HEAD' }
+        })
+      }),
+      env
+    )
+    expect(chatHead.status).toBe(200)
+    expect(receivedSummaries).toEqual([true, true])
+    expect(receivedShas).toEqual(['Commit/Ref: sha999', 'Commit/Ref: sha999'])
+  })
 })
 
 describe('Content Script -> Background Pro Upgrade Delegation', () => {

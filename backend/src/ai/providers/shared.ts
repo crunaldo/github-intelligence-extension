@@ -14,8 +14,7 @@ export function createTimeoutSignal(timeoutMs?: number): AbortSignal {
   return AbortSignal.timeout(effectiveTimeout)
 }
 
-export const DEFAULT_SYSTEM_PROMPT = [
-  'You are an expert software architect analyzing a public GitHub repository.',
+export const REPO_JSON_SCHEMA_CONTRACT = [
   'Return strictly valid JSON with no surrounding markdown or commentary matching this exact structure:',
   '{',
   '  "summary": {',
@@ -34,6 +33,11 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '}'
 ].join('\n')
 
+export const DEFAULT_REPO_PERSONA_PROMPT =
+  'You are an expert software architect analyzing a public GitHub repository.'
+
+export const DEFAULT_SYSTEM_PROMPT = `${DEFAULT_REPO_PERSONA_PROMPT}\n${REPO_JSON_SCHEMA_CONTRACT}`
+
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
@@ -48,12 +52,26 @@ function stripMarkdownFences(raw: string): string {
   return fenceMatch?.[1] !== undefined ? fenceMatch[1].trim() : trimmed
 }
 
-/** Builds system and user prompts from repository context. */
+function hasJsonSchemaContract(prompt: string): boolean {
+  return (
+    prompt.includes('"summary"') &&
+    prompt.includes('"architectureDiagram"') &&
+    prompt.includes('"deepAudit"') &&
+    prompt.includes('"stackPills"')
+  )
+}
+
+/** Builds system and user prompts from repository context, always preserving the JSON output contract. */
 export function buildRepoPrompt(
   context: RepoContext,
   customSystemPrompt?: string
 ): { system: string; user: string } {
-  const system = customSystemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT
+  const trimmedCustom = customSystemPrompt?.trim()
+  const system = !trimmedCustom
+    ? DEFAULT_SYSTEM_PROMPT
+    : hasJsonSchemaContract(trimmedCustom)
+      ? trimmedCustom
+      : `${trimmedCustom}\n\n${REPO_JSON_SCHEMA_CONTRACT}`
   const manifestEntries = Object.entries(context.manifests)
     .map(([filename, content]) => `--- ${filename} ---\n${content}`)
     .join('\n\n')
@@ -94,7 +112,7 @@ export function parseAnalysisResponse(
     }
   }
 
-  if (!parsed || typeof parsed !== 'object') {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(`${providerUsed} response must be a JSON object`)
   }
 
