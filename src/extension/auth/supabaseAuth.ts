@@ -24,8 +24,16 @@ function getEnvVar(
   key: 'VITE_SUPABASE_URL' | 'VITE_SUPABASE_ANON_KEY' | 'VITE_LEMON_SQUEEZY_CHECKOUT_URL'
 ): string | undefined {
   try {
-    const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env
-    return env?.[key]
+    if (key === 'VITE_SUPABASE_URL') {
+      return (import.meta as unknown as { env?: Record<string, string | undefined> }).env
+        ?.VITE_SUPABASE_URL
+    }
+    if (key === 'VITE_SUPABASE_ANON_KEY') {
+      return (import.meta as unknown as { env?: Record<string, string | undefined> }).env
+        ?.VITE_SUPABASE_ANON_KEY
+    }
+    return (import.meta as unknown as { env?: Record<string, string | undefined> }).env
+      ?.VITE_LEMON_SQUEEZY_CHECKOUT_URL
   } catch {
     return undefined
   }
