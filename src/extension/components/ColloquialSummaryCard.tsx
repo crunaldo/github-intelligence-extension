@@ -1,44 +1,124 @@
-import { useState, useEffect, useMemo } from 'react'
-import { BookOpen, Lightbulb, Terminal, Users } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { AlertCircle, BookOpen, Lightbulb, RefreshCw, Sparkles, Terminal, Users, Wrench } from 'lucide-react'
 import type { RepositoryReport } from '../../features/repository/types'
-import { generateColloquialSpanishSummary } from '../spanishSummary'
-import { translateText } from '../translate'
+import { fetchRepoIntelligence, sanitizeCommitRef } from '../api/backendClient'
+import { initiateProUpgrade } from '../auth/supabaseAuth'
+import {
+  classifySummaryError,
+  generateColloquialSpanishSummary,
+  generateFallbackSummary,
+  mapAnalysisToColloquialSummary,
+  type ColloquialExplanation,
+} from '../spanishSummary'
 import { t, type ActiveLocale } from '../i18n'
 
 type Props = {
   report: RepositoryReport
   locale?: ActiveLocale
   hideTopBanner?: boolean
+  refreshNonce?: number
 }
 
-export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = false }: Props) {
-  const initialSummary = useMemo(() => generateColloquialSpanishSummary(report, locale), [report, locale])
-  const [liveWhatItIs, setLiveWhatItIs] = useState<string>(initialSummary.whatItIs)
+export function ColloquialSummaryCard({
+  report,
+  locale = 'es',
+  hideTopBanner = false,
+  refreshNonce = 0,
+}: Props) {
+  const loadingSummary = useMemo(
+    () => generateColloquialSpanishSummary(report, locale),
+    [report, locale]
+  )
+  const fallbackSummary = useMemo(
+    () => generateFallbackSummary(report, locale),
+    [report, locale]
+  )
 
-  // Asynchronously translate or polish the description if available
+  const [summary, setSummary] = useState<ColloquialExplanation>(loadingSummary)
+  const [loading, setLoading] = useState(true)
+  const [quotaExceeded, setQuotaExceeded] = useState(false)
+  const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [upgrading, setUpgrading] = useState(false)
+  const [upgradeNotice, setUpgradeNotice] = useState<string | null>(null)
+  const [retryTick, setRetryTick] = useState(0)
+  const lastRefreshNonceRef = useRef(refreshNonce)
+  const lastRetryTickRef = useRef(retryTick)
+
   useEffect(() => {
     let isCancelled = false
-    const desc = report.repository?.description?.trim()
+    const owner = report.repository?.owner || report.target?.owner
+    const repo = report.repository?.name || report.target?.repository
+    const commitSha = sanitizeCommitRef(
+      report.latestCommit?.sha || report.resolvedRef || report.repository?.defaultBranch
+    )
 
-    if (desc && desc.length > 5) {
-      void translateText(desc, locale).then((translated) => {
-        if (!isCancelled && translated && translated.length > 5) {
-          let clean = translated.charAt(0).toUpperCase() + translated.slice(1)
-          if (!clean.endsWith('.')) clean += '.'
-          setLiveWhatItIs(clean)
+    const shouldForceRefresh =
+      refreshNonce !== lastRefreshNonceRef.current || retryTick !== lastRetryTickRef.current
+    lastRefreshNonceRef.current = refreshNonce
+    lastRetryTickRef.current = retryTick
+
+    if (!owner || !repo) {
+      setSummary(fallbackSummary)
+      setLoading(false)
+      setQuotaExceeded(false)
+      setMaintenanceMessage(null)
+      setAnalysisError(null)
+      return
+    }
+
+    setLoading(true)
+    setQuotaExceeded(false)
+    setMaintenanceMessage(null)
+    setAnalysisError(null)
+    setSummary(loadingSummary)
+
+    void fetchRepoIntelligence(
+      owner,
+      repo,
+      commitSha,
+      shouldForceRefresh ? { forceRefresh: true } : undefined
+    )
+      .then((analysis) => {
+        if (!isCancelled) {
+          setSummary(mapAnalysisToColloquialSummary(analysis, locale))
+          setLoading(false)
         }
       })
-    } else {
-      setLiveWhatItIs(initialSummary.whatItIs)
-    }
+      .catch((err: unknown) => {
+        if (isCancelled) return
+        const errorState = classifySummaryError(err)
+        setQuotaExceeded(errorState.quotaExceeded)
+        setMaintenanceMessage(errorState.maintenanceMode ? errorState.errorMessage : null)
+        setAnalysisError(errorState.maintenanceMode ? null : errorState.errorMessage)
+        setSummary(fallbackSummary)
+        setLoading(false)
+      })
 
     return () => {
       isCancelled = true
     }
-  }, [report, initialSummary, locale])
+  }, [report, locale, loadingSummary, fallbackSummary, retryTick, refreshNonce])
+
+  const handleUpgrade = async () => {
+    setUpgradeNotice(null)
+    setUpgrading(true)
+    try {
+      const session = await initiateProUpgrade()
+      if (!session) {
+        setUpgradeNotice(t('upgrade_cancelled_notice', locale))
+      }
+    } catch (err) {
+      setUpgradeNotice(
+        err instanceof Error && err.message ? err.message : t('upgrade_cancelled_notice', locale)
+      )
+    } finally {
+      setUpgrading(false)
+    }
+  }
 
   return (
-    <div className="colloquial-container">
+    <div className="colloquial-container" aria-busy={loading}>
       {/* Top Banner Tag */}
       {!hideTopBanner && (
         <div className="colloquial-banner-row">
@@ -48,7 +128,7 @@ export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = f
           </div>
 
           <div className="colloquial-tags-wrap">
-            {initialSummary.stackPills.map((pill, i) => (
+            {summary.stackPills.map((pill, i) => (
               <span key={i} className="colloquial-chip">
                 {pill}
               </span>
@@ -57,12 +137,100 @@ export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = f
         </div>
       )}
 
+      {quotaExceeded && (
+        <div
+          className="insight-card"
+          style={{
+            border: '1px solid var(--accent-cyan)',
+            background: 'var(--accent-cyan-subtle)',
+            marginBottom: 10,
+            padding: 12,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13 }}>
+            <Sparkles size={15} style={{ color: 'var(--accent-cyan)' }} />
+            <span>{t('quota_exceeded_title', locale)}</span>
+          </div>
+          <p style={{ margin: '6px 0 10px', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+            {t('quota_exceeded_desc', locale)}
+          </p>
+          <button
+            type="button"
+            className="btn-github-direct"
+            onClick={() => void handleUpgrade()}
+            disabled={upgrading}
+            style={{ width: '100%', justifyContent: 'center' }}
+          >
+            <Sparkles size={13} />
+            <span>{t('upgrade_to_pro_btn', locale)}</span>
+          </button>
+          {upgradeNotice && (
+            <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--accent-amber)', lineHeight: 1.4 }}>
+              {upgradeNotice}
+            </p>
+          )}
+        </div>
+      )}
+
+      {maintenanceMessage && (
+        <div
+          className="insight-card"
+          style={{
+            border: '1px solid rgba(244, 63, 94, 0.35)',
+            background: 'rgba(244, 63, 94, 0.08)',
+            marginBottom: 10,
+            padding: 10,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 8,
+          }}
+        >
+          <Wrench size={14} style={{ color: 'var(--accent-rose)', flexShrink: 0, marginTop: 2 }} />
+          <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+            <strong style={{ color: 'var(--text-primary)', display: 'block', marginBottom: 2 }}>
+              {t('maintenance_title', locale)}
+            </strong>
+            <span>{maintenanceMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {analysisError && !quotaExceeded && !maintenanceMessage && (
+        <div
+          className="insight-card"
+          style={{
+            border: '1px solid rgba(245, 158, 11, 0.35)',
+            background: 'rgba(245, 158, 11, 0.08)',
+            marginBottom: 10,
+            padding: 10,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-secondary)' }}>
+            <AlertCircle size={14} style={{ color: 'var(--accent-amber)', flexShrink: 0 }} />
+            <span>{t('ai_error_notice', locale)}</span>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setRetryTick((n) => n + 1)}
+            style={{ padding: '4px 8px', fontSize: 11, flexShrink: 0 }}
+          >
+            <RefreshCw size={11} />
+            <span>{t('retry_btn', locale)}</span>
+          </button>
+        </div>
+      )}
+
       {/* Main explanation */}
       <div className="colloquial-box-lead">
         <div className="colloquial-label-kicker" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span>{t('what_is_it', locale)}</span>
         </div>
-        <p className="colloquial-text-lead">{liveWhatItIs}</p>
+        <p className="colloquial-text-lead">{summary.whatItIs}</p>
       </div>
 
       {/* 2-Column Bento Highlights */}
@@ -72,7 +240,7 @@ export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = f
             <Lightbulb size={13} className="text-amber" />
             <span>{t('why_it_matters', locale)}</span>
           </div>
-          <p className="colloquial-mini-text">{initialSummary.whyItMatters}</p>
+          <p className="colloquial-mini-text">{summary.whyItMatters}</p>
         </div>
 
         <div className="colloquial-mini-card">
@@ -80,7 +248,7 @@ export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = f
             <Terminal size={13} style={{ color: 'var(--text-secondary)' }} />
             <span>{t('in_practice', locale)}</span>
           </div>
-          <p className="colloquial-mini-text">{initialSummary.practicalUse}</p>
+          <p className="colloquial-mini-text">{summary.practicalUse}</p>
         </div>
       </div>
 
@@ -88,7 +256,7 @@ export function ColloquialSummaryCard({ report, locale = 'es', hideTopBanner = f
       <div className="colloquial-footer-tag">
         <Users size={13} className="text-muted" />
         <span>
-          {t('ideal_for', locale)} <strong>{initialSummary.targetAudience}</strong>
+          {t('ideal_for', locale)} <strong>{summary.targetAudience}</strong>
         </span>
       </div>
     </div>

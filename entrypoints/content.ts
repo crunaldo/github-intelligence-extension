@@ -1,3 +1,10 @@
+import React from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import {
+  FloatingMascot,
+  MASCOT_SHADOW_STYLES,
+  type FloatingMascotRepo,
+} from '../src/features/mascot/FloatingMascot'
 import {
   extractRepoReference,
   extractRepoFromAnchorData,
@@ -14,6 +21,8 @@ export default defineContentScript({
     // =========================================================================
     // 1. GITHUB.COM NATIVE PAGE TRACKING (Maintains Turbo & PJAX listeners)
     // =========================================================================
+    let mascotHostEl: HTMLDivElement | null = null
+
     if (isGitHubSite) {
       function parseGitHubRepo(urlStr: string): { owner: string; repo: string; ref?: string; fullName: string; url: string } | null {
         try {
@@ -45,12 +54,99 @@ export default defineContentScript({
         }
       }
 
+      function extractCommitShaFromDom(owner: string, repo: string): string | undefined {
+        try {
+          const escapedOwner = owner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const escapedRepo = repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const commitHrefPattern = new RegExp(
+            `^/${escapedOwner}/${escapedRepo}/commit/([0-9a-f]{7,40})(?:[/?#]|$)`,
+            'i'
+          )
+
+          const prioritySelectors = [
+            '[data-testid*="latest-commit"] a[href*="/commit/"]',
+            '.commit-tease a[href*="/commit/"]',
+            'main a[href*="/commit/"]',
+            'a[href*="/commit/"]',
+          ]
+          for (const selector of prioritySelectors) {
+            const links = document.querySelectorAll(selector)
+            for (const link of links) {
+              const rawHref = link.getAttribute('href') || ''
+              let pathname = rawHref
+              if (rawHref.startsWith('http')) {
+                try {
+                  pathname = new URL(rawHref).pathname
+                } catch {
+                  continue
+                }
+              }
+              const match = commitHrefPattern.exec(pathname)
+              if (match?.[1]) {
+                return match[1]
+              }
+            }
+          }
+
+          const embeddedScripts = document.querySelectorAll(
+            'script[data-target="react-app.embeddedData"]'
+          )
+          for (const script of embeddedScripts) {
+            const content = script.textContent || ''
+            const oidMatch = /"currentOid"\s*:\s*"([0-9a-f]{7,40})"/i.exec(content)
+            if (oidMatch?.[1]) {
+              return oidMatch[1]
+            }
+          }
+        } catch {
+          // Fall back cleanly when GitHub DOM structure is unavailable
+        }
+        return undefined
+      }
+
+      let mascotRoot: Root | null = null
+
+      function renderFloatingMascot(activeRepo: FloatingMascotRepo | null) {
+        if (!mascotHostEl) {
+          mascotHostEl = document.createElement('div')
+          mascotHostEl.id = 'gpi-mascot-host'
+          document.documentElement.appendChild(mascotHostEl)
+
+          const mascotShadow = mascotHostEl.attachShadow({ mode: 'open' })
+          const styleEl = document.createElement('style')
+          styleEl.textContent = MASCOT_SHADOW_STYLES
+          mascotShadow.appendChild(styleEl)
+
+          const mountEl = document.createElement('div')
+          mascotShadow.appendChild(mountEl)
+          mascotRoot = createRoot(mountEl)
+        }
+
+        mascotRoot?.render(React.createElement(FloatingMascot, { repo: activeRepo }))
+      }
+
       let lastUrl = window.location.href
 
       function notifyNavigation() {
         const currentUrl = window.location.href
         const repo = parseGitHubRepo(currentUrl)
         lastUrl = currentUrl
+
+        const resolvedSha = repo
+          ? (/^[0-9a-f]{7,40}$/i.test(repo.ref || '')
+              ? repo.ref
+              : extractCommitShaFromDom(repo.owner, repo.repo)) || repo.ref
+          : undefined
+
+        renderFloatingMascot(
+          repo
+            ? {
+                owner: repo.owner,
+                repo: repo.repo,
+                ...(resolvedSha ? { commitSha: resolvedSha } : {}),
+              }
+            : null
+        )
 
         try {
           chrome.runtime.sendMessage({
@@ -376,6 +472,10 @@ export default defineContentScript({
     document.addEventListener('mouseover', (e) => {
       const targetEl = e.target as Element | null
       if (!targetEl) return
+
+      if (mascotHostEl && e.composedPath().includes(mascotHostEl)) {
+        return
+      }
 
       // Don't trigger or hide if hovering over the floating pill itself
       if (hostEl && e.composedPath().includes(hostEl)) {

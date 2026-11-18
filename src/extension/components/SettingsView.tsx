@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   KeyRound,
   Check,
@@ -13,9 +13,19 @@ import {
   HelpCircle,
   Zap,
   Globe,
+  Sparkles,
+  LogOut,
 } from 'lucide-react'
 import type { ExtensionPreferences } from '../storage'
 import { resolveActiveLanguage, detectSystemLanguage, t, type AppLanguage, type ActiveLocale } from '../i18n'
+import {
+  getAuthSession,
+  initiateProUpgrade,
+  refreshProStatus,
+  signInWithGitHub,
+  signOut,
+  type AuthSession,
+} from '../auth/supabaseAuth'
 
 type SettingsViewProps = {
   preferences: ExtensionPreferences
@@ -37,6 +47,75 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
   const [tokenTestResult, setTokenTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [clearedNotice, setClearedNotice] = useState(false)
   const [showInstructions, setShowInstructions] = useState(true)
+  const [authSession, setAuthSession] = useState<AuthSession | null>(null)
+  const [authBusy, setAuthBusy] = useState(false)
+  const [authNotice, setAuthNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void getAuthSession().then((session) => {
+      if (!cancelled) setAuthSession(session)
+      if (session) {
+        void refreshProStatus().then((refreshed) => {
+          if (!cancelled && refreshed) {
+            setAuthSession(refreshed)
+          }
+        })
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleGitHubSignIn = async () => {
+    setAuthNotice(null)
+    setAuthBusy(true)
+    try {
+      const session = await signInWithGitHub()
+      if (!session) {
+        setAuthNotice(t('auth_cancelled_notice', activeLocale))
+      }
+      setAuthSession(session)
+    } catch (err) {
+      setAuthNotice(
+        err instanceof Error && err.message ? err.message : t('auth_cancelled_notice', activeLocale)
+      )
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  const handleSignOut = async () => {
+    setAuthNotice(null)
+    setAuthBusy(true)
+    try {
+      await signOut()
+      setAuthSession(null)
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  const handleUpgradeToPro = async () => {
+    setAuthNotice(null)
+    setAuthBusy(true)
+    try {
+      const session = await initiateProUpgrade()
+      if (!session) {
+        setAuthNotice(t('upgrade_cancelled_notice', activeLocale))
+      }
+      setAuthSession(await getAuthSession())
+    } catch (err) {
+      setAuthNotice(
+        err instanceof Error && err.message
+          ? err.message
+          : t('upgrade_cancelled_notice', activeLocale)
+      )
+    } finally {
+      setAuthBusy(false)
+    }
+  }
 
   const handleSaveToken = async () => {
     await onSavePreferences({ githubToken: token.trim() })
@@ -67,8 +146,8 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
           ok: true,
           message:
             activeLocale === 'es'
-              ? `¡Token válido! Conectado como @${data.login || 'usuario'}. Límite ampliado a 5,000 peticiones/hora.`
-              : `Valid token! Connected as @${data.login || 'user'}. Rate limit upgraded to 5,000 requests/hour.`,
+              ? `¡Token válido! Conectado localmente como @${data.login || 'usuario'}. Análisis profundo y funciones Pro habilitadas.`
+              : `Valid token! Connected locally as @${data.login || 'user'}. Deep repository analysis and Pro features enabled.`,
         })
         await onSavePreferences({ githubToken: token.trim() })
       } else {
@@ -149,6 +228,95 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
             )
           })}
         </div>
+      </div>
+
+      {/* 1.5 Pro Plan & GitHub Authentication Card */}
+      <div className="insight-card" style={{ border: '1px solid var(--border-medium)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <div className="insight-title" style={{ color: 'var(--text-primary)', margin: 0 }}>
+            <Sparkles size={16} style={{ color: 'var(--accent-cyan)' }} />
+            <span>{t('pro_plan_title', activeLocale)}</span>
+          </div>
+          <span
+            className="colloquial-chip"
+            style={{
+              fontWeight: 700,
+              fontSize: 10,
+              color: authSession?.isPro ? 'var(--accent-emerald)' : 'var(--text-secondary)',
+            }}
+          >
+            {authSession?.isPro ? t('pro_badge_active', activeLocale) : t('pro_badge_free', activeLocale)}
+          </span>
+        </div>
+
+        <p style={{ margin: '8px 0 12px', fontSize: 12, lineHeight: 1.45, color: 'var(--text-secondary)' }}>
+          {t('pro_plan_desc', activeLocale)}
+        </p>
+
+        {authSession && (
+          <div style={{ fontSize: 12, color: 'var(--text-primary)', marginBottom: 10 }}>
+            {t('pro_connected_as', activeLocale)}{' '}
+            <strong>@{authSession.user.userName || authSession.user.email || authSession.user.id}</strong>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {!authSession && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => void handleGitHubSignIn()}
+              disabled={authBusy}
+            >
+              <span>{t('pro_sign_in_github', activeLocale)}</span>
+            </button>
+          )}
+
+          {!authSession?.isPro && (
+            <button
+              type="button"
+              className="btn-github-direct"
+              onClick={() => void handleUpgradeToPro()}
+              disabled={authBusy}
+            >
+              <Sparkles size={12} />
+              <span>{t('pro_upgrade_btn', activeLocale)}</span>
+            </button>
+          )}
+
+          {authSession && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => void handleSignOut()}
+              disabled={authBusy}
+            >
+              <LogOut size={12} />
+              <span>{t('pro_sign_out', activeLocale)}</span>
+            </button>
+          )}
+        </div>
+
+        {authNotice && (
+          <div
+            role="alert"
+            style={{
+              marginTop: 10,
+              padding: '8px 10px',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 11.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              background: 'rgba(245, 158, 11, 0.1)',
+              color: 'var(--accent-amber)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+            }}
+          >
+            <AlertCircle size={14} style={{ flexShrink: 0 }} />
+            <span>{authNotice}</span>
+          </div>
+        )}
       </div>
 
       {/* 2. GitHub Token Configuration Card */}
