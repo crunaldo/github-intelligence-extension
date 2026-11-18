@@ -126,12 +126,29 @@ export function PopupApp() {
       return
     }
 
+    inFlightUrlRef.current = target.originalUrl
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
+    // Immediately clear previous report and set loading = true
+    setReport(null)
+    setLoading(true)
+    setQuotaExceeded(false)
+
     // Check cache first if not forced
     if (!force) {
       const cached = await getCachedReport(target.originalUrl)
       if (cached) {
+        await new Promise((r) => setTimeout(r, 450))
+        if (inFlightUrlRef.current !== target.originalUrl) return
         setReport(cached)
         setQuotaExceeded(false)
+        setLoading(false)
+        inFlightUrlRef.current = null
         return
       }
     }
@@ -139,24 +156,15 @@ export function PopupApp() {
     // Pre-check if daily free quota was already exceeded today
     const quotaExceededToday = await isDailyQuotaExceeded()
     if (quotaExceededToday) {
+      if (inFlightUrlRef.current !== target.originalUrl) return
       setReport(null)
       setQuotaExceeded(true)
       setLoading(false)
       setError(null)
+      inFlightUrlRef.current = null
       return
     }
 
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-    const controller = new AbortController()
-    abortControllerRef.current = controller
-    inFlightUrlRef.current = target.originalUrl
-
-    // Clear previous report so that InteractiveBeamLoader is immediately visible
-    setReport(null)
-    setLoading(true)
-    setQuotaExceeded(false)
     try {
       // 1. Fetch GitHub metadata, commits, tree and manifests
       const res = await analyzeGitHubRepository(target, controller.signal)
@@ -180,12 +188,18 @@ export function PopupApp() {
         const summaryErr = classifySummaryError(aiErr)
         if (summaryErr.quotaExceeded) {
           await markDailyQuotaExceeded()
-          setReport(null)
-          setQuotaExceeded(true)
+          if (inFlightUrlRef.current === target.originalUrl) {
+            setReport(null)
+            setQuotaExceeded(true)
+            setLoading(false)
+            inFlightUrlRef.current = null
+          }
           return
         }
         console.warn('AI analysis skipped/failed:', aiErr)
       }
+
+      if (inFlightUrlRef.current !== target.originalUrl) return
 
       if (force) {
         setRefreshNonce((n) => n + 1)
@@ -200,12 +214,14 @@ export function PopupApp() {
       }
     } catch (err) {
       if ((err as Error).name === 'AbortError') return
-      setError(err instanceof Error ? err.message : 'Error al analizar el repositorio.')
+      if (inFlightUrlRef.current === target.originalUrl) {
+        setError(err instanceof Error ? err.message : 'Error al analizar el repositorio.')
+      }
     } finally {
       if (inFlightUrlRef.current === target.originalUrl) {
         inFlightUrlRef.current = null
+        setLoading(false)
       }
-      setLoading(false)
     }
   }, [])
 
@@ -625,9 +641,9 @@ export function PopupApp() {
 
       {/* Body Area */}
       <div className="ext-body">
-        {loading && !report && (
+        {loading && (
           <InteractiveBeamLoader
-            repoName={activeTabRepo ? `${activeTabRepo.owner}/${activeTabRepo.repository}` : (searchUrl || undefined)}
+            repoName={activeTabRepo ? `${activeTabRepo.owner}/${activeTabRepo.repository}` : (searchUrl || report?.repository?.fullName || undefined)}
             locale={activeLocale}
           />
         )}
@@ -684,7 +700,7 @@ export function PopupApp() {
           </div>
         )}
 
-        {report && !quotaExceeded && (
+        {!loading && report && !quotaExceeded && (
           <>
             {/* 1. MÓDULO HERO PRINCIPAL DE MARCA CON MASCOTA REACTIVA */}
             <RepoHeroCard report={report} locale={activeLocale} />

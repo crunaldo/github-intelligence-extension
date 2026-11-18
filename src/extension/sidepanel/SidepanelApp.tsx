@@ -167,12 +167,31 @@ export function SidepanelApp() {
         return
       }
 
+      // Mark this repository in flight immediately
+      inFlightUrlRef.current = target.originalUrl
+
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+
+      // Immediately clear previous report and set loading = true so InteractiveBeamLoader appears instantly
+      setReport(null)
+      setLoading(true)
+      setQuotaExceeded(false)
+
       if (!force) {
         const cached = await getCachedReport(target.originalUrl)
         if (cached) {
+          // Provide smooth visual feedback with beam loader for cached reports
+          await new Promise((r) => setTimeout(r, 450))
+          if (inFlightUrlRef.current !== target.originalUrl) return
           setReport(cached)
           setQuotaExceeded(false)
           setNav('analyze')
+          setLoading(false)
+          inFlightUrlRef.current = null
           return
         }
       }
@@ -180,25 +199,16 @@ export function SidepanelApp() {
       // Pre-check if daily free quota was already exceeded today
       const quotaExceededToday = await isDailyQuotaExceeded()
       if (quotaExceededToday) {
+        if (inFlightUrlRef.current !== target.originalUrl) return
         setReport(null)
         setQuotaExceeded(true)
         setLoading(false)
         setError(null)
         setNav('analyze')
+        inFlightUrlRef.current = null
         return
       }
 
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort()
-      }
-      const controller = new AbortController()
-      abortControllerRef.current = controller
-      inFlightUrlRef.current = target.originalUrl
-
-      // Clear previous report so that InteractiveBeamLoader is immediately visible
-      setReport(null)
-      setLoading(true)
-      setQuotaExceeded(false)
       try {
         // 1. Fetch GitHub metadata, commits, tree and manifests
         const res = await analyzeGitHubRepository(target, controller.signal)
@@ -222,12 +232,18 @@ export function SidepanelApp() {
           const summaryErr = classifySummaryError(aiErr)
           if (summaryErr.quotaExceeded) {
             await markDailyQuotaExceeded()
-            setReport(null)
-            setQuotaExceeded(true)
+            if (inFlightUrlRef.current === target.originalUrl) {
+              setReport(null)
+              setQuotaExceeded(true)
+              setLoading(false)
+              inFlightUrlRef.current = null
+            }
             return
           }
           console.warn('AI analysis skipped/failed:', aiErr)
         }
+
+        if (inFlightUrlRef.current !== target.originalUrl) return
 
         if (force) {
           setRefreshNonce((n) => n + 1)
@@ -245,12 +261,14 @@ export function SidepanelApp() {
         setNav('analyze')
       } catch (err) {
         if ((err as Error).name === 'AbortError') return
-        setError(err instanceof Error ? err.message : 'Error al analizar el repositorio.')
+        if (inFlightUrlRef.current === target.originalUrl) {
+          setError(err instanceof Error ? err.message : 'Error al analizar el repositorio.')
+        }
       } finally {
         if (inFlightUrlRef.current === target.originalUrl) {
           inFlightUrlRef.current = null
+          setLoading(false)
         }
-        setLoading(false)
       }
     },
     []
@@ -612,9 +630,9 @@ export function SidepanelApp() {
         {/* VIEW 1: ANALYZE */}
         {nav === 'analyze' && (
           <>
-            {loading && !report && (
+            {loading && (
               <InteractiveBeamLoader
-                repoName={report?.repository?.fullName || (activeTabRepo ? `${activeTabRepo.owner}/${activeTabRepo.repository}` : (urlInput || undefined))}
+                repoName={activeTabRepo ? `${activeTabRepo.owner}/${activeTabRepo.repository}` : (urlInput || report?.repository?.fullName || undefined)}
                 locale={activeLocale}
               />
             )}
@@ -640,7 +658,7 @@ export function SidepanelApp() {
               </div>
             )}
 
-            {report && !quotaExceeded && (
+            {!loading && report && !quotaExceeded && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {/* 1. MÓDULO HERO PRINCIPAL DE MARCA CON MASCOTA REACTIVA */}
                 <RepoHeroCard
