@@ -1,15 +1,13 @@
 name = "github-intelligence-api"
 main = "src/worker.ts"
-compatibility_date = "2026-11-01"
+compatibility_date = "2025-02-14"
 
 [vars]
 SUPABASE_URL = "https://ovgvjlcalzynnekclwhy.supabase.co"
 
-# Crear con: npx wrangler kv namespace create KV
-# Luego reemplaza <TU_KV_NAMESPACE_ID> con el id devuelto por Wrangler:
 [[kv_namespaces]]
 binding = "KV"
-id = "<TU_KV_NAMESPACE_ID>"
+id = "a86656bb68654cdb98cd1c3478758759"
 
 [ai]
 binding = "AI"
