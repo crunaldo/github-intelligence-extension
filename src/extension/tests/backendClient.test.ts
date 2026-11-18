@@ -717,5 +717,38 @@ describe('Extension Backend Client & Auth', () => {
 
       expect(await isDailyQuotaExceeded()).toBe(true)
     })
+
+    it('parses analysisModules correctly in fetchRemoteConfig and resolves via getModuleAccess', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          free_daily_limit: 20,
+          pro_daily_limit: 300,
+          feature_flags: {
+            mascot_enabled: true,
+            diagrams_enabled: false,
+            maintenance_mode: false,
+          },
+          analysis_modules: {
+            summary: 'free',
+            hardwareCompat: 'pro',
+            mascotChat: 'disabled',
+          },
+        }),
+      }) as unknown as typeof fetch
+
+      const cfg = await fetchRemoteConfig()
+      expect(cfg.analysisModules).toBeDefined()
+      expect(cfg.analysisModules?.summary).toBe('free')
+      expect(cfg.analysisModules?.hardwareCompat).toBe('pro')
+      expect(cfg.analysisModules?.mascotChat).toBe('disabled')
+
+      expect(getModuleAccess(cfg, 'summary')).toBe('free')
+      expect(getModuleAccess(cfg, 'hardwareCompat')).toBe('pro')
+      expect(getModuleAccess(cfg, 'mascotChat')).toBe('disabled')
+      expect(getModuleAccess(cfg, 'unconfiguredModule', 'free')).toBe('free')
+      expect(getModuleAccess(null, 'summary', 'pro')).toBe('pro')
+    })
   })
 })
