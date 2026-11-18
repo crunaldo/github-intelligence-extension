@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import mermaid from 'mermaid'
 import {
   AlertCircle,
@@ -29,6 +29,7 @@ import {
 } from '../auth/supabaseAuth'
 import { t, type ActiveLocale } from '../i18n'
 import { classifySummaryError } from '../spanishSummary'
+import { sanitizeMermaidDiagram } from '../utils/mermaidSanitizer'
 
 type ArchitectureDiagramViewProps = {
   report: RepositoryReport
@@ -44,7 +45,8 @@ function ensureMermaidInitialized() {
   mermaid.initialize({
     startOnLoad: false,
     theme: 'dark',
-    securityLevel: 'strict',
+    securityLevel: 'loose',
+    suppressErrorRendering: true,
   })
   mermaidInitialized = true
 }
@@ -163,7 +165,8 @@ export function ArchitectureDiagramView({
     }
   }, [report, retryTick, diagramsEnabled, forceNextFetch, onQuotaExceeded])
 
-  const diagramCode = analysis?.architectureDiagram?.trim() || ''
+  const rawDiagramCode = analysis?.architectureDiagram?.trim() || ''
+  const diagramCode = useMemo(() => sanitizeMermaidDiagram(rawDiagramCode), [rawDiagramCode])
 
   useEffect(() => {
     if (!diagramCode || viewMode !== 'diagram') {
@@ -190,7 +193,15 @@ export function ArchitectureDiagramView({
         }
 
         svgContainerRef.current.replaceChildren(document.importNode(svgElement, true))
-      } catch {
+      } catch (renderErr) {
+        console.warn('Mermaid render failed:', renderErr)
+        // Clean up any stray error element mermaid 11/12 might have injected into document.body
+        const stray = document.querySelectorAll('svg[id^="d"], svg[id^="mermaid-"]')
+        stray.forEach((el) => {
+          if (el.parentElement === document.body) {
+            el.remove()
+          }
+        })
         if (!cancelled) {
           setRenderFailed(true)
         }
@@ -313,11 +324,7 @@ export function ArchitectureDiagramView({
     )
   }
 
-  const deepAudit = analysis?.deepAudit
-  const hasDeepAudit =
-    Boolean(deepAudit) &&
-    ((deepAudit?.strengths?.length ?? 0) > 0 || (deepAudit?.concerns?.length ?? 0) > 0)
-  const isProDiagramsDisabled = !diagramCode && (!remoteDiagramsEnabled && (Boolean(session?.isPro) || hasDeepAudit))
+  const isProDiagramsDisabled = !diagramCode && (!remoteDiagramsEnabled && Boolean(session?.isPro))
 
   if (!diagramCode && !isProDiagramsDisabled) {
     return (
@@ -476,51 +483,6 @@ export function ArchitectureDiagramView({
           </div>
         )}
       </div>
-
-      {hasDeepAudit && deepAudit && (
-        <div className="architecture-diagram-card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <ShieldCheck size={15} style={{ color: 'var(--accent-emerald)' }} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-              {isEs ? 'Auditoría Técnica Profunda' : 'Deep Technical Audit'}
-            </span>
-          </div>
-
-          {deepAudit.strengths.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-emerald)', textTransform: 'uppercase' }}>
-                {isEs ? 'Fortalezas' : 'Strengths'}
-              </div>
-              {deepAudit.strengths.map((item, idx) => (
-                <div
-                  key={`strength-${idx}`}
-                  style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.45 }}
-                >
-                  <CheckCircle2 size={13} style={{ color: 'var(--accent-emerald)', flexShrink: 0, marginTop: 2 }} />
-                  <span>{item}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {deepAudit.concerns.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-amber)', textTransform: 'uppercase' }}>
-                {isEs ? 'Riesgos & Puntos de Atención' : 'Concerns & Trade-offs'}
-              </div>
-              {deepAudit.concerns.map((item, idx) => (
-                <div
-                  key={`concern-${idx}`}
-                  style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.45 }}
-                >
-                  <AlertTriangle size={13} style={{ color: 'var(--accent-amber)', flexShrink: 0, marginTop: 2 }} />
-                  <span>{item}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   )
 }
