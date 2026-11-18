@@ -1,6 +1,7 @@
 import { ALL_PROVIDERS, type ProviderName } from './admin-types'
 import {
   type CloudflareKVOptions,
+  type KVBindingLike,
   purgeRepoCacheFromKVAndDB,
   syncConfigToCloudflareKV,
   verifyAdminRole
@@ -10,6 +11,7 @@ import { createBrowserSupabaseClient, fetchAuthUser } from './supabase-client'
 export interface AdminServerEnv extends CloudflareKVOptions {
   supabaseUrl?: string
   supabaseAnonKey?: string
+  KV?: KVBindingLike
   CLOUDFLARE_ACCOUNT_ID?: string
   CLOUDFLARE_KV_NAMESPACE_ID?: string
   CLOUDFLARE_API_TOKEN?: string
@@ -49,14 +51,20 @@ function resolveSupabaseConfig(env?: AdminServerEnv) {
 
 function resolveKVOptions(env?: AdminServerEnv): CloudflareKVOptions | undefined {
   if (!env) return undefined
+  const kvBinding = env.kvBinding ?? env.KV
   const accountId = env.accountId ?? env.CLOUDFLARE_ACCOUNT_ID
   const namespaceId = env.namespaceId ?? env.CLOUDFLARE_KV_NAMESPACE_ID
   const apiToken = env.apiToken ?? env.CLOUDFLARE_API_TOKEN
 
-  if (accountId === undefined && namespaceId === undefined && apiToken === undefined) {
+  if (
+    kvBinding === undefined &&
+    accountId === undefined &&
+    namespaceId === undefined &&
+    apiToken === undefined
+  ) {
     return undefined
   }
-  return { accountId, namespaceId, apiToken }
+  return { accountId, namespaceId, apiToken, kvBinding }
 }
 
 function validateRemoteConfigEntry(key: string, value: unknown): string | null {

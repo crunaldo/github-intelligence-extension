@@ -1,7 +1,13 @@
+export interface KVBindingLike {
+  put(key: string, value: string): Promise<unknown>
+  delete(key: string): Promise<unknown>
+}
+
 export interface CloudflareKVOptions {
   accountId?: string
   namespaceId?: string
   apiToken?: string
+  kvBinding?: KVBindingLike
 }
 
 export interface KVSyncResult {
@@ -144,26 +150,31 @@ export async function syncConfigToCloudflareKV(
     return { success: false, error: 'Configuration key is required' }
   }
 
-  const credentials = resolveCloudflareCredentials(options)
-  if (!credentials) {
+  const kvBinding = options?.kvBinding
+  const credentials = kvBinding ? null : resolveCloudflareCredentials(options)
+  if (!kvBinding && !credentials) {
     return { success: false, error: 'Missing Cloudflare KV credentials' }
   }
 
   try {
-    const res = await fetch(
-      buildKVValueUrl(credentials.accountId, credentials.namespaceId, normalizedKey),
-      {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'text/plain; charset=utf-8',
-          Authorization: `Bearer ${credentials.apiToken}`
-        },
-        body: serializeKVValue(value)
-      }
-    )
+    if (kvBinding) {
+      await kvBinding.put(normalizedKey, serializeKVValue(value))
+    } else if (credentials) {
+      const res = await fetch(
+        buildKVValueUrl(credentials.accountId, credentials.namespaceId, normalizedKey),
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'text/plain; charset=utf-8',
+            Authorization: `Bearer ${credentials.apiToken}`
+          },
+          body: serializeKVValue(value)
+        }
+      )
 
-    if (!res.ok) {
-      return { success: false, error: await readFetchErrorDetail(res) }
+      if (!res.ok) {
+        return { success: false, error: await readFetchErrorDetail(res) }
+      }
     }
 
     const table = supabase.from('remote_configs')
@@ -208,24 +219,29 @@ export async function purgeRepoCacheFromKVAndDB(
     return { success: false, error: 'Valid owner/repo and commitSha are required' }
   }
 
-  const credentials = resolveCloudflareCredentials(options)
-  if (!credentials) {
+  const kvBinding = options?.kvBinding
+  const credentials = kvBinding ? null : resolveCloudflareCredentials(options)
+  if (!kvBinding && !credentials) {
     return { success: false, error: 'Missing Cloudflare KV credentials' }
   }
 
   try {
-    const res = await fetch(
-      buildKVValueUrl(credentials.accountId, credentials.namespaceId, cacheKey),
-      {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${credentials.apiToken}`
+    if (kvBinding) {
+      await kvBinding.delete(cacheKey)
+    } else if (credentials) {
+      const res = await fetch(
+        buildKVValueUrl(credentials.accountId, credentials.namespaceId, cacheKey),
+        {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${credentials.apiToken}`
+          }
         }
-      }
-    )
+      )
 
-    if (!res.ok && res.status !== 404) {
-      return { success: false, error: await readFetchErrorDetail(res) }
+      if (!res.ok && res.status !== 404) {
+        return { success: false, error: await readFetchErrorDetail(res) }
+      }
     }
 
     const table = supabase.from('repo_analyses')

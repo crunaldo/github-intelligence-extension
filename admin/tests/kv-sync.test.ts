@@ -529,6 +529,54 @@ describe('Admin API Handlers & Route Mounts', () => {
     })
     expect(cfPurgeRes.status).toBe(200)
   })
+
+  it('uses native Cloudflare KV binding (env.KV) when bound in Pages Functions without requiring CLOUDFLARE_API_TOKEN', async () => {
+    const kvPut = vi.fn().mockResolvedValue(undefined)
+    const kvDelete = vi.fn().mockResolvedValue(undefined)
+    const mockFetch = vi.fn(async (url: string) => {
+      if (url.includes('/auth/v1/user')) {
+        return new Response(JSON.stringify({ id: 'admin-1', email: 'admin@example.com' }), {
+          status: 200
+        })
+      }
+      if (url.includes('/rest/v1/profiles')) {
+        return new Response(JSON.stringify([{ role: 'admin' }]), { status: 200 })
+      }
+      if (url.includes('/rest/v1/remote_configs') || url.includes('/rest/v1/repo_analyses')) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`Unexpected fetch URL: ${url}`)
+    })
+    global.fetch = mockFetch as any
+
+    const pagesBindingEnv = {
+      SUPABASE_URL: 'https://proj.supabase.co',
+      SUPABASE_ANON_KEY: 'anon-key',
+      KV: { put: kvPut, delete: kvDelete }
+    }
+
+    const syncRes = await cfKvSyncPost({
+      request: new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({ key: 'pro_daily_limit', value: 500 })
+      }),
+      env: pagesBindingEnv as any
+    })
+    expect(syncRes.status).toBe(200)
+    expect(kvPut).toHaveBeenCalledWith('pro_daily_limit', '500')
+
+    const purgeRes = await cfCachePurgePost({
+      request: new Request('https://admin.local/api/admin/cache-purge', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({ repoFullName: 'Crunaldo/Ext', commitSha: 'abcdef123' })
+      }),
+      env: pagesBindingEnv as any
+    })
+    expect(purgeRes.status).toBe(200)
+    expect(kvDelete).toHaveBeenCalledWith('cache:repo:crunaldo:ext:abcdef123')
+  })
 })
 
 describe('supabase-client error propagation & network resilience', () => {
