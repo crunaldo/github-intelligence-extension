@@ -27,8 +27,15 @@ import {
 import {
   clearLocalIntelligenceCache,
   fetchRemoteConfig,
+  fetchRepoIntelligence,
+  getModuleAccess,
+  isDailyQuotaExceeded,
+  markDailyQuotaExceeded,
+  sanitizeCommitRef,
   type RemoteConfig,
 } from '../api/backendClient'
+import { getAuthSession, type AuthSession } from '../auth/supabaseAuth'
+import { ProFeatureGateCard } from '../components/ProFeatureGateCard'
 import { createReportExport, downloadReport } from '../../features/repository/export'
 import {
   getStoredPreferences,
@@ -44,7 +51,7 @@ import {
   type FavoriteItem,
   DEFAULT_EXTENSION_PREFERENCES,
 } from '../storage'
-import { generateColloquialSpanishSummary } from '../spanishSummary'
+import { classifySummaryError, generateColloquialSpanishSummary } from '../spanishSummary'
 import { LanguageBar } from '../components/LanguageBar'
 import { RateLimitGauge } from '../components/RateLimitGauge'
 import { CompareView } from '../components/CompareView'
@@ -66,6 +73,7 @@ import { AnalysisMascot } from '../components/AnalysisMascot'
 import { InteractiveBeamLoader } from '../components/InteractiveBeamLoader'
 import { SegmentedPill } from '../components/SegmentedPill'
 import { DirectoryTree } from '../components/DirectoryTree'
+import { QuotaExceededCard } from '../components/QuotaExceededCard'
 
 type SidepanelNav = 'analyze' | 'reports' | 'compare' | 'favorites' | 'settings'
 type ReportSection = 'overview' | 'architecture' | 'files' | 'dependencies' | 'releases' | 'sources'
@@ -80,12 +88,14 @@ export function SidepanelApp() {
   const [savedReports, setSavedReports] = useState<RepositoryReport[]>([])
   const [favorites, setFavorites] = useState<FavoriteItem[]>([])
   const [loading, setLoading] = useState<boolean>(false)
+  const [quotaExceeded, setQuotaExceeded] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [activeTabRepo, setActiveTabRepo] = useState<GitHubTarget | null>(null)
   const [reportSection, setReportSection] = useState<ReportSection>('overview')
   const [fileFilter, setFileFilter] = useState<string>('')
   const [copiedMd, setCopiedMd] = useState<boolean>(false)
   const [remoteConfig, setRemoteConfig] = useState<RemoteConfig | null>(null)
+  const [session, setSession] = useState<AuthSession | null>(null)
   const [refreshNonce, setRefreshNonce] = useState<number>(0)
   const [hardware, setHardware] = useState<HardwareInfo | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -93,7 +103,20 @@ export function SidepanelApp() {
   useEffect(() => {
     void detectSystemHardware().then(setHardware)
     void fetchRemoteConfig().then(setRemoteConfig).catch(() => {})
+    void getAuthSession().then(setSession).catch(() => {})
   }, [])
+
+  const isPro = Boolean(session?.isPro)
+
+  const summaryAccess = getModuleAccess(remoteConfig, 'summary', 'free')
+  const installAccess = getModuleAccess(remoteConfig, 'installCommand', 'free')
+  const sandboxAccess = getModuleAccess(remoteConfig, 'cloudSandbox', 'free')
+  const hardwareAccess = getModuleAccess(remoteConfig, 'hardwareCompat', 'free')
+  const roadmapAccess = getModuleAccess(remoteConfig, 'roadmap', 'free')
+  const healthAccess = getModuleAccess(remoteConfig, 'repoHealth', 'free')
+  const archAccess = getModuleAccess(remoteConfig, 'architectureDiagram', 'pro')
+  const depAccess = getModuleAccess(remoteConfig, 'dependencies', 'free')
+  const fileAccess = getModuleAccess(remoteConfig, 'fileTree', 'free')
 
   const compat = useMemo(() => {
     if (!hardware || !report) return null
@@ -142,9 +165,21 @@ export function SidepanelApp() {
         const cached = await getCachedReport(target.originalUrl)
         if (cached) {
           setReport(cached)
+          setQuotaExceeded(false)
           setNav('analyze')
           return
         }
+      }
+
+      // Pre-check if daily free quota was already exceeded today
+      const quotaExceededToday = await isDailyQuotaExceeded()
+      if (quotaExceededToday) {
+        setReport(null)
+        setQuotaExceeded(true)
+        setLoading(false)
+        setError(null)
+        setNav('analyze')
+        return
       }
 
       if (abortControllerRef.current) {
@@ -156,12 +191,42 @@ export function SidepanelApp() {
       // Clear previous report so that InteractiveBeamLoader is immediately visible
       setReport(null)
       setLoading(true)
+      setQuotaExceeded(false)
       try {
+        // 1. Fetch GitHub metadata, commits, tree and manifests
         const res = await analyzeGitHubRepository(target, controller.signal)
+
+        // 2. Await AI intelligence so loading animation remains active until all data is ready
+        const owner = res.repository?.owner || target.owner
+        const repo = res.repository?.name || target.repository
+        const commitSha = sanitizeCommitRef(
+          res.latestCommit?.sha || res.resolvedRef || res.repository?.defaultBranch
+        )
+
+        try {
+          const aiAnalysis = await fetchRepoIntelligence(
+            owner,
+            repo,
+            commitSha,
+            force ? { forceRefresh: true } : undefined
+          )
+          res.aiAnalysis = aiAnalysis
+        } catch (aiErr: unknown) {
+          const summaryErr = classifySummaryError(aiErr)
+          if (summaryErr.quotaExceeded) {
+            await markDailyQuotaExceeded()
+            setReport(null)
+            setQuotaExceeded(true)
+            return
+          }
+          console.warn('AI analysis skipped/failed:', aiErr)
+        }
+
         if (force) {
           setRefreshNonce((n) => n + 1)
         }
         setReport(res)
+        setQuotaExceeded(false)
         await saveCachedReport(res)
         await addStoredRecent(res)
         const updatedList = await getAllSavedReports()
@@ -540,7 +605,18 @@ export function SidepanelApp() {
               />
             )}
 
-            {!loading && !report && (
+            {quotaExceeded && !loading && (
+              <QuotaExceededCard
+                locale={activeLocale}
+                repoName={activeTabRepo ? `${activeTabRepo.owner}/${activeTabRepo.repository}` : (urlInput || undefined)}
+                onProVerified={() => {
+                  setQuotaExceeded(false)
+                  void performAnalysis(activeTabRepo?.originalUrl || urlInput, true)
+                }}
+              />
+            )}
+
+            {!loading && !report && !quotaExceeded && (
               <div className="ext-empty-state">
                 <AnalysisMascot moodOverride="neutral" size={76} />
                 <div className="empty-title" style={{ marginTop: 8 }}>{t('no_repo_selected', activeLocale)}</div>
@@ -550,7 +626,7 @@ export function SidepanelApp() {
               </div>
             )}
 
-            {report && (
+            {report && !quotaExceeded && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {/* 1. MÓDULO HERO PRINCIPAL DE MARCA CON MASCOTA REACTIVA */}
                 <RepoHeroCard
@@ -583,26 +659,93 @@ export function SidepanelApp() {
                 {/* Contenedor de Detalles y Acciones Rápidas */}
                 <div className="repo-hero-integrated-card">
                   {/* Explicación del Repo Integrada Aquí Mismo de Primero */}
-                  <div className="integrated-summary-section" style={{ borderTop: 'none', paddingTop: 0 }}>
-                    <ColloquialSummaryCard report={report} locale={activeLocale} refreshNonce={refreshNonce} />
-                  </div>
+                  {summaryAccess !== 'disabled' && (
+                    summaryAccess === 'pro' && !isPro ? (
+                      <ProFeatureGateCard
+                        moduleName={activeLocale === 'es' ? 'Resumen Ejecutivo & Coloquial' : 'Executive & Colloquial Summary'}
+                        description={activeLocale === 'es' ? 'Explicación concisa y técnica sobre qué es el proyecto, por qué importa y para quién está diseñado.' : 'Concise technical summary explaining what the project is, why it matters, and who it is designed for.'}
+                        locale={activeLocale}
+                        onUpgraded={setSession}
+                      />
+                    ) : (
+                      <div className="integrated-summary-section" style={{ borderTop: 'none', paddingTop: 0 }}>
+                        <ColloquialSummaryCard
+                          report={report}
+                          locale={activeLocale}
+                          refreshNonce={refreshNonce}
+                          onQuotaExceeded={() => {
+                            setQuotaExceeded(true)
+                            setReport(null)
+                          }}
+                        />
+                      </div>
+                    )
+                  )}
 
                   {/* 📦 Comando de Instalación en 1-Clic */}
-                  <div style={{ marginTop: 6 }}>
-                    <PackageInstallCommand report={report} locale={activeLocale} />
-                  </div>
+                  {installAccess !== 'disabled' && (
+                    installAccess === 'pro' && !isPro ? (
+                      <div style={{ marginTop: 6 }}>
+                        <ProFeatureGateCard
+                          moduleName={activeLocale === 'es' ? 'Comando de Instalación en 1-Clic' : '1-Click Install Command'}
+                          description={activeLocale === 'es' ? 'Detección inteligente de gestor de paquetes y comando de instalación listo para copiar.' : 'Smart package manager detection with copy-ready terminal install commands.'}
+                          locale={activeLocale}
+                          onUpgraded={setSession}
+                        />
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: 6 }}>
+                        <PackageInstallCommand report={report} locale={activeLocale} />
+                      </div>
+                    )
+                  )}
 
                   {/* ⚡ 2. Clonado y Apertura en 1 Clic en tu Editor / Sandbox en la Nube */}
-                  <div style={{ marginTop: 6 }}>
-                    <EditorLaunchButtons repoUrl={report.repository.htmlUrl} fullName={report.repository.fullName} locale={activeLocale} />
-                  </div>
+                  {sandboxAccess !== 'disabled' && (
+                    sandboxAccess === 'pro' && !isPro ? (
+                      <div style={{ marginTop: 6 }}>
+                        <ProFeatureGateCard
+                          moduleName={activeLocale === 'es' ? 'Sandboxes & Apertura en la Nube' : 'Cloud Sandboxes & Web IDEs'}
+                          description={activeLocale === 'es' ? 'Abre y ejecuta repositorios en 1 clic en StackBlitz, CodeSandbox, GitHub Codespaces o VS Code.' : 'Launch and test repositories in 1-click inside StackBlitz, CodeSandbox, Codespaces, or VS Code.'}
+                          locale={activeLocale}
+                          onUpgraded={setSession}
+                        />
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: 6 }}>
+                        <EditorLaunchButtons repoUrl={report.repository.htmlUrl} fullName={report.repository.fullName} locale={activeLocale} />
+                      </div>
+                    )
+                  )}
                 </div>
 
                 {/* 2. Hardware & PC Compatibility Card */}
-                <HardwareCompatibilityCard hardware={hardware} compat={compat} locale={activeLocale} />
+                {hardwareAccess !== 'disabled' && (
+                  hardwareAccess === 'pro' && !isPro ? (
+                    <ProFeatureGateCard
+                      moduleName={activeLocale === 'es' ? 'Compatibilidad de Hardware del PC' : 'PC Hardware Compatibility'}
+                      description={activeLocale === 'es' ? 'Auditoría inteligente de CPU, GPU y memoria RAM para determinar si tu equipo puede compilar y ejecutar este proyecto.' : 'Smart audit of CPU, GPU, and RAM to determine if your machine can build and run this repository.'}
+                      locale={activeLocale}
+                      onUpgraded={setSession}
+                    />
+                  ) : (
+                    <HardwareCompatibilityCard hardware={hardware} compat={compat} locale={activeLocale} />
+                  )
+                )}
 
                 {/* 3. Short Installation Roadmap */}
-                <RoadmapView report={report} hardware={hardware} locale={activeLocale} />
+                {roadmapAccess !== 'disabled' && (
+                  roadmapAccess === 'pro' && !isPro ? (
+                    <ProFeatureGateCard
+                      moduleName={activeLocale === 'es' ? 'Roadmap de Puesta en Marcha' : 'Quickstart Installation Roadmap'}
+                      description={activeLocale === 'es' ? 'Guía paso a paso adaptada a tu sistema operativo con los comandos exactos para clonar, configurar y correr el código.' : 'Step-by-step roadmap tailored to your OS with exact commands to clone, configure, and build.'}
+                      locale={activeLocale}
+                      onUpgraded={setSession}
+                    />
+                  ) : (
+                    <RoadmapView report={report} hardware={hardware} locale={activeLocale} />
+                  )
+                )}
 
                 {/* Sub-section navigation via SegmentedPill */}
                 <div style={{ overflowX: 'auto', paddingBottom: 2 }}>
@@ -625,7 +768,18 @@ export function SidepanelApp() {
                 {reportSection === 'overview' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {/* 🩺 3. Índice de Salud & Actividad Detallado */}
-                    <RepoHealthCard report={report} locale={activeLocale} />
+                    {healthAccess !== 'disabled' && (
+                      healthAccess === 'pro' && !isPro ? (
+                        <ProFeatureGateCard
+                          moduleName={activeLocale === 'es' ? 'Índice de Salud & Actividad' : 'Repository Health & Velocity Index'}
+                          description={activeLocale === 'es' ? 'Puntaje de mantenimiento, frecuencia de commits, velocidad de PRs y tasa de resolución de issues.' : 'Maintenance score, commit cadence, PR turnaround time, and issue resolution ratio.'}
+                          locale={activeLocale}
+                          onUpgraded={setSession}
+                        />
+                      ) : (
+                        <RepoHealthCard report={report} locale={activeLocale} />
+                      )
+                    )}
 
                     <div className="insight-card">
                       <div className="insight-title" style={{ color: 'var(--text-secondary)' }}>
@@ -646,11 +800,17 @@ export function SidepanelApp() {
                 {reportSection === 'architecture' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {/* 📊 4. Diagrama Visual de Arquitectura Pro & Auditoría Profunda */}
-                    <ArchitectureDiagramView
-                      report={report}
-                      locale={activeLocale}
-                      diagramsEnabled={remoteConfig?.featureFlags.enableDiagrams}
-                    />
+                    {archAccess !== 'disabled' && (
+                      <ArchitectureDiagramView
+                        report={report}
+                        locale={activeLocale}
+                        diagramsEnabled={remoteConfig?.featureFlags.enableDiagrams}
+                        onQuotaExceeded={() => {
+                          setQuotaExceeded(true)
+                          setReport(null)
+                        }}
+                      />
+                    )}
 
                     <div className="insight-card">
                       <div className="insight-title" style={{ color: 'var(--text-secondary)' }}>
@@ -680,59 +840,93 @@ export function SidepanelApp() {
                 )}
 
                 {reportSection === 'dependencies' && (
-                  <div className="manifest-accordion">
-                    {(report.manifests || []).map((manifest) => (
-                      <div key={manifest.path} className="manifest-card">
-                        <div className="manifest-header">
-                          <span className="manifest-title">
-                            <Code2 size={13} style={{ color: 'var(--accent-cyan)' }} />
-                            {manifest.path}
-                          </span>
-                          <span className="ecosystem-badge">{manifest.ecosystem}</span>
-                        </div>
-
-                        {(manifest.runtimeRequirements?.length || 0) > 0 && (
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            {(manifest.runtimeRequirements || []).map((req, idx) => (
-                              <span
-                                key={idx}
-                                style={{
-                                  fontSize: 11,
-                                  padding: '2px 7px',
-                                  borderRadius: 'var(--radius-sm)',
-                                  background: 'rgba(56, 189, 248, 0.1)',
-                                  color: 'var(--accent-cyan)',
-                                  border: '1px solid rgba(56, 189, 248, 0.25)',
-                                }}
-                              >
-                                {req.runtime}: {req.requirement}
+                  depAccess !== 'disabled' ? (
+                    depAccess === 'pro' && !isPro ? (
+                      <ProFeatureGateCard
+                        moduleName={activeLocale === 'es' ? 'Inspector de Dependencias & Manifests' : 'Dependencies & Manifest Inspector'}
+                        description={activeLocale === 'es' ? 'Auditoría detallada de dependencias runtime y dev con especificaciones de entorno.' : 'Deep inspection of runtime and development dependencies across project manifests.'}
+                        locale={activeLocale}
+                        onUpgraded={setSession}
+                      />
+                    ) : (
+                      <div className="manifest-accordion">
+                        {(report.manifests || []).map((manifest) => (
+                          <div key={manifest.path} className="manifest-card">
+                            <div className="manifest-header">
+                              <span className="manifest-title">
+                                <Code2 size={13} style={{ color: 'var(--accent-cyan)' }} />
+                                {manifest.path}
                               </span>
-                            ))}
-                          </div>
-                        )}
+                              <span className="ecosystem-badge">{manifest.ecosystem}</span>
+                            </div>
 
-                        <div className="dep-pills-wrap">
-                          {(manifest.dependencies || []).map((dep) => (
-                            <span
-                              key={dep.name}
-                              className={`dep-pill ${dep.kind === 'runtime' ? 'runtime' : ''}`}
-                            >
-                              {dep.name} <span style={{ opacity: 0.65 }}>{dep.requirement}</span>
-                            </span>
-                          ))}
-                        </div>
+                            {(manifest.runtimeRequirements?.length || 0) > 0 && (
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                {(manifest.runtimeRequirements || []).map((req, idx) => (
+                                  <span
+                                    key={idx}
+                                    style={{
+                                      fontSize: 11,
+                                      padding: '2px 7px',
+                                      borderRadius: 'var(--radius-sm)',
+                                      background: 'rgba(56, 189, 248, 0.1)',
+                                      color: 'var(--accent-cyan)',
+                                      border: '1px solid rgba(56, 189, 248, 0.25)',
+                                    }}
+                                  >
+                                    {req.runtime}: {req.requirement}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="dep-pills-wrap">
+                              {(manifest.dependencies || []).map((dep) => (
+                                <span
+                                  key={dep.name}
+                                  className={`dep-pill ${dep.kind === 'runtime' ? 'runtime' : ''}`}
+                                >
+                                  {dep.name} <span style={{ opacity: 0.65 }}>{dep.requirement}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    )
+                  ) : (
+                    <div className="insight-card">
+                      <p className="insight-text" style={{ color: 'var(--text-muted)' }}>
+                        {activeLocale === 'es' ? 'Módulo de dependencias desactivado por el administrador.' : 'Dependencies module disabled by administrator.'}
+                      </p>
+                    </div>
+                  )
                 )}
 
                 {reportSection === 'files' && (
-                  <DirectoryTree
-                    entries={report.tree && report.tree.length > 0 ? report.tree : report.importantFiles || []}
-                    repoHtmlUrl={report.repository.htmlUrl}
-                    defaultBranch={report.repository.defaultBranch || 'main'}
-                    locale={activeLocale}
-                  />
+                  fileAccess !== 'disabled' ? (
+                    fileAccess === 'pro' && !isPro ? (
+                      <ProFeatureGateCard
+                        moduleName={activeLocale === 'es' ? 'Explorador de Archivos Clave' : 'Key Files Explorer'}
+                        description={activeLocale === 'es' ? 'Navegación por el árbol de código fuente y archivos críticos de arquitectura.' : 'Navigate through the source tree and critical architecture files.'}
+                        locale={activeLocale}
+                        onUpgraded={setSession}
+                      />
+                    ) : (
+                      <DirectoryTree
+                        entries={report.tree && report.tree.length > 0 ? report.tree : report.importantFiles || []}
+                        repoHtmlUrl={report.repository.htmlUrl}
+                        defaultBranch={report.repository.defaultBranch || 'main'}
+                        locale={activeLocale}
+                      />
+                    )
+                  ) : (
+                    <div className="insight-card">
+                      <p className="insight-text" style={{ color: 'var(--text-muted)' }}>
+                        {activeLocale === 'es' ? 'Módulo de archivos desactivado por el administrador.' : 'Files module disabled by administrator.'}
+                      </p>
+                    </div>
+                  )
                 )}
 
                 {reportSection === 'releases' && (

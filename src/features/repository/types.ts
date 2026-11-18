@@ -1,3 +1,5 @@
+import type { FilteredAnalysisResult } from '../../extension/api/backendClient'
+
 export type GitHubTarget = {
   owner: string
   repository: string
@@ -116,6 +118,7 @@ export type RepositoryReport = {
   technicalSummary: string
   sources: EvidenceSource[]
   apiRateLimit: { remaining: number | null; resetAt: string | null }
+  aiAnalysis?: FilteredAnalysisResult
 }
 
 export type RecentAnalysis = {

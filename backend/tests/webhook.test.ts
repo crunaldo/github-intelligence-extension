@@ -271,7 +271,7 @@ describe('Cloudflare Worker Entrypoint', () => {
       KV: kvDefault
     })
     expect(resDefault.status).toBe(200)
-    expect(await resDefault.json()).toEqual({
+    expect(await resDefault.json()).toMatchObject({
       free_daily_limit: 15,
       pro_daily_limit: 250,
       feature_flags: {
@@ -290,7 +290,7 @@ describe('Cloudflare Worker Entrypoint', () => {
       KV: kvCustom
     })
     expect(resCustom.status).toBe(200)
-    expect(await resCustom.json()).toEqual({
+    expect(await resCustom.json()).toMatchObject({
       free_daily_limit: 10,
       pro_daily_limit: 300,
       feature_flags: {

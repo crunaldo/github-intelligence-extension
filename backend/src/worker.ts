@@ -8,7 +8,11 @@ import { generateRepoAnalysis } from './ai/router'
 import {
   AIProvidersExhaustedError,
   type AnalysisResult,
+  type ApiKeyItem,
+  type KeyRotationStrategy,
   type KVNamespace,
+  type ModuleAccessLevel,
+  type ProviderApiKeysConfig,
   type ProviderName
 } from './ai/types'
 import {
@@ -55,6 +59,23 @@ interface RemoteConfigResponse {
     maintenance_mode: boolean
     [key: string]: unknown
   }
+  analysis_modules: Record<string, ModuleAccessLevel>
+  advanced_system_settings?: Record<string, unknown>
+}
+
+const DEFAULT_ANALYSIS_MODULES: Record<string, ModuleAccessLevel> = {
+  summary: 'free',
+  installCommand: 'free',
+  cloudSandbox: 'free',
+  hardwareCompat: 'free',
+  roadmap: 'free',
+  repoHealth: 'free',
+  architectureDiagram: 'pro',
+  deepAudit: 'pro',
+  fileTree: 'free',
+  dependencies: 'free',
+  mascotChat: 'pro',
+  exportReport: 'free'
 }
 
 const DEFAULT_FREE_DAILY_LIMIT = 15
@@ -341,10 +362,12 @@ async function ingestRepositoryContext(owner: string, repo: string, commitSha: s
 }
 
 async function readRemoteConfig(kv: KVNamespace): Promise<RemoteConfigResponse> {
-  const [freeRaw, proRaw, flagsRaw] = await Promise.all([
+  const [freeRaw, proRaw, flagsRaw, modulesRaw, settingsRaw] = await Promise.all([
     kv.get('free_daily_limit'),
     kv.get('pro_daily_limit'),
-    kv.get('feature_flags')
+    kv.get('feature_flags'),
+    kv.get('analysis_modules'),
+    kv.get('advanced_system_settings')
   ])
 
   const defaults = {
@@ -365,13 +388,85 @@ async function readRemoteConfig(kv: KVNamespace): Promise<RemoteConfigResponse> 
     }
   }
 
+  let parsedModules: Record<string, ModuleAccessLevel> = { ...DEFAULT_ANALYSIS_MODULES }
+  if (modulesRaw) {
+    try {
+      const candidate: unknown = JSON.parse(modulesRaw)
+      if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+        for (const [key, val] of Object.entries(candidate as Record<string, unknown>)) {
+          if (val === 'free' || val === 'pro' || val === 'disabled') {
+            parsedModules[key] = val
+          }
+        }
+      }
+    } catch {
+      // Use defaults
+    }
+  }
+
+  let parsedSettings: Record<string, unknown> | undefined = undefined
+  if (settingsRaw) {
+    try {
+      const candidate: unknown = JSON.parse(settingsRaw)
+      if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+        parsedSettings = candidate as Record<string, unknown>
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
   return {
     free_daily_limit: parsePositiveInteger(freeRaw, DEFAULT_FREE_DAILY_LIMIT),
     pro_daily_limit: parsePositiveInteger(proRaw, DEFAULT_PRO_DAILY_LIMIT),
     feature_flags: {
       ...defaults,
       ...parsedFlags
+    },
+    analysis_modules: parsedModules,
+    ...(parsedSettings ? { advanced_system_settings: parsedSettings } : {})
+  }
+}
+
+async function readProviderApiKeys(kv: KVNamespace): Promise<ProviderApiKeysConfig> {
+  const raw = await kv.get('provider_api_keys')
+  if (!raw) return { keys: [], strategy: 'priority_fallback' }
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { keys: [], strategy: 'priority_fallback' }
     }
+    const obj = parsed as Record<string, unknown>
+    const strategy: KeyRotationStrategy =
+      obj.strategy === 'round_robin' ? 'round_robin' : 'priority_fallback'
+    const keys: ApiKeyItem[] = []
+    if (Array.isArray(obj.keys)) {
+      for (const item of obj.keys) {
+        if (
+          item &&
+          typeof item === 'object' &&
+          typeof item.id === 'string' &&
+          typeof item.provider === 'string' &&
+          VALID_PROVIDERS.has(item.provider as ProviderName) &&
+          typeof item.key === 'string' &&
+          item.key.trim().length > 0
+        ) {
+          keys.push({
+            id: item.id,
+            provider: item.provider as ProviderName,
+            label: typeof item.label === 'string' ? item.label : item.provider,
+            key: item.key.trim(),
+            enabled: typeof item.enabled === 'boolean' ? item.enabled : true,
+            createdAt: typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString(),
+            callsCount: typeof item.callsCount === 'number' ? item.callsCount : 0,
+            errorCount: typeof item.errorCount === 'number' ? item.errorCount : 0
+          })
+        }
+      }
+    }
+    return { keys, strategy }
+  } catch {
+    return { keys: [], strategy: 'priority_fallback' }
   }
 }
 
@@ -408,11 +503,31 @@ function buildAnalyzeResponsePayload(
   config: RemoteConfigResponse
 ): FilteredAnalysisResult {
   const filtered = filterResponseForRole(analysis, isPro)
-  if (config.feature_flags.diagrams_enabled === false && 'architectureDiagram' in filtered) {
-    const { architectureDiagram: _omitted, ...withoutDiagram } = filtered
-    return withoutDiagram
+  const modules = config.analysis_modules ?? {}
+
+  const diagramsAccess =
+    config.feature_flags.diagrams_enabled === false
+      ? 'disabled'
+      : (modules.architectureDiagram ?? 'pro')
+  const deepAuditAccess = modules.deepAudit ?? 'pro'
+
+  let result = { ...filtered }
+
+  if ('architectureDiagram' in result) {
+    if (diagramsAccess === 'disabled' || (diagramsAccess === 'pro' && !isPro)) {
+      const { architectureDiagram: _omitted, ...rest } = result
+      result = rest as FilteredAnalysisResult
+    }
   }
-  return filtered
+
+  if ('deepAudit' in result) {
+    if (deepAuditAccess === 'disabled' || (deepAuditAccess === 'pro' && !isPro)) {
+      const { deepAudit: _omitted, ...rest } = result
+      result = rest as FilteredAnalysisResult
+    }
+  }
+
+  return result
 }
 
 function persistRepoAnalysis(
@@ -660,9 +775,10 @@ async function handleAnalyze(
     )
   }
 
-  const [systemPromptRaw, priorityOrder] = await Promise.all([
+  const [systemPromptRaw, priorityOrder, apiKeysConfig] = await Promise.all([
     env.KV.get('system_prompt_repo'),
-    readProviderPriority(env.KV)
+    readProviderPriority(env.KV),
+    readProviderApiKeys(env.KV)
   ])
 
   const analyze = env.analyzeRepo ?? generateRepoAnalysis
@@ -676,7 +792,9 @@ async function handleAnalyze(
         cfAiBinding: env.AI,
         openRouterApiKey: env.OPENROUTER_API_KEY,
         systemPrompt: systemPromptRaw ?? undefined,
-        priorityOrder
+        priorityOrder,
+        apiKeysPool: apiKeysConfig.keys,
+        keyRotationStrategy: apiKeysConfig.strategy
       }
     )
 
@@ -796,16 +914,17 @@ async function handleMascotChat(
     ? await verifySupabaseUser(token, env)
     : { isPro: false, userId: null }
 
-  if (!userId || !isPro) {
+  const mascotAccess = config.analysis_modules?.mascotChat ?? 'pro'
+  if (mascotAccess === 'disabled' || config.feature_flags.mascot_enabled === false) {
     return jsonResponse(
-      { error: 'PRO_REQUIRED', message: 'Mascot chat requires an active Pro subscription' },
+      { error: 'MASCOT_DISABLED', message: 'Mascot chat is currently disabled' },
       403
     )
   }
 
-  if (config.feature_flags.mascot_enabled === false) {
+  if (mascotAccess === 'pro' && (!userId || !isPro)) {
     return jsonResponse(
-      { error: 'MASCOT_DISABLED', message: 'Mascot chat is currently disabled' },
+      { error: 'PRO_REQUIRED', message: 'Mascot chat requires an active Pro subscription' },
       403
     )
   }
@@ -839,10 +958,11 @@ async function handleMascotChat(
   const requestedSha = isSafeRepoSegment(commitShaRaw) ? commitShaRaw : undefined
   const messages = body.messages as MascotChatMessage[]
 
-  const [systemPromptRaw, priorityOrder, resolvedCache] = await Promise.all([
+  const [systemPromptRaw, priorityOrder, resolvedCache, apiKeysConfig] = await Promise.all([
     env.KV.get('system_prompt_mascot'),
     readProviderPriority(env.KV),
-    resolveMascotCachedAnalysis(owner, repo, requestedSha, env.KV)
+    resolveMascotCachedAnalysis(owner, repo, requestedSha, env.KV),
+    readProviderApiKeys(env.KV)
   ])
 
   let selectedProvider: ProviderName | null = null
@@ -868,6 +988,8 @@ async function handleMascotChat(
         groqApiKey: env.GROQ_API_KEY,
         cfAiBinding: env.AI,
         openRouterApiKey: env.OPENROUTER_API_KEY,
+        apiKeysPool: apiKeysConfig.keys,
+        keyRotationStrategy: apiKeysConfig.strategy,
         chatProviders: env.chatProviders,
         onProviderSelected: (provider) => {
           selectedProvider = provider

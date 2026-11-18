@@ -12,10 +12,10 @@ export function InteractiveBeamLoader({ repoName, locale = 'es' }: Props) {
   const [activeStep, setActiveStep] = useState<number>(0)
 
   useEffect(() => {
-    const timer1 = setTimeout(() => setActiveStep(1), 350)
-    const timer2 = setTimeout(() => setActiveStep(2), 750)
-    const timer3 = setTimeout(() => setActiveStep(3), 1150)
-    const timer4 = setTimeout(() => setActiveStep(4), 1550)
+    const timer1 = setTimeout(() => setActiveStep(1), 250)
+    const timer2 = setTimeout(() => setActiveStep(2), 550)
+    const timer3 = setTimeout(() => setActiveStep(3), 850)
+    const timer4 = setTimeout(() => setActiveStep(4), 1150)
 
     return () => {
       clearTimeout(timer1)
@@ -53,6 +53,13 @@ export function InteractiveBeamLoader({ repoName, locale = 'es' }: Props) {
       desc: isEs ? 'Permisos y limitaciones SPDX' : 'SPDX permissions & terms',
       icon: <Scale size={13} />,
       color: '#f59e0b',
+    },
+    {
+      id: 5,
+      title: isEs ? 'Síntesis & Arquitectura IA' : 'AI Architecture & Synthesis',
+      desc: isEs ? 'Análisis generativo y auditoría profunda' : 'Generative analysis & deep audit',
+      icon: <Sparkles size={13} />,
+      color: '#06b6d4',
     },
   ]
 
@@ -100,9 +107,11 @@ export function InteractiveBeamLoader({ repoName, locale = 'es' }: Props) {
                 {isDone ? (
                   <span className="beam-badge-ready">{isEs ? 'Listo' : 'Ready'}</span>
                 ) : (
-                  <span className="beam-badge-running">
-                    <span className="beam-pulse-dot" />
-                    {isEs ? 'Escaneando' : 'Scanning'}
+                  <span className="beam-badge-running" style={{ color: pod.color }}>
+                    <span className="beam-pulse-dot" style={{ background: pod.color, boxShadow: `0 0 6px ${pod.color}` }} />
+                    {pod.id === 5
+                      ? (isEs ? 'Analizando con IA...' : 'Analyzing with AI...')
+                      : (isEs ? 'Escaneando' : 'Scanning')}
                   </span>
                 )}
               </div>

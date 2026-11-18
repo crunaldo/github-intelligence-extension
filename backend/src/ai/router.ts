@@ -6,6 +6,7 @@ import {
   AIProvidersExhaustedError,
   type AIConfig,
   type AnalysisResult,
+  type ApiKeyItem,
   type ProviderFailure,
   type ProviderFn,
   type ProviderName,
@@ -26,9 +27,28 @@ const DEFAULT_PROVIDERS: Record<ProviderName, ProviderFn> = {
   openRouter: analyzeWithOpenRouter
 }
 
+function resolveProviderSpecificConfig(
+  provider: ProviderName,
+  apiKey: string,
+  baseConfig: AIConfig
+): AIConfig {
+  switch (provider) {
+    case 'gemini':
+      return { ...baseConfig, geminiApiKey: apiKey }
+    case 'groq':
+      return { ...baseConfig, groqApiKey: apiKey }
+    case 'openRouter':
+      return { ...baseConfig, openRouterApiKey: apiKey }
+    case 'cfAi':
+    default:
+      return baseConfig
+  }
+}
+
 /**
  * Generates a single-pass repository analysis using automatic multi-provider
- * fallback (`gemini` -> `groq` -> `cfAi` -> `openRouter` by default).
+ * fallback (`gemini` -> `groq` -> `cfAi` -> `openRouter` by default)
+ * with multi-key pooling and intra-provider failover.
  */
 export async function generateRepoAnalysis(
   context: RepoContext,
@@ -49,11 +69,46 @@ export async function generateRepoAnalysis(
       continue
     }
 
-    try {
-      return await providerFn(context, config)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      failures.push({ provider: providerName, message })
+    // Check if there is an active API key pool for this provider
+    const poolKeys = (config.apiKeysPool ?? []).filter(
+      (item): item is ApiKeyItem =>
+        item.provider === providerName && item.enabled && Boolean(item.key?.trim())
+    )
+
+    if (poolKeys.length > 0) {
+      // Order keys based on strategy: round_robin starts at random offset, priority_fallback starts at 0
+      const orderedKeys = [...poolKeys]
+      if (config.keyRotationStrategy === 'round_robin' && orderedKeys.length > 1) {
+        const offset = Math.floor(Math.random() * orderedKeys.length)
+        orderedKeys.push(...orderedKeys.splice(0, offset))
+      }
+
+      let providerSucceeded = false
+      for (const keyItem of orderedKeys) {
+        try {
+          const keyConfig = resolveProviderSpecificConfig(providerName, keyItem.key, config)
+          const result = await providerFn(context, keyConfig)
+          providerSucceeded = true
+          return result
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          failures.push({
+            provider: providerName,
+            message: `Key "${keyItem.label || keyItem.id}": ${message}`
+          })
+          // If this key failed, loop continues to the NEXT key in the pool for this provider!
+        }
+      }
+
+      if (providerSucceeded) continue
+    } else {
+      // Standard single-key execution using base config
+      try {
+        return await providerFn(context, config)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        failures.push({ provider: providerName, message })
+      }
     }
   }
 

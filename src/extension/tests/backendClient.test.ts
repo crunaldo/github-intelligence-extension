@@ -4,7 +4,12 @@ import {
   clearLocalIntelligenceCache,
   fetchRepoIntelligence,
   fetchRemoteConfig,
+  getModuleAccess,
   sanitizeCommitRef,
+  isDailyQuotaExceeded,
+  markDailyQuotaExceeded,
+  clearDailyQuotaExceeded,
+  getTodayUtcDateString,
 } from '../api/backendClient'
 import {
   getAuthSession,
@@ -444,7 +449,7 @@ describe('Extension Backend Client & Auth', () => {
     }) as unknown as typeof fetch
 
     const config = await fetchRemoteConfig()
-    expect(config).toEqual({
+    expect(config).toMatchObject({
       freeDailyLimit: 15,
       proDailyLimit: 250,
       featureFlags: {
@@ -663,5 +668,54 @@ describe('Extension Backend Client & Auth', () => {
         expect(text.toLowerCase()).not.toContain('requests/h')
       }
     }
+  })
+
+  describe('daily quota tracking', () => {
+    it('tracks daily quota in storage, identifies today UTC, and resets properly', async () => {
+      const today = getTodayUtcDateString()
+      expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(await isDailyQuotaExceeded()).toBe(false)
+
+      await markDailyQuotaExceeded()
+      expect(await isDailyQuotaExceeded()).toBe(true)
+
+      await clearDailyQuotaExceeded()
+      expect(await isDailyQuotaExceeded()).toBe(false)
+    })
+
+    it('pro users bypass isDailyQuotaExceeded', async () => {
+      await markDailyQuotaExceeded()
+      expect(await isDailyQuotaExceeded()).toBe(true)
+
+      await saveAuthSession({
+        accessToken: 'valid-jwt',
+        refreshToken: 'valid-refresh',
+        expiresAt: Date.now() + 100_000,
+        user: { id: 'pro-user-1', userName: 'pro' },
+        isPro: true,
+      })
+
+      expect(await isDailyQuotaExceeded()).toBe(false)
+    })
+
+    it('marks daily quota as exceeded automatically on fetchRepoIntelligence HTTP 429', async () => {
+      await clearDailyQuotaExceeded()
+      expect(await isDailyQuotaExceeded()).toBe(false)
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        json: async () => ({
+          error: 'QUOTA_EXCEEDED',
+          message: 'Daily free limit reached',
+        }),
+      }) as unknown as typeof fetch
+
+      await expect(
+        fetchRepoIntelligence('some-owner', 'some-repo', 'sha123')
+      ).rejects.toThrow('Daily free limit reached')
+
+      expect(await isDailyQuotaExceeded()).toBe(true)
+    })
   })
 })

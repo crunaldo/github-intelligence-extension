@@ -34,6 +34,7 @@ type ArchitectureDiagramViewProps = {
   report: RepositoryReport
   locale?: ActiveLocale
   diagramsEnabled?: boolean
+  onQuotaExceeded?: () => void
 }
 
 let mermaidInitialized = false
@@ -52,17 +53,18 @@ export function ArchitectureDiagramView({
   report,
   locale = 'es',
   diagramsEnabled,
+  onQuotaExceeded,
 }: ArchitectureDiagramViewProps) {
   const isEs = locale === 'es'
   const renderSeed = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const svgContainerRef = useRef<HTMLDivElement | null>(null)
 
-  const [analysis, setAnalysis] = useState<FilteredAnalysisResult | null>(null)
+  const [analysis, setAnalysis] = useState<FilteredAnalysisResult | null>(report.aiAnalysis ?? null)
   const [session, setSession] = useState<AuthSession | null>(null)
   const [remoteDiagramsEnabled, setRemoteDiagramsEnabled] = useState<boolean>(
     diagramsEnabled ?? true
   )
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState<boolean>(!report.aiAnalysis)
   const [quotaExceeded, setQuotaExceeded] = useState(false)
   const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -94,15 +96,34 @@ export function ArchitectureDiagramView({
       return
     }
 
-    setLoading(true)
-    setQuotaExceeded(false)
-    setMaintenanceMessage(null)
-    setErrorMessage(null)
-
     const shouldForce = forceNextFetch
     if (shouldForce) {
       setForceNextFetch(false)
     }
+
+    if (report.aiAnalysis && !shouldForce) {
+      setAnalysis(report.aiAnalysis)
+      setLoading(false)
+      setQuotaExceeded(false)
+      void Promise.all([
+        getAuthSession(),
+        typeof diagramsEnabled === 'boolean'
+          ? Promise.resolve(null)
+          : fetchRemoteConfig().catch(() => null),
+      ]).then(([currentSession, remoteConfig]) => {
+        if (cancelled) return
+        setSession(currentSession)
+        if (remoteConfig) {
+          setRemoteDiagramsEnabled(remoteConfig.featureFlags.enableDiagrams)
+        }
+      })
+      return
+    }
+
+    setLoading(true)
+    setQuotaExceeded(false)
+    setMaintenanceMessage(null)
+    setErrorMessage(null)
 
     void Promise.all([
       fetchRepoIntelligence(owner, repo, commitSha, shouldForce ? { forceRefresh: true } : undefined),
@@ -126,7 +147,12 @@ export function ArchitectureDiagramView({
         if (cancelled) return
         setSession(currentSession)
         const state = classifySummaryError(err)
-        setQuotaExceeded(state.quotaExceeded)
+        if (state.quotaExceeded) {
+          setQuotaExceeded(true)
+          onQuotaExceeded?.()
+          return
+        }
+        setQuotaExceeded(false)
         setMaintenanceMessage(state.maintenanceMode ? state.errorMessage : null)
         setErrorMessage(state.maintenanceMode ? null : state.errorMessage)
         setLoading(false)
@@ -135,7 +161,7 @@ export function ArchitectureDiagramView({
     return () => {
       cancelled = true
     }
-  }, [report, retryTick, diagramsEnabled])
+  }, [report, retryTick, diagramsEnabled, forceNextFetch, onQuotaExceeded])
 
   const diagramCode = analysis?.architectureDiagram?.trim() || ''
 
@@ -264,32 +290,7 @@ export function ArchitectureDiagramView({
   }
 
   if (quotaExceeded) {
-    return (
-      <div className="architecture-diagram-card">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13 }}>
-          <Sparkles size={15} style={{ color: 'var(--accent-cyan)' }} />
-          <span>{t('quota_exceeded_title', locale)}</span>
-        </div>
-        <p style={{ margin: '6px 0 10px', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-          {t('quota_exceeded_desc', locale)}
-        </p>
-        <button
-          type="button"
-          className="btn-github-direct"
-          onClick={() => void handleUpgrade()}
-          disabled={upgrading}
-          style={{ width: '100%', justifyContent: 'center' }}
-        >
-          <Sparkles size={13} />
-          <span>{t('upgrade_to_pro_btn', locale)}</span>
-        </button>
-        {upgradeNotice && (
-          <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--accent-amber)' }}>
-            {upgradeNotice}
-          </p>
-        )}
-      </div>
-    )
+    return null
   }
 
   if (errorMessage) {

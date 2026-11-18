@@ -2,6 +2,7 @@ import { checkAndIncrementQuota } from '../middleware/rate-limiter'
 import {
   AIProvidersExhaustedError,
   type AnalysisResult,
+  type ApiKeyItem,
   type KVNamespace,
   type ProviderFailure,
   type ProviderName
@@ -74,6 +75,8 @@ export interface MascotChatOptions {
   groqApiKey?: string
   cfAiBinding?: { run: (model: string, input: unknown) => Promise<unknown> }
   openRouterApiKey?: string
+  apiKeysPool?: ApiKeyItem[]
+  keyRotationStrategy?: 'round_robin' | 'priority_fallback'
   timeoutMs?: number
   chunkIdleTimeoutMs?: number
   streamSignal?: AbortSignal
@@ -657,25 +660,54 @@ export async function handleMascotChatRequest(
       continue
     }
 
-    const streamCancelController = new AbortController()
-    let iterator: AsyncIterator<string> | null = null
+    const poolKeys = (options.apiKeysPool ?? []).filter(
+      (item): item is ApiKeyItem =>
+        item.provider === providerName && item.enabled && Boolean(item.key?.trim())
+    )
 
-    try {
-      const output = await providerFn(prompt, {
+    const keysToTry: Array<string | undefined> =
+      poolKeys.length > 0 ? poolKeys.map((k) => k.key) : [undefined]
+
+    if (options.keyRotationStrategy === 'round_robin' && keysToTry.length > 1) {
+      const offset = Math.floor(Math.random() * keysToTry.length)
+      keysToTry.push(...keysToTry.splice(0, offset))
+    }
+
+    for (const currentKey of keysToTry) {
+      const streamCancelController = new AbortController()
+      let iterator: AsyncIterator<string> | null = null
+
+      const keyOptions: MascotChatOptions = {
         ...options,
-        streamSignal: streamCancelController.signal
-      })
-      iterator = toAsyncIterator(output)
-      const { firstDelta } = await pullFirstNonEmptyDelta(iterator)
-      options.onProviderSelected?.(providerName)
-      return createSseReadableStream(firstDelta, iterator, streamCancelController)
-    } catch (error) {
-      streamCancelController.abort()
-      if (iterator && typeof iterator.return === 'function') {
-        await iterator.return().catch(() => {})
+        streamSignal: streamCancelController.signal,
+        ...(currentKey
+          ? providerName === 'gemini'
+            ? { geminiApiKey: currentKey }
+            : providerName === 'groq'
+              ? { groqApiKey: currentKey }
+              : providerName === 'openRouter'
+                ? { openRouterApiKey: currentKey }
+                : {}
+          : {})
       }
-      const message = error instanceof Error ? error.message : String(error)
-      failures.push({ provider: providerName, message })
+
+      try {
+        const output = await providerFn(prompt, keyOptions)
+        iterator = toAsyncIterator(output)
+        const { firstDelta } = await pullFirstNonEmptyDelta(iterator)
+        options.onProviderSelected?.(providerName)
+        return createSseReadableStream(firstDelta, iterator, streamCancelController)
+      } catch (error) {
+        streamCancelController.abort()
+        if (iterator && typeof iterator.return === 'function') {
+          await iterator.return().catch(() => {})
+        }
+        const message = error instanceof Error ? error.message : String(error)
+        failures.push({
+          provider: providerName,
+          message: currentKey ? `Key ...${currentKey.slice(-4)}: ${message}` : message
+        })
+      }
     }
   }
 

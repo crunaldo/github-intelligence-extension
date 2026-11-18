@@ -711,4 +711,72 @@ describe('supabase-client error propagation & network resilience', () => {
       ;(globalThis as { window?: unknown }).window = originalWindow
     }
   })
+
+  it('validates and syncs provider_api_keys to Cloudflare KV and Supabase', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    global.fetch = fetchMock
+    const mockSupabase = {
+      from: vi.fn().mockReturnThis(),
+      upsert: vi.fn().mockResolvedValue({ error: null })
+    }
+
+    const payload = {
+      keys: [
+        {
+          id: 'k1',
+          provider: 'gemini',
+          label: 'Gemini - Usuario 1',
+          key: 'AIzaSyKey123',
+          enabled: true
+        },
+        {
+          id: 'k2',
+          provider: 'gemini',
+          label: 'Gemini - Usuario 2',
+          key: 'AIzaSyKey456',
+          enabled: true
+        }
+      ],
+      strategy: 'priority_fallback'
+    }
+
+    const res = await syncConfigToCloudflareKV('provider_api_keys', payload, mockSupabase as any)
+    expect(res.success).toBe(true)
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/values/provider_api_keys'),
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      })
+    )
+  })
+
+  it('validates and syncs analysis_modules to Cloudflare KV and Supabase', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    global.fetch = fetchMock
+    const mockSupabase = {
+      from: vi.fn().mockReturnThis(),
+      upsert: vi.fn().mockResolvedValue({ error: null })
+    }
+
+    const modules = {
+      summary: 'free',
+      installCommand: 'free',
+      cloudSandbox: 'free',
+      hardwareCompat: 'free',
+      architectureDiagram: 'pro',
+      deepAudit: 'pro',
+      mascotChat: 'disabled'
+    }
+
+    const res = await syncConfigToCloudflareKV('analysis_modules', modules, mockSupabase as any)
+    expect(res.success).toBe(true)
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/values/analysis_modules'),
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify(modules)
+      })
+    )
+  })
 })

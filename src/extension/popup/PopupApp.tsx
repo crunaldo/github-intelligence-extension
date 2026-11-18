@@ -25,6 +25,10 @@ import {
 import {
   clearLocalIntelligenceCache,
   fetchRemoteConfig,
+  fetchRepoIntelligence,
+  isDailyQuotaExceeded,
+  markDailyQuotaExceeded,
+  sanitizeCommitRef,
   type RemoteConfig,
 } from '../api/backendClient'
 import { createReportExport } from '../../features/repository/export'
@@ -46,7 +50,7 @@ import { HardwareCompatibilityCard } from '../components/HardwareCompatibilityCa
 import { ColloquialSummaryCard } from '../components/ColloquialSummaryCard'
 import { RoadmapView } from '../components/RoadmapView'
 import { SettingsView } from '../components/SettingsView'
-import { generateColloquialSpanishSummary } from '../spanishSummary'
+import { classifySummaryError, generateColloquialSpanishSummary } from '../spanishSummary'
 import { resolveActiveLanguage, t } from '../i18n'
 import { EditorLaunchButtons } from '../components/EditorLaunchButtons'
 import { RepoHealthCard } from '../components/RepoHealthCard'
@@ -57,6 +61,7 @@ import { ExtHeaderBrand } from '../components/ExtHeaderBrand'
 import { RepoHeroCard } from '../components/RepoHeroCard'
 import { AnalysisMascot } from '../components/AnalysisMascot'
 import { InteractiveBeamLoader } from '../components/InteractiveBeamLoader'
+import { QuotaExceededCard } from '../components/QuotaExceededCard'
 
 const QUICK_SUGGESTIONS = [
   { name: 'facebook/react', url: 'https://github.com/facebook/react', tag: 'UI Library' },
@@ -74,6 +79,7 @@ export function PopupApp() {
   const [searchUrl, setSearchUrl] = useState<string>('')
   const [report, setReport] = useState<RepositoryReport | null>(null)
   const [loading, setLoading] = useState<boolean>(false)
+  const [quotaExceeded, setQuotaExceeded] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [copiedMd, setCopiedMd] = useState<boolean>(false)
   const [isFavorite, setIsFavorite] = useState<boolean>(false)
@@ -119,8 +125,19 @@ export function PopupApp() {
       const cached = await getCachedReport(target.originalUrl)
       if (cached) {
         setReport(cached)
+        setQuotaExceeded(false)
         return
       }
+    }
+
+    // Pre-check if daily free quota was already exceeded today
+    const quotaExceededToday = await isDailyQuotaExceeded()
+    if (quotaExceededToday) {
+      setReport(null)
+      setQuotaExceeded(true)
+      setLoading(false)
+      setError(null)
+      return
     }
 
     if (abortControllerRef.current) {
@@ -132,12 +149,42 @@ export function PopupApp() {
     // Clear previous report so that InteractiveBeamLoader is immediately visible
     setReport(null)
     setLoading(true)
+    setQuotaExceeded(false)
     try {
+      // 1. Fetch GitHub metadata, commits, tree and manifests
       const res = await analyzeGitHubRepository(target, controller.signal)
+
+      // 2. Await AI intelligence so loading animation remains active until all data is ready
+      const owner = res.repository?.owner || target.owner
+      const repo = res.repository?.name || target.repository
+      const commitSha = sanitizeCommitRef(
+        res.latestCommit?.sha || res.resolvedRef || res.repository?.defaultBranch
+      )
+
+      try {
+        const aiAnalysis = await fetchRepoIntelligence(
+          owner,
+          repo,
+          commitSha,
+          force ? { forceRefresh: true } : undefined
+        )
+        res.aiAnalysis = aiAnalysis
+      } catch (aiErr: unknown) {
+        const summaryErr = classifySummaryError(aiErr)
+        if (summaryErr.quotaExceeded) {
+          await markDailyQuotaExceeded()
+          setReport(null)
+          setQuotaExceeded(true)
+          return
+        }
+        console.warn('AI analysis skipped/failed:', aiErr)
+      }
+
       if (force) {
         setRefreshNonce((n) => n + 1)
       }
       setReport(res)
+      setQuotaExceeded(false)
       await saveCachedReport(res)
       await addStoredRecent(res)
     } catch (err) {
@@ -571,7 +618,18 @@ export function PopupApp() {
           />
         )}
 
-        {error && (
+        {quotaExceeded && !loading && (
+          <QuotaExceededCard
+            locale={activeLocale}
+            repoName={activeTabRepo ? `${activeTabRepo.owner}/${activeTabRepo.repository}` : (searchUrl || undefined)}
+            onProVerified={() => {
+              setQuotaExceeded(false)
+              void performAnalysis(activeTabRepo?.originalUrl || searchUrl, true)
+            }}
+          />
+        )}
+
+        {error && !quotaExceeded && (
           <ApiErrorCard
             error={error}
             locale={activeLocale}
@@ -585,7 +643,7 @@ export function PopupApp() {
           />
         )}
 
-        {!loading && !report && !error && !activeTabRepo && (
+        {!loading && !report && !error && !activeTabRepo && !quotaExceeded && (
           <div className="ext-empty-state">
             <AnalysisMascot moodOverride="neutral" size={72} />
             <div className="empty-title" style={{ marginTop: 8 }}>{t('not_in_github', activeLocale)}</div>
@@ -612,7 +670,7 @@ export function PopupApp() {
           </div>
         )}
 
-        {report && (
+        {report && !quotaExceeded && (
           <>
             {/* 1. MÓDULO HERO PRINCIPAL DE MARCA CON MASCOTA REACTIVA */}
             <RepoHeroCard report={report} locale={activeLocale} />
@@ -621,7 +679,15 @@ export function PopupApp() {
             <div className="repo-hero-integrated-card" style={{ marginTop: 10 }}>
               {/* Explicación del Repo Integrada Aquí Mismo */}
               <div className="integrated-summary-section" style={{ borderTop: 'none', paddingTop: 0 }}>
-                <ColloquialSummaryCard report={report} locale={activeLocale} refreshNonce={refreshNonce} />
+                <ColloquialSummaryCard
+                  report={report}
+                  locale={activeLocale}
+                  refreshNonce={refreshNonce}
+                  onQuotaExceeded={() => {
+                    setQuotaExceeded(true)
+                    setReport(null)
+                  }}
+                />
               </div>
 
               {/* 📦 Comando de Instalación en 1-Clic */}
@@ -690,6 +756,10 @@ export function PopupApp() {
                   report={report}
                   locale={activeLocale}
                   diagramsEnabled={remoteConfig?.featureFlags.enableDiagrams}
+                  onQuotaExceeded={() => {
+                    setQuotaExceeded(true)
+                    setReport(null)
+                  }}
                 />
 
                 {/* 🩺 3. Índice de Salud & Actividad Detallado */}

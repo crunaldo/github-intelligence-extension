@@ -4,11 +4,14 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
+  Boxes,
   CheckCircle2,
   Database,
   GitBranch,
+  KeyRound,
   Lock,
   LogOut,
+  Settings,
   ShieldCheck,
   Sliders,
   Sparkles,
@@ -30,7 +33,15 @@ import {
   storeAdminSession
 } from './supabase-client'
 
-export type AdminRoute = '/' | '/prompts' | '/flags' | '/users' | '/cache'
+export type AdminRoute =
+  | '/'
+  | '/apis'
+  | '/modules'
+  | '/flags'
+  | '/prompts'
+  | '/users'
+  | '/cache'
+  | '/settings'
 
 export interface AdminShellRenderContext {
   client: AdminSupabaseClient
@@ -53,11 +64,14 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/', label: 'Telemetry & Providers', icon: Activity },
+  { href: '/', label: 'Live Telemetry & AI', icon: Activity },
+  { href: '/apis', label: 'API Keys & Multi-Pool', icon: KeyRound },
+  { href: '/modules', label: 'Módulos Free vs Pro', icon: Boxes },
+  { href: '/flags', label: 'Quotas & Flags', icon: Sliders },
   { href: '/prompts', label: 'Prompts & Mascot', icon: Sparkles },
-  { href: '/flags', label: 'Flags & Quotas', icon: Sliders },
   { href: '/users', label: 'Users & Billing', icon: Users },
-  { href: '/cache', label: 'Cache Explorer', icon: Database }
+  { href: '/cache', label: 'Cache Explorer', icon: Database },
+  { href: '/settings', label: 'Configuración Sistema', icon: Settings }
 ]
 
 export function AdminShell({

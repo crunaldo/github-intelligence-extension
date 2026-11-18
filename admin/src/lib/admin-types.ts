@@ -32,6 +32,186 @@ export const DEFAULT_SYSTEM_PROMPT_REPO =
 export const DEFAULT_SYSTEM_PROMPT_MASCOT =
   'You are the GitHub Intelligence Mascot assistant. Answer questions about the current repository concisely, accurately, and in a friendly engineering tone grounded in the repository summary context.'
 
+// --- Multi-API Key Pooling Types ---
+
+export interface ApiKeyItem {
+  id: string
+  provider: ProviderName
+  label: string // e.g. "Gemini - Cuenta Juan", "Gemini - Proyecto 2"
+  key: string
+  enabled: boolean
+  createdAt: string
+  lastUsedAt?: string
+  callsCount?: number
+  errorCount?: number
+}
+
+export type KeyRotationStrategy = 'round_robin' | 'priority_fallback'
+
+export interface ProviderApiKeysConfig {
+  keys: ApiKeyItem[]
+  strategy: KeyRotationStrategy
+}
+
+export const DEFAULT_PROVIDER_API_KEYS: ProviderApiKeysConfig = {
+  keys: [],
+  strategy: 'priority_fallback'
+}
+
+// --- Analysis Modules & Plan Access Toggles (Free vs Pro) ---
+
+export type ModuleAccessLevel = 'free' | 'pro' | 'disabled'
+
+export type AnalysisModuleId =
+  | 'summary'
+  | 'installCommand'
+  | 'cloudSandbox'
+  | 'hardwareCompat'
+  | 'roadmap'
+  | 'repoHealth'
+  | 'architectureDiagram'
+  | 'deepAudit'
+  | 'fileTree'
+  | 'dependencies'
+  | 'mascotChat'
+  | 'exportReport'
+
+export interface AnalysisModuleDef {
+  id: AnalysisModuleId
+  name: string
+  description: string
+  category: 'core' | 'ai' | 'developer' | 'insights'
+  defaultAccess: ModuleAccessLevel
+}
+
+export type AnalysisModulesMap = Record<AnalysisModuleId, ModuleAccessLevel>
+
+export const DEFAULT_ANALYSIS_MODULES: AnalysisModuleDef[] = [
+  {
+    id: 'summary',
+    name: 'Resumen Ejecutivo & Coloquial',
+    description: 'Headline, qué es el proyecto, por qué importa y público objetivo en español claro.',
+    category: 'core',
+    defaultAccess: 'free'
+  },
+  {
+    id: 'installCommand',
+    name: 'Comando de Instalación en 1-Clic',
+    description: 'Detección automática de npm, cargo, pip, go o docker run según los manifests.',
+    category: 'developer',
+    defaultAccess: 'free'
+  },
+  {
+    id: 'cloudSandbox',
+    name: 'Apertura en la Nube (Sandboxes & IDEs)',
+    description: 'Botones rápidos para clonar y ejecutar en StackBlitz, CodeSandbox, Codespaces y VS Code.',
+    category: 'developer',
+    defaultAccess: 'free'
+  },
+  {
+    id: 'hardwareCompat',
+    name: 'Compatibilidad de Hardware del PC',
+    description: 'Auditoría inteligente de CPU, GPU, memoria RAM y compatibilidad con el proyecto.',
+    category: 'insights',
+    defaultAccess: 'free'
+  },
+  {
+    id: 'roadmap',
+    name: 'Roadmap Rápido de Puesta en Marcha',
+    description: 'Guía paso a paso para clonar, configurar entorno y compilar el repositorio.',
+    category: 'developer',
+    defaultAccess: 'free'
+  },
+  {
+    id: 'repoHealth',
+    name: 'Índice de Salud & Actividad',
+    description: 'Métricas de mantenimiento, frecuencia de commits, velocidad de PRs y tasa de issues cerrados.',
+    category: 'insights',
+    defaultAccess: 'free'
+  },
+  {
+    id: 'architectureDiagram',
+    name: 'Diagrama Visual de Arquitectura (Mermaid)',
+    description: 'Diagrama de flujo interactivo generado por IA con componentes, capas y tecnologías.',
+    category: 'ai',
+    defaultAccess: 'pro'
+  },
+  {
+    id: 'deepAudit',
+    name: 'Auditoría Técnica Profunda (Fortalezas & Riesgos)',
+    description: 'Auditoría de arquitectura, código, buenas prácticas y posibles cuellos de botella.',
+    category: 'ai',
+    defaultAccess: 'pro'
+  },
+  {
+    id: 'fileTree',
+    name: 'Explorador de Archivos Clave & Estructura',
+    description: 'Árbol de directorios navegable filtrando archivos importantes y configuraciones.',
+    category: 'core',
+    defaultAccess: 'free'
+  },
+  {
+    id: 'dependencies',
+    name: 'Inspector de Dependencias & Manifests',
+    description: 'Desglose detallado de package.json, Cargo.toml, pyproject.toml con runtime specs.',
+    category: 'insights',
+    defaultAccess: 'free'
+  },
+  {
+    id: 'mascotChat',
+    name: 'Asistente Octo Chat Interactivo',
+    description: 'Chat interactivo en tiempo real con la mascota entrenada en el contexto del repositorio.',
+    category: 'ai',
+    defaultAccess: 'pro'
+  },
+  {
+    id: 'exportReport',
+    name: 'Exportación de Reportes (Markdown / JSON)',
+    description: 'Descarga y copiado rápido del informe completo estructurado para equipos.',
+    category: 'core',
+    defaultAccess: 'free'
+  }
+]
+
+export const DEFAULT_ANALYSIS_MODULES_MAP: AnalysisModulesMap = {
+  summary: 'free',
+  installCommand: 'free',
+  cloudSandbox: 'free',
+  hardwareCompat: 'free',
+  roadmap: 'free',
+  repoHealth: 'free',
+  architectureDiagram: 'pro',
+  deepAudit: 'pro',
+  fileTree: 'free',
+  dependencies: 'free',
+  mascotChat: 'pro',
+  exportReport: 'free'
+}
+
+// --- Advanced System Settings ---
+
+export interface AdvancedSystemSettings {
+  ipDailyCeiling: number
+  headCacheTtlHours: number
+  commitCacheTtlHours: number
+  providerTimeoutMs: number
+  logIpHashes: boolean
+  logFingerprints: boolean
+  preferredGeminiModel: string
+  preferredGroqModel: string
+}
+
+export const DEFAULT_ADVANCED_SETTINGS: AdvancedSystemSettings = {
+  ipDailyCeiling: 45,
+  headCacheTtlHours: 1,
+  commitCacheTtlHours: 24,
+  providerTimeoutMs: 15000,
+  logIpHashes: true,
+  logFingerprints: true,
+  preferredGeminiModel: 'gemini-2.0-flash',
+  preferredGroqModel: 'llama-3.3-70b-versatile'
+}
+
 export interface ProfileRow {
   id: string
   email: string

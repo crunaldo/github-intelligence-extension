@@ -6,6 +6,43 @@ export interface KVNamespace {
   delete(key: string): Promise<void>
 }
 
+export interface ApiKeyItem {
+  id: string
+  provider: ProviderName
+  label: string
+  key: string
+  enabled: boolean
+  createdAt?: string
+  lastUsedAt?: string
+  callsCount?: number
+  errorCount?: number
+}
+
+export type KeyRotationStrategy = 'round_robin' | 'priority_fallback'
+
+export interface ProviderApiKeysConfig {
+  keys: ApiKeyItem[]
+  strategy: KeyRotationStrategy
+}
+
+export type ModuleAccessLevel = 'free' | 'pro' | 'disabled'
+
+export type AnalysisModuleId =
+  | 'summary'
+  | 'installCommand'
+  | 'cloudSandbox'
+  | 'hardwareCompat'
+  | 'roadmap'
+  | 'repoHealth'
+  | 'architectureDiagram'
+  | 'deepAudit'
+  | 'fileTree'
+  | 'dependencies'
+  | 'mascotChat'
+  | 'exportReport'
+
+export type AnalysisModulesMap = Record<AnalysisModuleId, ModuleAccessLevel>
+
 export interface RepoContext {
   owner: string
   repo: string
@@ -43,6 +80,8 @@ export interface AIConfig {
   groqApiKey?: string
   cfAiBinding?: { run: (model: string, input: unknown) => Promise<unknown> }
   openRouterApiKey?: string
+  apiKeysPool?: ApiKeyItem[]
+  keyRotationStrategy?: KeyRotationStrategy
 }
 
 export interface ProviderFailure {

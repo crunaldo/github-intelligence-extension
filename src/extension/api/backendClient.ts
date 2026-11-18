@@ -22,6 +22,8 @@ export interface FilteredAnalysisResult {
   remainingQuota?: number
 }
 
+export type ModuleAccessLevel = 'free' | 'pro' | 'disabled'
+
 export interface RemoteConfig {
   freeDailyLimit: number
   proDailyLimit: number
@@ -31,6 +33,7 @@ export interface RemoteConfig {
     maintenanceMode: boolean
     bannerMessage?: string
   }
+  analysisModules?: Record<string, ModuleAccessLevel>
 }
 
 export class BackendApiError extends Error {
@@ -47,6 +50,7 @@ export class BackendApiError extends Error {
 
 const CLIENT_ID_STORAGE_KEY = 'gpi_client_id'
 const INTELLIGENCE_CACHE_STORAGE_KEY = 'gpi_intelligence_cache'
+const DAILY_QUOTA_STORAGE_KEY = 'gpi_daily_quota_exceeded'
 const DEFAULT_BACKEND_API_URL = 'https://github-intelligence-api.workers.dev'
 const SAFE_COMMIT_REF_PATTERN = /^[A-Za-z0-9_.-]+$/
 const MAX_LOCAL_INTELLIGENCE_ENTRIES = 50
@@ -59,6 +63,7 @@ interface CachedIntelligenceEntry {
 }
 
 let memoryClientId: string | null = null
+let memoryDailyQuotaDate: string | null = null
 const memoryIntelligenceCache = new Map<string, CachedIntelligenceEntry>()
 const inFlightIntelligenceRequests = new Map<string, Promise<FilteredAnalysisResult>>()
 
@@ -314,6 +319,106 @@ export async function clearLocalIntelligenceCache(): Promise<void> {
   }
 }
 
+export function getTodayUtcDateString(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+/**
+ * Checks whether the current user or client has already exhausted their daily free quota today.
+ * Pro users are never treated as having exceeded the daily free quota.
+ */
+export async function isDailyQuotaExceeded(): Promise<boolean> {
+  const session = await getAuthSession()
+  if (session?.isPro) {
+    return false
+  }
+
+  const today = getTodayUtcDateString()
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    try {
+      const stored = (await storage.get(DAILY_QUOTA_STORAGE_KEY)) as Record<string, unknown>
+      const dateVal = stored?.[DAILY_QUOTA_STORAGE_KEY]
+      if (typeof dateVal === 'string' && dateVal === today) {
+        return true
+      }
+      if (dateVal && dateVal !== today) {
+        await storage.remove(DAILY_QUOTA_STORAGE_KEY)
+      }
+      return false
+    } catch {
+      // Fall through to memory/local fallback
+    }
+  }
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const dateVal = localStorage.getItem(DAILY_QUOTA_STORAGE_KEY)
+      if (dateVal === today) {
+        return true
+      }
+      if (dateVal && dateVal !== today) {
+        localStorage.removeItem(DAILY_QUOTA_STORAGE_KEY)
+      }
+      return false
+    }
+  } catch {
+    // Ignore
+  }
+
+  return memoryDailyQuotaDate === today
+}
+
+/**
+ * Marks that the daily free limit was reached for today (UTC).
+ */
+export async function markDailyQuotaExceeded(): Promise<void> {
+  const today = getTodayUtcDateString()
+  memoryDailyQuotaDate = today
+
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    try {
+      await storage.set({ [DAILY_QUOTA_STORAGE_KEY]: today })
+      return
+    } catch {
+      // Fallback
+    }
+  }
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(DAILY_QUOTA_STORAGE_KEY, today)
+    }
+  } catch {
+    // Fallback
+  }
+}
+
+/**
+ * Clears the daily quota exceeded status (e.g. after purchasing or verifying Pro).
+ */
+export async function clearDailyQuotaExceeded(): Promise<void> {
+  memoryDailyQuotaDate = null
+
+  const storage = getChromeStorageLocal()
+  if (storage) {
+    try {
+      await storage.remove(DAILY_QUOTA_STORAGE_KEY)
+    } catch {
+      // Ignore
+    }
+  }
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(DAILY_QUOTA_STORAGE_KEY)
+    }
+  } catch {
+    // Ignore
+  }
+}
+
 /**
  * Fetches AI-generated repository intelligence from the Edge Worker `/v1/analyze` endpoint.
  * Shares a per-`owner/repo@commitSha:tier` local cache across mounts/tab switches (unless
@@ -361,7 +466,11 @@ export async function fetchRepoIntelligence(
     })
 
     if (!res.ok) {
-      throw await parseErrorResponse(res)
+      const err = await parseErrorResponse(res)
+      if (err.status === 429 || err.code === 'QUOTA_EXCEEDED') {
+        void markDailyQuotaExceeded()
+      }
+      throw err
     }
 
     const result = (await res.json()) as FilteredAnalysisResult
@@ -397,6 +506,14 @@ export async function fetchRemoteConfig(): Promise<RemoteConfig> {
 
   const bannerMessageRaw = rawFlags.bannerMessage ?? rawFlags.banner_message
 
+  const rawModules = (raw.analysisModules ?? raw.analysis_modules ?? {}) as Record<string, unknown>
+  const analysisModules: Record<string, ModuleAccessLevel> = {}
+  for (const [key, val] of Object.entries(rawModules)) {
+    if (val === 'free' || val === 'pro' || val === 'disabled') {
+      analysisModules[key] = val
+    }
+  }
+
   return {
     freeDailyLimit: Number.isFinite(freeDailyLimit) ? freeDailyLimit : 15,
     proDailyLimit: Number.isFinite(proDailyLimit) ? proDailyLimit : 250,
@@ -408,7 +525,20 @@ export async function fetchRemoteConfig(): Promise<RemoteConfig> {
         ? { bannerMessage: bannerMessageRaw }
         : {}),
     },
+    analysisModules,
   }
+}
+
+/**
+ * Resolves the configured access tier for an analysis module ('free' | 'pro' | 'disabled').
+ */
+export function getModuleAccess(
+  config: RemoteConfig | null,
+  moduleId: string,
+  defaultAccess: ModuleAccessLevel = 'free'
+): ModuleAccessLevel {
+  if (!config?.analysisModules) return defaultAccess
+  return config.analysisModules[moduleId] ?? defaultAccess
 }
 
 export interface MascotChatMessage {

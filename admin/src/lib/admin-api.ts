@@ -28,7 +28,10 @@ const ALLOWED_CONFIG_KEYS = new Set<string>([
   'system_prompt_repo',
   'system_prompt_mascot',
   'feature_flags',
-  'provider_priority'
+  'provider_priority',
+  'provider_api_keys',
+  'analysis_modules',
+  'advanced_system_settings'
 ])
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -112,6 +115,52 @@ function validateRemoteConfigEntry(key: string, value: unknown): string | null {
         return 'provider_priority must be a non-empty array of valid provider names'
       }
       return null
+
+    case 'provider_api_keys': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'provider_api_keys must be an object with keys array and strategy'
+      }
+      const pool = value as Record<string, unknown>
+      if (!Array.isArray(pool.keys)) {
+        return 'provider_api_keys.keys must be an array'
+      }
+      for (const item of pool.keys) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          return 'Each API key in provider_api_keys must be an object'
+        }
+        const k = item as Record<string, unknown>
+        if (typeof k.id !== 'string' || !k.id.trim()) {
+          return 'Each API key must have an id'
+        }
+        if (typeof k.provider !== 'string' || !VALID_PROVIDERS.has(k.provider)) {
+          return `Invalid provider in API key: ${k.provider}`
+        }
+        if (typeof k.key !== 'string' || !k.key.trim()) {
+          return 'Each API key must have a non-empty key value'
+        }
+      }
+      return null
+    }
+
+    case 'analysis_modules': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'analysis_modules must be an object mapping module IDs to access tiers'
+      }
+      const modules = value as Record<string, unknown>
+      for (const [modId, tier] of Object.entries(modules)) {
+        if (tier !== 'free' && tier !== 'pro' && tier !== 'disabled') {
+          return `Module ${modId} must have access level 'free', 'pro', or 'disabled'`
+        }
+      }
+      return null
+    }
+
+    case 'advanced_system_settings': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'advanced_system_settings must be a JSON object'
+      }
+      return null
+    }
 
     default:
       return `Unsupported configuration key: ${key}`

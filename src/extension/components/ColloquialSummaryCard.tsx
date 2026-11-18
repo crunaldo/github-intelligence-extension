@@ -17,6 +17,7 @@ type Props = {
   locale?: ActiveLocale
   hideTopBanner?: boolean
   refreshNonce?: number
+  onQuotaExceeded?: () => void
 }
 
 export function ColloquialSummaryCard({
@@ -24,6 +25,7 @@ export function ColloquialSummaryCard({
   locale = 'es',
   hideTopBanner = false,
   refreshNonce = 0,
+  onQuotaExceeded,
 }: Props) {
   const loadingSummary = useMemo(
     () => generateColloquialSpanishSummary(report, locale),
@@ -34,8 +36,15 @@ export function ColloquialSummaryCard({
     [report, locale]
   )
 
-  const [summary, setSummary] = useState<ColloquialExplanation>(loadingSummary)
-  const [loading, setLoading] = useState(true)
+  const initialSummary = useMemo(() => {
+    if (report.aiAnalysis) {
+      return mapAnalysisToColloquialSummary(report.aiAnalysis, locale)
+    }
+    return loadingSummary
+  }, [report.aiAnalysis, locale, loadingSummary])
+
+  const [summary, setSummary] = useState<ColloquialExplanation>(initialSummary)
+  const [loading, setLoading] = useState<boolean>(!report.aiAnalysis)
   const [quotaExceeded, setQuotaExceeded] = useState(false)
   const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
@@ -57,6 +66,15 @@ export function ColloquialSummaryCard({
       refreshNonce !== lastRefreshNonceRef.current || retryTick !== lastRetryTickRef.current
     lastRefreshNonceRef.current = refreshNonce
     lastRetryTickRef.current = retryTick
+
+    if (report.aiAnalysis && !shouldForceRefresh) {
+      setSummary(mapAnalysisToColloquialSummary(report.aiAnalysis, locale))
+      setLoading(false)
+      setQuotaExceeded(false)
+      setMaintenanceMessage(null)
+      setAnalysisError(null)
+      return
+    }
 
     if (!owner || !repo) {
       setSummary(fallbackSummary)
@@ -88,7 +106,12 @@ export function ColloquialSummaryCard({
       .catch((err: unknown) => {
         if (isCancelled) return
         const errorState = classifySummaryError(err)
-        setQuotaExceeded(errorState.quotaExceeded)
+        if (errorState.quotaExceeded) {
+          setQuotaExceeded(true)
+          onQuotaExceeded?.()
+          return
+        }
+        setQuotaExceeded(false)
         setMaintenanceMessage(errorState.maintenanceMode ? errorState.errorMessage : null)
         setAnalysisError(errorState.maintenanceMode ? null : errorState.errorMessage)
         setSummary(fallbackSummary)
@@ -98,7 +121,7 @@ export function ColloquialSummaryCard({
     return () => {
       isCancelled = true
     }
-  }, [report, locale, loadingSummary, fallbackSummary, retryTick, refreshNonce])
+  }, [report, locale, loadingSummary, fallbackSummary, retryTick, refreshNonce, onQuotaExceeded])
 
   const handleUpgrade = async () => {
     setUpgradeNotice(null)
@@ -115,6 +138,10 @@ export function ColloquialSummaryCard({
     } finally {
       setUpgrading(false)
     }
+  }
+
+  if (quotaExceeded) {
+    return null
   }
 
   return (
@@ -134,41 +161,6 @@ export function ColloquialSummaryCard({
               </span>
             ))}
           </div>
-        </div>
-      )}
-
-      {quotaExceeded && (
-        <div
-          className="insight-card"
-          style={{
-            border: '1px solid var(--accent-cyan)',
-            background: 'var(--accent-cyan-subtle)',
-            marginBottom: 10,
-            padding: 12,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13 }}>
-            <Sparkles size={15} style={{ color: 'var(--accent-cyan)' }} />
-            <span>{t('quota_exceeded_title', locale)}</span>
-          </div>
-          <p style={{ margin: '6px 0 10px', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-            {t('quota_exceeded_desc', locale)}
-          </p>
-          <button
-            type="button"
-            className="btn-github-direct"
-            onClick={() => void handleUpgrade()}
-            disabled={upgrading}
-            style={{ width: '100%', justifyContent: 'center' }}
-          >
-            <Sparkles size={13} />
-            <span>{t('upgrade_to_pro_btn', locale)}</span>
-          </button>
-          {upgradeNotice && (
-            <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--accent-amber)', lineHeight: 1.4 }}>
-              {upgradeNotice}
-            </p>
-          )}
         </div>
       )}
 

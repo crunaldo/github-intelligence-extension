@@ -2,10 +2,13 @@ import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles.css'
 import AdminDashboardPage from './app/page'
+import ApisManagementPage from './app/apis/page'
+import AnalysisModulesPage from './app/modules/page'
 import PromptsStudioPage from './app/prompts/page'
 import FeatureFlagsPage from './app/flags/page'
 import UsersManagementPage from './app/users/page'
 import CacheExplorerPage from './app/cache/page'
+import SettingsPage from './app/settings/page'
 
 function normalizePath(pathname: string): string {
   const cleaned = pathname.replace(/\/+$/, '')
@@ -56,6 +59,10 @@ function AdminAppRouter() {
   }, [])
 
   switch (pathname) {
+    case '/apis':
+      return <ApisManagementPage />
+    case '/modules':
+      return <AnalysisModulesPage />
     case '/prompts':
       return <PromptsStudioPage />
     case '/flags':
@@ -64,6 +71,8 @@ function AdminAppRouter() {
       return <UsersManagementPage />
     case '/cache':
       return <CacheExplorerPage />
+    case '/settings':
+      return <SettingsPage />
     case '/':
     default:
       return <AdminDashboardPage />

@@ -328,4 +328,87 @@ describe('AI Multi-Provider Fallback Router', () => {
     expect(adminDefault.system).toContain('"architectureDiagram"')
     expect(adminDefault.system).toContain('"deepAudit"')
   })
+
+  it('rotates through multiple API keys for the same provider when key 1 encounters 429 quota limit', async () => {
+    const keysTried: string[] = []
+    const mockGemini = vi.fn(async (_context, cfg) => {
+      keysTried.push(cfg.geminiApiKey || '')
+      if (cfg.geminiApiKey === 'gemini-key-user-1') {
+        throw new Error('429 Resource has been exhausted (e.g. check quota)')
+      }
+      return makeResult('gemini', 150)
+    })
+
+    const mockProviders = {
+      gemini: mockGemini,
+      groq: vi.fn(),
+      cfAi: vi.fn(),
+      openRouter: vi.fn()
+    }
+
+    const result = await generateRepoAnalysis(mockContext, {
+      providers: mockProviders,
+      apiKeysPool: [
+        {
+          id: 'k1',
+          provider: 'gemini',
+          label: 'Gemini - Usuario A',
+          key: 'gemini-key-user-1',
+          enabled: true
+        },
+        {
+          id: 'k2',
+          provider: 'gemini',
+          label: 'Gemini - Usuario B',
+          key: 'gemini-key-user-2',
+          enabled: true
+        }
+      ],
+      keyRotationStrategy: 'priority_fallback'
+    })
+
+    expect(keysTried).toEqual(['gemini-key-user-1', 'gemini-key-user-2'])
+    expect(mockGemini).toHaveBeenCalledTimes(2)
+    expect(mockProviders.groq).not.toHaveBeenCalled()
+    expect(result.providerUsed).toBe('gemini')
+  })
+
+  it('skips disabled keys in the multi-key pool', async () => {
+    const keysTried: string[] = []
+    const mockGemini = vi.fn(async (_context, cfg) => {
+      keysTried.push(cfg.geminiApiKey || '')
+      return makeResult('gemini', 100)
+    })
+
+    const mockProviders = {
+      gemini: mockGemini,
+      groq: vi.fn(),
+      cfAi: vi.fn(),
+      openRouter: vi.fn()
+    }
+
+    const result = await generateRepoAnalysis(mockContext, {
+      providers: mockProviders,
+      apiKeysPool: [
+        {
+          id: 'k1',
+          provider: 'gemini',
+          label: 'Gemini - Disabled Key',
+          key: 'disabled-gemini-key',
+          enabled: false
+        },
+        {
+          id: 'k2',
+          provider: 'gemini',
+          label: 'Gemini - Active Key',
+          key: 'active-gemini-key',
+          enabled: true
+        }
+      ]
+    })
+
+    expect(keysTried).toEqual(['active-gemini-key'])
+    expect(mockGemini).toHaveBeenCalledOnce()
+    expect(result.providerUsed).toBe('gemini')
+  })
 })
