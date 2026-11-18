@@ -289,11 +289,27 @@ export default defineContentScript({
         <span class="gpi-pill-content"></span>
       `
 
-      pillEl.addEventListener('click', () => {
-        const targetToOpen = activeTarget
+      // Prevent document mousedown/mouseup from dismissing pill before click fires
+      pillEl.addEventListener('mousedown', (e) => {
+        e.stopPropagation()
+      })
+      pillEl.addEventListener('mouseup', (e) => {
+        e.stopPropagation()
+      })
+
+      pillEl.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+
+        const targetToOpen = (pillEl as any)?._target || activeTarget
         if (!targetToOpen) return
 
-        // 1. Immediately send message on click tick without ANY await or pre-DOM delays
+        // 1. Immediately save pending analysis to local storage from content script
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+          chrome.storage.local.set({ gpi_pending_analysis: targetToOpen }).catch(() => {})
+        }
+
+        // 2. Immediately send message on click tick without ANY await or pre-DOM delays
         try {
           chrome.runtime.sendMessage({
             type: 'OPEN_SIDEPANEL_FOR_REPO',
@@ -342,6 +358,7 @@ export default defineContentScript({
       ensureShadowHost()
       if (!pillEl) return
       activeTarget = target
+      ;(pillEl as any)._target = target
 
       const content = pillEl.querySelector('.gpi-pill-content')
       if (content) {

@@ -99,6 +99,7 @@ export function SidepanelApp() {
   const [refreshNonce, setRefreshNonce] = useState<number>(0)
   const [hardware, setHardware] = useState<HardwareInfo | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const inFlightUrlRef = useRef<string | null>(null)
 
   useEffect(() => {
     void detectSystemHardware().then(setHardware)
@@ -161,6 +162,11 @@ export function SidepanelApp() {
       setActiveTabRepo(target)
       setNav('analyze')
 
+      // If an analysis for this exact repository is already in flight, do not duplicate or abort it
+      if (inFlightUrlRef.current === target.originalUrl && !force) {
+        return
+      }
+
       if (!force) {
         const cached = await getCachedReport(target.originalUrl)
         if (cached) {
@@ -187,6 +193,7 @@ export function SidepanelApp() {
       }
       const controller = new AbortController()
       abortControllerRef.current = controller
+      inFlightUrlRef.current = target.originalUrl
 
       // Clear previous report so that InteractiveBeamLoader is immediately visible
       setReport(null)
@@ -240,6 +247,9 @@ export function SidepanelApp() {
         if ((err as Error).name === 'AbortError') return
         setError(err instanceof Error ? err.message : 'Error al analizar el repositorio.')
       } finally {
+        if (inFlightUrlRef.current === target.originalUrl) {
+          inFlightUrlRef.current = null
+        }
         setLoading(false)
       }
     },

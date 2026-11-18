@@ -90,6 +90,7 @@ export function PopupApp() {
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false)
   const [hardware, setHardware] = useState<HardwareInfo | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const inFlightUrlRef = useRef<string | null>(null)
 
   // Detect system hardware and remote config on mount
   useEffect(() => {
@@ -120,6 +121,11 @@ export function PopupApp() {
     setSearchUrl(target.originalUrl)
     setActiveTabRepo(target)
 
+    // If an analysis for this exact repository is already in flight, do not duplicate or abort it
+    if (inFlightUrlRef.current === target.originalUrl && !force) {
+      return
+    }
+
     // Check cache first if not forced
     if (!force) {
       const cached = await getCachedReport(target.originalUrl)
@@ -145,6 +151,7 @@ export function PopupApp() {
     }
     const controller = new AbortController()
     abortControllerRef.current = controller
+    inFlightUrlRef.current = target.originalUrl
 
     // Clear previous report so that InteractiveBeamLoader is immediately visible
     setReport(null)
@@ -195,6 +202,9 @@ export function PopupApp() {
       if ((err as Error).name === 'AbortError') return
       setError(err instanceof Error ? err.message : 'Error al analizar el repositorio.')
     } finally {
+      if (inFlightUrlRef.current === target.originalUrl) {
+        inFlightUrlRef.current = null
+      }
       setLoading(false)
     }
   }, [])

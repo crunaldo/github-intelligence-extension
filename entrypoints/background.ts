@@ -24,10 +24,7 @@ export default defineBackground(() => {
     })
   }
 
-  // Configure context menus and side panel behavior on installation / startup
-  chrome.runtime.onInstalled.addListener(async () => {
-    setupContextMenus()
-
+  async function setupSidePanel() {
     if (chrome.sidePanel?.setPanelBehavior) {
       try {
         await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false })
@@ -46,11 +43,21 @@ export default defineBackground(() => {
         // Ignore if unsupported
       }
     }
+  }
+
+  // Configure context menus and side panel behavior on installation / startup
+  chrome.runtime.onInstalled.addListener(async () => {
+    setupContextMenus()
+    await setupSidePanel()
   })
 
   chrome.runtime.onStartup?.addListener(() => {
     setupContextMenus()
+    void setupSidePanel()
   })
+
+  // Ensure side panel is configured on service worker start
+  void setupSidePanel()
 
   // Handle context menu clicks
   chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -58,14 +65,15 @@ export default defineBackground(() => {
     const tabId = tab?.id
 
     // CRITICAL: Call sidePanel.open SYNCHRONOUSLY at the top of the user click callback
-    // Prioritize tabId because tab-scoped activation is strictly accepted by Chrome MV3
+    // Prioritize windowId for global manifest sidepanel, fallback to tabId
     if (chrome.sidePanel?.open) {
-      if (tabId) {
-        chrome.sidePanel.open({ tabId }).catch(() => {
-          if (windowId) chrome.sidePanel.open({ windowId }).catch(() => {})
+      if (windowId) {
+        chrome.sidePanel.open({ windowId }).catch((err) => {
+          console.warn('Could not open sidePanel with windowId:', err)
+          if (tabId) chrome.sidePanel.open({ tabId }).catch(() => {})
         })
-      } else if (windowId) {
-        chrome.sidePanel.open({ windowId }).catch(() => {})
+      } else if (tabId) {
+        chrome.sidePanel.open({ tabId }).catch(() => {})
       }
     }
 
@@ -119,15 +127,8 @@ export default defineBackground(() => {
           // Persist target in local storage so side panel / popup reads it immediately on mount
           await chrome.storage.local.set({ gpi_pending_analysis: target })
 
-          // Multi-wave broadcast to ensure side panel catches the message whether already mounted or opening
-          const broadcast = () => {
-            chrome.runtime.sendMessage({ type: 'TRIGGER_ANALYSIS', target }).catch(() => {})
-          }
-          broadcast()
-          setTimeout(broadcast, 200)
-          setTimeout(broadcast, 500)
-          setTimeout(broadcast, 1000)
-          setTimeout(broadcast, 1800)
+          // Broadcast to ensure side panel catches the message if already open
+          chrome.runtime.sendMessage({ type: 'TRIGGER_ANALYSIS', target }).catch(() => {})
         }
       })()
     }
@@ -192,32 +193,26 @@ export default defineBackground(() => {
 
     if (message?.type === 'OPEN_SIDEPANEL_FOR_REPO') {
       const target = message.target as GitHubTarget | undefined
-      const tabId = sender.tab?.id
       const windowId = sender.tab?.windowId || message.windowId
+      const tabId = sender.tab?.id
 
-      // Synchronously trigger open immediately using tabId (required for content script gestures in MV3)
+      // Synchronously trigger open immediately using windowId in response to content script user gesture
       if (chrome.sidePanel?.open) {
-        if (tabId) {
-          chrome.sidePanel.open({ tabId }).catch((err) => {
-            console.warn('Could not open sidePanel with tabId:', err)
-            if (windowId) {
-              chrome.sidePanel.open({ windowId }).catch(() => {})
+        if (windowId) {
+          chrome.sidePanel.open({ windowId }).catch((err) => {
+            console.warn('Could not open sidePanel with windowId:', err)
+            if (tabId) {
+              chrome.sidePanel.open({ tabId }).catch(() => {})
             }
           })
-        } else if (windowId) {
-          chrome.sidePanel.open({ windowId }).catch(() => {})
+        } else if (tabId) {
+          chrome.sidePanel.open({ tabId }).catch(() => {})
         }
       }
 
       if (target) {
         void chrome.storage.local.set({ gpi_pending_analysis: target }).then(() => {
-          const broadcast = () => {
-            chrome.runtime.sendMessage({ type: 'TRIGGER_ANALYSIS', target }).catch(() => {})
-          }
-          broadcast()
-          setTimeout(broadcast, 150)
-          setTimeout(broadcast, 400)
-          setTimeout(broadcast, 900)
+          chrome.runtime.sendMessage({ type: 'TRIGGER_ANALYSIS', target }).catch(() => {})
         })
       }
       sendResponse?.({ ok: true })
@@ -225,15 +220,15 @@ export default defineBackground(() => {
     }
 
     if (message?.type === 'OPEN_SIDEPANEL') {
-      const tabId = sender.tab?.id
       const windowId = sender.tab?.windowId || message.windowId
+      const tabId = sender.tab?.id
       if (chrome.sidePanel?.open) {
-        if (tabId) {
-          chrome.sidePanel.open({ tabId }).catch(() => {
-            if (windowId) chrome.sidePanel.open({ windowId }).catch(() => {})
+        if (windowId) {
+          chrome.sidePanel.open({ windowId }).catch(() => {
+            if (tabId) chrome.sidePanel.open({ tabId }).catch(() => {})
           })
-        } else if (windowId) {
-          chrome.sidePanel.open({ windowId }).catch(() => {})
+        } else if (tabId) {
+          chrome.sidePanel.open({ tabId }).catch(() => {})
         }
         sendResponse?.({ ok: true })
         return true
