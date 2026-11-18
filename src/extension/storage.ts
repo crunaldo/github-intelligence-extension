@@ -194,23 +194,27 @@ export async function getStoredRecent(): Promise<RecentAnalysis[]> {
 }
 
 export async function addStoredRecent(report: RepositoryReport): Promise<void> {
-  const recentItem: RecentAnalysis = {
-    fullName: report.repository.fullName,
-    url: report.repository.htmlUrl,
-    analyzedAt: report.analyzedAt,
-    defaultBranch: report.repository.defaultBranch,
-    stars: report.repository.stars,
-    description: report.repository.description,
-    languages: report.languages,
-  }
-  const current = await getStoredRecent()
-  const filtered = current.filter((item) => item.fullName.toLowerCase() !== recentItem.fullName.toLowerCase())
-  const updated = [recentItem, ...filtered].slice(0, 30)
-  const storage = getChromeStorageLocal()
-  if (storage) {
-    await storage.set({ [STORAGE_KEYS.RECENT]: updated })
-  } else {
-    localStorage.setItem(STORAGE_KEYS.RECENT, JSON.stringify(updated))
+  try {
+    const recentItem: RecentAnalysis = {
+      fullName: report.repository.fullName,
+      url: report.repository.htmlUrl,
+      analyzedAt: report.analyzedAt,
+      defaultBranch: report.repository.defaultBranch,
+      stars: report.repository.stars,
+      description: report.repository.description,
+      languages: report.languages,
+    }
+    const current = await getStoredRecent()
+    const filtered = current.filter((item) => item.fullName.toLowerCase() !== recentItem.fullName.toLowerCase())
+    const updated = [recentItem, ...filtered].slice(0, 30)
+    const storage = getChromeStorageLocal()
+    if (storage) {
+      await storage.set({ [STORAGE_KEYS.RECENT]: updated })
+    } else {
+      localStorage.setItem(STORAGE_KEYS.RECENT, JSON.stringify(updated))
+    }
+  } catch (err) {
+    console.warn('Could not save recent item in local storage:', err)
   }
 }
 
@@ -243,24 +247,66 @@ export async function getCachedReport(fullName: string): Promise<RepositoryRepor
   }
 }
 
+function sanitizeReportForCache(report: RepositoryReport): RepositoryReport {
+  const sanitizedTree =
+    Array.isArray(report.tree) && report.tree.length > 1000
+      ? report.tree.slice(0, 1000)
+      : report.tree
+
+  let sanitizedReadme = report.readme
+  if (sanitizedReadme && typeof sanitizedReadme.text === 'string' && sanitizedReadme.text.length > 120_000) {
+    sanitizedReadme = {
+      ...sanitizedReadme,
+      text: sanitizedReadme.text.slice(0, 120_000) + '\n\n... [Contenido truncado para almacenamiento local]',
+    }
+  }
+
+  return {
+    ...report,
+    tree: sanitizedTree,
+    readme: sanitizedReadme,
+  }
+}
+
 export async function saveCachedReport(report: RepositoryReport): Promise<void> {
   const key = report.repository.fullName.toLowerCase()
   const storage = getChromeStorageLocal()
+  const sanitized = sanitizeReportForCache(report)
+
   if (storage) {
-    const result = (await storage.get(STORAGE_KEYS.REPORTS)) as Record<string, any>
-    const reports: Record<string, any> = result[STORAGE_KEYS.REPORTS] || {}
-    reports[key] = report
-    // Keep max 25 saved cached reports
-    const keys = Object.keys(reports)
-    if (keys.length > 25) {
-      delete reports[keys[0]]
+    try {
+      const result = (await storage.get(STORAGE_KEYS.REPORTS)) as Record<string, any>
+      const reports: Record<string, any> = result[STORAGE_KEYS.REPORTS] || {}
+      reports[key] = sanitized
+
+      // Keep max 15 saved cached reports
+      const keys = Object.keys(reports)
+      while (keys.length > 15) {
+        const oldest = keys.shift()
+        if (oldest) delete reports[oldest]
+      }
+      await storage.set({ [STORAGE_KEYS.REPORTS]: reports })
+    } catch (err) {
+      // Self-healing: if quota exceeded or write failed, prune down to only the 3 latest reports
+      try {
+        const result = (await storage.get(STORAGE_KEYS.REPORTS)) as Record<string, any>
+        const reports: Record<string, any> = result[STORAGE_KEYS.REPORTS] || {}
+        const keys = Object.keys(reports)
+        for (let i = 0; i < Math.max(0, keys.length - 2); i++) {
+          delete reports[keys[i]]
+        }
+        reports[key] = sanitized
+        await storage.set({ [STORAGE_KEYS.REPORTS]: reports })
+      } catch (pruneErr) {
+        // Silently log and do not throw so the active analysis is never interrupted
+        console.warn('Failed to cache report in chrome.storage.local (quota exceeded):', pruneErr)
+      }
     }
-    await storage.set({ [STORAGE_KEYS.REPORTS]: reports })
   } else {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.REPORTS)
       const reports = raw ? JSON.parse(raw) : {}
-      reports[key] = report
+      reports[key] = sanitized
       localStorage.setItem(STORAGE_KEYS.REPORTS, JSON.stringify(reports))
     } catch {
       // quota limit

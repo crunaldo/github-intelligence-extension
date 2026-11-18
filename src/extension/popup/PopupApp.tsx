@@ -185,8 +185,12 @@ export function PopupApp() {
       }
       setReport(res)
       setQuotaExceeded(false)
-      await saveCachedReport(res)
-      await addStoredRecent(res)
+      try {
+        await saveCachedReport(res)
+        await addStoredRecent(res)
+      } catch (cacheErr) {
+        console.warn('Could not cache report locally:', cacheErr)
+      }
     } catch (err) {
       if ((err as Error).name === 'AbortError') return
       setError(err instanceof Error ? err.message : 'Error al analizar el repositorio.')

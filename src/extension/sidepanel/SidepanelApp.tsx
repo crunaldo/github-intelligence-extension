@@ -227,10 +227,14 @@ export function SidepanelApp() {
         }
         setReport(res)
         setQuotaExceeded(false)
-        await saveCachedReport(res)
-        await addStoredRecent(res)
-        const updatedList = await getAllSavedReports()
-        setSavedReports(updatedList)
+        try {
+          await saveCachedReport(res)
+          await addStoredRecent(res)
+          const updatedList = await getAllSavedReports()
+          setSavedReports(updatedList)
+        } catch (cacheErr) {
+          console.warn('Could not cache report locally:', cacheErr)
+        }
         setNav('analyze')
       } catch (err) {
         if ((err as Error).name === 'AbortError') return

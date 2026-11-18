@@ -9,6 +9,7 @@ export default defineConfig({
     permissions: [
       'activeTab',
       'storage',
+      'unlimitedStorage',
       'tabs',
       'sidePanel',
       'contextMenus',
