@@ -1,0 +1,22 @@
+name = "github-intelligence-api"
+main = "src/worker.ts"
+compatibility_date = "2026-11-01"
+
+[vars]
+SUPABASE_URL = "https://ovgvjlcalzynnekclwhy.supabase.co"
+
+# Crear con: npx wrangler kv namespace create KV
+# Luego reemplaza <TU_KV_NAMESPACE_ID> con el id devuelto por Wrangler:
+[[kv_namespaces]]
+binding = "KV"
+id = "<TU_KV_NAMESPACE_ID>"
+
+[ai]
+binding = "AI"
+
+# Cargar secretos privados con `npx wrangler secret put <NOMBRE>` (desde carpeta backend/):
+# - SUPABASE_SERVICE_ROLE_KEY
+# - GEMINI_API_KEY
+# - GROQ_API_KEY
+# - OPENROUTER_API_KEY
+# - LEMON_SQUEEZY_WEBHOOK_SECRET
