@@ -10,6 +10,11 @@ export type CodeTreePreferences = {
   tabVerticalPos: number // percentage e.g. 20
   hideWhenUrlMatches: string // comma-separated keywords e.g. "issues, pulls, releases"
   shortcut: string
+  iconTheme: 'vscode' | 'seti' | 'github'
+  codeFontFamily: 'default' | 'jetbrains' | 'fira' | 'cascadia' | 'source-code'
+  codeFontSize: number
+  codeFontLigatures: boolean
+  customEnterpriseDomains: string
 }
 
 export const DEFAULT_CODE_TREE_PREFERENCES: CodeTreePreferences = {
@@ -20,6 +25,17 @@ export const DEFAULT_CODE_TREE_PREFERENCES: CodeTreePreferences = {
   tabVerticalPos: 20,
   hideWhenUrlMatches: '',
   shortcut: 'Alt+W',
+  iconTheme: 'vscode',
+  codeFontFamily: 'default',
+  codeFontSize: 13,
+  codeFontLigatures: true,
+  customEnterpriseDomains: '',
+}
+
+export type GitHubTokenProfile = {
+  id: string
+  label: string
+  token: string
 }
 
 export type ExtensionPreferences = {
@@ -29,6 +45,8 @@ export type ExtensionPreferences = {
   autoAnalyzeOnPopup: boolean
   language: AppLanguage
   codeTree: CodeTreePreferences
+  tokenProfiles: GitHubTokenProfile[]
+  activeProfileId: string
 }
 
 export const DEFAULT_EXTENSION_PREFERENCES: ExtensionPreferences = {
@@ -38,6 +56,8 @@ export const DEFAULT_EXTENSION_PREFERENCES: ExtensionPreferences = {
   autoAnalyzeOnPopup: true,
   language: 'auto',
   codeTree: DEFAULT_CODE_TREE_PREFERENCES,
+  tokenProfiles: [],
+  activeProfileId: 'default',
 }
 
 export type FavoriteItem = {
@@ -84,6 +104,12 @@ export async function getStoredPreferences(): Promise<ExtensionPreferences> {
         ...DEFAULT_CODE_TREE_PREFERENCES,
         ...((stored.codeTree as Record<string, unknown>) || {}),
       },
+      tokenProfiles: Array.isArray(stored.tokenProfiles)
+        ? (stored.tokenProfiles as GitHubTokenProfile[])
+        : DEFAULT_EXTENSION_PREFERENCES.tokenProfiles,
+      activeProfileId: typeof stored.activeProfileId === 'string'
+        ? stored.activeProfileId
+        : DEFAULT_EXTENSION_PREFERENCES.activeProfileId,
     }
     if (prefs.githubToken) {
       setConfiguredGitHubToken(prefs.githubToken)
@@ -91,24 +117,33 @@ export async function getStoredPreferences(): Promise<ExtensionPreferences> {
     return prefs
   }
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.PREFERENCES)
-    if (!raw) return DEFAULT_EXTENSION_PREFERENCES
-    const stored = JSON.parse(raw) || {}
-    const prefs: ExtensionPreferences = {
-      ...DEFAULT_EXTENSION_PREFERENCES,
-      ...stored,
-      codeTree: {
-        ...DEFAULT_CODE_TREE_PREFERENCES,
-        ...((stored.codeTree as Record<string, unknown>) || {}),
-      },
+    if (typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function') {
+      const raw = localStorage.getItem(STORAGE_KEYS.PREFERENCES)
+      if (!raw) return DEFAULT_EXTENSION_PREFERENCES
+      const stored = JSON.parse(raw) || {}
+      const prefs: ExtensionPreferences = {
+        ...DEFAULT_EXTENSION_PREFERENCES,
+        ...stored,
+        codeTree: {
+          ...DEFAULT_CODE_TREE_PREFERENCES,
+          ...((stored.codeTree as Record<string, unknown>) || {}),
+        },
+        tokenProfiles: Array.isArray(stored.tokenProfiles)
+          ? (stored.tokenProfiles as GitHubTokenProfile[])
+          : DEFAULT_EXTENSION_PREFERENCES.tokenProfiles,
+        activeProfileId: typeof stored.activeProfileId === 'string'
+          ? stored.activeProfileId
+          : DEFAULT_EXTENSION_PREFERENCES.activeProfileId,
+      }
+      if (prefs.githubToken) {
+        setConfiguredGitHubToken(prefs.githubToken)
+      }
+      return prefs
     }
-    if (prefs.githubToken) {
-      setConfiguredGitHubToken(prefs.githubToken)
-    }
-    return prefs
   } catch {
     return DEFAULT_EXTENSION_PREFERENCES
   }
+  return DEFAULT_EXTENSION_PREFERENCES
 }
 
 /**
@@ -136,7 +171,7 @@ export async function saveStoredPreferences(prefs: Partial<ExtensionPreferences>
   const storage = getChromeStorageLocal()
   if (storage) {
     await storage.set({ [STORAGE_KEYS.PREFERENCES]: updated })
-  } else if (typeof localStorage !== 'undefined') {
+  } else if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
     localStorage.setItem(STORAGE_KEYS.PREFERENCES, JSON.stringify(updated))
   }
   return updated
