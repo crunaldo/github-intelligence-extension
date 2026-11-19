@@ -10,7 +10,9 @@ import {
   extractRepoFromAnchorData,
   RESERVED_GITHUB_NAMES,
 } from '../src/features/repository/github'
-import type { GitHubTarget } from '../src/features/repository/types'
+import type { GitHubTarget, TreeEntry, RepositoryReport } from '../src/features/repository/types'
+import { injectCodeTreeHost } from '../src/extension/content/dockHost'
+import { InPageCodeTreeDock } from '../src/extension/components/InPageCodeTreeDock'
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -125,6 +127,92 @@ export default defineContentScript({
         mascotRoot?.render(React.createElement(FloatingMascot, { repo: activeRepo }))
       }
 
+      // =========================================================================
+      // In-page Octotree-Style Hybrid Code Tree Dock
+      // =========================================================================
+      let dockRoot: Root | null = null
+      let currentRepoKey: string | null = null
+
+      function updateDock(repo: { owner: string; repo: string; ref?: string; fullName: string; url: string }) {
+        if (typeof document === 'undefined') return
+
+        const { shadowRoot } = injectCodeTreeHost()
+
+        let mountPoint = shadowRoot.getElementById('gpi-dock-root')
+        if (!mountPoint) {
+          mountPoint = document.createElement('div')
+          mountPoint.id = 'gpi-dock-root'
+          shadowRoot.appendChild(mountPoint)
+        }
+
+        if (!dockRoot) {
+          dockRoot = createRoot(mountPoint)
+        }
+
+        const renderDock = (report?: RepositoryReport, isPro = false) => {
+          const treeEntries: TreeEntry[] =
+            report?.tree && report.tree.length > 0 ? report.tree : report?.importantFiles || []
+          const isAnalyzed = Boolean(report && treeEntries.length > 0)
+
+          const vulnerableManifests: string[] = []
+          const auditConcerns = report?.aiAnalysis?.deepAudit?.concerns || []
+          if (auditConcerns.length > 0 && report?.dependencies) {
+            report.dependencies.forEach((dep) => {
+              const isMentioned = auditConcerns.some((c) =>
+                c.toLowerCase().includes(dep.name.toLowerCase())
+              )
+              if (isMentioned && dep.manifest) {
+                vulnerableManifests.push(dep.manifest)
+              }
+            })
+          }
+
+          dockRoot?.render(
+            React.createElement(InPageCodeTreeDock, {
+              owner: repo.owner,
+              repo: repo.repo,
+              ref: repo.ref || report?.resolvedRef || report?.repository?.defaultBranch || 'main',
+              initialEntries: treeEntries,
+              isAnalyzed: isAnalyzed,
+              isPro: isPro,
+              vulnerableManifests,
+              onOpenSidepanel: () => {
+                chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' }).catch(() => {})
+              },
+              onTriggerAnalysis: () => {
+                chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' }).catch(() => {})
+              },
+            })
+          )
+        }
+
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+          chrome.storage.local.get(['gpi_reports', 'gpi_auth_session'], (res) => {
+            const reports = (res?.gpi_reports as Record<string, RepositoryReport>) || {}
+            const report = (reports[repo.fullName.toLowerCase()] || reports[repo.fullName]) as
+              | RepositoryReport
+              | undefined
+            const authSession = res?.gpi_auth_session as { isPro?: boolean } | undefined
+            const isPro = Boolean(authSession?.isPro)
+            renderDock(report, isPro)
+          })
+        } else {
+          renderDock()
+        }
+      }
+
+      function unmountDock() {
+        if (dockRoot) {
+          dockRoot.unmount()
+          dockRoot = null
+        }
+        const host = typeof document !== 'undefined' ? document.getElementById('gpi-code-tree-host') : null
+        if (host && host.parentNode) {
+          host.parentNode.removeChild(host)
+        }
+        currentRepoKey = null
+      }
+
       let lastUrl = window.location.href
 
       function notifyNavigation() {
@@ -147,6 +235,16 @@ export default defineContentScript({
               }
             : null
         )
+
+        if (repo) {
+          const nextKey = `${repo.fullName.toLowerCase()}@${repo.ref || ''}`
+          if (currentRepoKey !== nextKey) {
+            currentRepoKey = nextKey
+            updateDock(repo)
+          }
+        } else {
+          unmountDock()
+        }
 
         try {
           chrome.runtime.sendMessage({
@@ -172,6 +270,17 @@ export default defineContentScript({
         }
       })
       observer.observe(document.documentElement, { childList: true, subtree: true })
+
+      if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+        chrome.storage.onChanged.addListener((changes, areaName) => {
+          if (areaName === 'local' && (changes.gpi_reports || changes.gpi_auth_session)) {
+            const repo = parseGitHubRepo(window.location.href)
+            if (repo) {
+              updateDock(repo)
+            }
+          }
+        })
+      }
 
       chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         if (request?.type === 'GET_CURRENT_PAGE_REPO') {
