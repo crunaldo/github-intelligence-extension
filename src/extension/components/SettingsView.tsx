@@ -267,63 +267,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* 1. Language Selector Card (Multi-language Support for Chrome Web Store) */}
-      <div className="insight-card" style={{ border: '1px solid var(--border-medium)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <Globe size={16} style={{ color: 'var(--accent-cyan)' }} />
-          <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
-            {t('language_title', activeLocale)}
-          </span>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-          {[
-            {
-              key: 'auto' as AppLanguage,
-              label: t('language_auto', activeLocale),
-              sub: `(${systemDetectedLocale.toUpperCase()})`,
-            },
-            {
-              key: 'es' as AppLanguage,
-              label: 'Español',
-              sub: 'Spanish',
-            },
-            {
-              key: 'en' as AppLanguage,
-              label: 'English',
-              sub: 'Inglés',
-            },
-          ].map(({ key, label, sub }) => {
-            const isSelected = preferences.language === key
-            return (
-              <button
-                key={key}
-                type="button"
-                className={`btn-secondary ${isSelected ? 'active' : ''}`}
-                onClick={() => void onSavePreferences({ language: key })}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '9px 8px',
-                  borderRadius: 'var(--radius-sm)',
-                  borderColor: isSelected ? 'var(--accent-cyan)' : undefined,
-                  background: isSelected ? 'var(--accent-cyan-subtle)' : undefined,
-                  color: isSelected ? 'var(--accent-cyan)' : 'var(--text-primary)',
-                  fontWeight: isSelected ? 700 : 500,
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <span style={{ fontSize: 12 }}>{label}</span>
-                <span style={{ fontSize: 10, opacity: 0.75, marginTop: 2 }}>{sub}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* 1.5 Pro Plan & Membership Card */}
+      {/* 1. Pro Plan & Membership Card */}
       <div className={`insight-card pro-plan-hero-card ${authSession?.isPro ? 'is-pro' : ''}`}>
         {/* Top Header Row with Mascot, Title & Status */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
@@ -1293,6 +1237,62 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
             onChange={(e) => void onSavePreferences({ autoSync: e.target.checked })}
             style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--accent-cyan)' }}
           />
+        </div>
+      </div>
+
+      {/* Language Selector Card */}
+      <div className="insight-card" style={{ border: '1px solid var(--border-medium)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <Globe size={16} style={{ color: 'var(--accent-cyan)' }} />
+          <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
+            {t('language_title', activeLocale)}
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+          {[
+            {
+              key: 'auto' as AppLanguage,
+              label: t('language_auto', activeLocale),
+              sub: `(${systemDetectedLocale.toUpperCase()})`,
+            },
+            {
+              key: 'es' as AppLanguage,
+              label: 'Español',
+              sub: 'Spanish',
+            },
+            {
+              key: 'en' as AppLanguage,
+              label: 'English',
+              sub: 'Inglés',
+            },
+          ].map(({ key, label, sub }) => {
+            const isSelected = preferences.language === key
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`btn-secondary ${isSelected ? 'active' : ''}`}
+                onClick={() => void onSavePreferences({ language: key })}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '9px 8px',
+                  borderRadius: 'var(--radius-sm)',
+                  borderColor: isSelected ? 'var(--accent-cyan)' : undefined,
+                  background: isSelected ? 'var(--accent-cyan-subtle)' : undefined,
+                  color: isSelected ? 'var(--accent-cyan)' : 'var(--text-primary)',
+                  fontWeight: isSelected ? 700 : 500,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <span style={{ fontSize: 12 }}>{label}</span>
+                <span style={{ fontSize: 10, opacity: 0.75, marginTop: 2 }}>{sub}</span>
+              </button>
+            )
+          })}
         </div>
       </div>
 
