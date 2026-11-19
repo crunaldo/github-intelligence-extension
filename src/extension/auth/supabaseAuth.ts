@@ -14,6 +14,7 @@ export interface AuthSession {
 }
 
 const AUTH_SESSION_STORAGE_KEY = 'gpi_auth_session'
+const DAILY_QUOTA_STORAGE_KEY = 'gpi_daily_quota_exceeded'
 const DEFAULT_SUPABASE_URL = 'https://your-project.supabase.co'
 const DEFAULT_SUPABASE_ANON_KEY = 'public-anon-key-placeholder'
 const DEFAULT_LEMON_SQUEEZY_CHECKOUT_URL =
@@ -333,14 +334,58 @@ export async function refreshProStatus(): Promise<AuthSession | null> {
   const session = await getAuthSession()
   if (!session) return null
 
-  const proStatus = await fetchProStatus(getSupabaseUrl(), session.accessToken, session.user.id)
+  const supabaseUrl = getSupabaseUrl()
+  let proStatus = await fetchProStatus(supabaseUrl, session.accessToken, session.user.id)
+
+  // If token was expired/rejected, attempt token refresh and retry query
+  if (proStatus === null && session.refreshToken) {
+    const refreshedToken = await refreshSessionToken(session)
+    if (refreshedToken) {
+      proStatus = await fetchProStatus(supabaseUrl, refreshedToken.accessToken, refreshedToken.user.id)
+    }
+  }
+
   if (proStatus === null) {
     return session
+  }
+
+  if (proStatus) {
+    const storage = getChromeStorageLocal()
+    if (storage) {
+      await storage.remove(DAILY_QUOTA_STORAGE_KEY).catch(() => {})
+    } else if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(DAILY_QUOTA_STORAGE_KEY)
+    }
   }
 
   const updated: AuthSession = { ...session, isPro: proStatus }
   await saveAuthSession(updated)
   return updated
+}
+
+/**
+ * Subscribes to live changes in the persisted authentication session across extension tabs/contexts.
+ */
+export function subscribeToAuthSession(
+  callback: (session: AuthSession | null) => void
+): () => void {
+  const listener = (
+    changes: Record<string, chrome.storage.StorageChange>,
+    areaName: string
+  ) => {
+    if (areaName === 'local' && changes[AUTH_SESSION_STORAGE_KEY]) {
+      callback((changes[AUTH_SESSION_STORAGE_KEY].newValue as AuthSession) || null)
+    }
+  }
+
+  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+    chrome.storage.onChanged.addListener(listener)
+    return () => {
+      chrome.storage.onChanged.removeListener(listener)
+    }
+  }
+
+  return () => {}
 }
 
 async function exchangePkceCode(

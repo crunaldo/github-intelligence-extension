@@ -34,7 +34,12 @@ import {
   sanitizeCommitRef,
   type RemoteConfig,
 } from '../api/backendClient'
-import { getAuthSession, type AuthSession } from '../auth/supabaseAuth'
+import {
+  getAuthSession,
+  refreshProStatus,
+  subscribeToAuthSession,
+  type AuthSession,
+} from '../auth/supabaseAuth'
 import { ProFeatureGateCard } from '../components/ProFeatureGateCard'
 import { createReportExport, downloadReport } from '../../features/repository/export'
 import {
@@ -104,8 +109,36 @@ export function SidepanelApp() {
 
   useEffect(() => {
     void detectSystemHardware().then(setHardware)
-    void fetchRemoteConfig().then(setRemoteConfig).catch(() => {})
     void getAuthSession().then(setSession).catch(() => {})
+    void refreshProStatus().then((s) => s && setSession(s)).catch(() => {})
+    void fetchRemoteConfig().then(setRemoteConfig).catch(() => {})
+
+    // Subscribe to live auth session updates across storage
+    const unsubscribeAuth = subscribeToAuthSession((updated) => {
+      setSession(updated)
+    })
+
+    // Auto-sync on window focus or visibility change
+    const handleSync = () => {
+      void refreshProStatus().then((s) => s && setSession(s)).catch(() => {})
+      void fetchRemoteConfig({ forceRefresh: true }).then(setRemoteConfig).catch(() => {})
+    }
+
+    window.addEventListener('focus', handleSync)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') handleSync()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    // Periodic sync every 45s while open
+    const interval = setInterval(handleSync, 45_000)
+
+    return () => {
+      unsubscribeAuth()
+      window.removeEventListener('focus', handleSync)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      clearInterval(interval)
+    }
   }, [])
 
   const isPro = Boolean(session?.isPro)
@@ -185,15 +218,25 @@ export function SidepanelApp() {
       if (!force) {
         const cached = await getCachedReport(target.originalUrl)
         if (cached) {
-          // Provide smooth visual feedback with beam loader for cached reports
-          await new Promise((r) => setTimeout(r, 450))
-          if (inFlightUrlRef.current !== target.originalUrl) return
-          setReport(cached)
-          setQuotaExceeded(false)
-          setNav('analyze')
-          setLoading(false)
-          inFlightUrlRef.current = null
-          return
+          const isProUser = Boolean(session?.isPro)
+          const needsArch = isProUser || archAccess === 'free'
+          const hasArch = Boolean(cached.aiAnalysis?.architectureDiagram)
+
+          if (needsArch && cached.aiAnalysis && !hasArch) {
+            // The cached report was created under Free tier without architectureDiagram.
+            // Invalidate the stripped AI analysis so fresh Pro analysis is fetched
+            cached.aiAnalysis = undefined
+          } else {
+            // Provide smooth visual feedback with beam loader for cached reports
+            await new Promise((r) => setTimeout(r, 450))
+            if (inFlightUrlRef.current !== target.originalUrl) return
+            setReport(cached)
+            setQuotaExceeded(false)
+            setNav('analyze')
+            setLoading(false)
+            inFlightUrlRef.current = null
+            return
+          }
         }
       }
 
@@ -283,8 +326,31 @@ export function SidepanelApp() {
         }
       }
     },
-    []
+    [session?.isPro, archAccess]
   )
+
+  // Automatically fetch missing architecture diagram if user is/becomes Pro while viewing a cached report
+  useEffect(() => {
+    if (isPro && report && report.aiAnalysis && !report.aiAnalysis.architectureDiagram) {
+      const owner = report.repository?.owner || report.target?.owner
+      const repo = report.repository?.name || report.target?.repository
+      const commitSha = sanitizeCommitRef(
+        report.latestCommit?.sha || report.resolvedRef || report.repository?.defaultBranch
+      )
+      if (owner && repo) {
+        void fetchRepoIntelligence(owner, repo, commitSha, { forceRefresh: true })
+          .then((aiAnalysis) => {
+            setReport((prev) => {
+              if (!prev) return prev
+              const updated = { ...prev, aiAnalysis }
+              void saveCachedReport(updated)
+              return updated
+            })
+          })
+          .catch(() => {})
+      }
+    }
+  }, [isPro, report])
 
   // Detect pending analysis from context menu / floating pill, active tab, and live messages
   useEffect(() => {
@@ -852,6 +918,16 @@ export function SidepanelApp() {
                         report={report}
                         locale={activeLocale}
                         diagramsEnabled={remoteConfig?.featureFlags.enableDiagrams}
+                        archAccess={archAccess}
+                        isPro={isPro}
+                        onAnalysisUpdated={(updatedAnalysis) => {
+                          setReport((prev) => {
+                            if (!prev) return prev
+                            const updated = { ...prev, aiAnalysis: updatedAnalysis }
+                            void saveCachedReport(updated)
+                            return updated
+                          })
+                        }}
                         onQuotaExceeded={() => {
                           setQuotaExceeded(true)
                           setReport(null)

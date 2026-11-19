@@ -309,6 +309,7 @@ async function writeLocalIntelligenceCacheEntry(
 export async function clearLocalIntelligenceCache(): Promise<void> {
   memoryIntelligenceCache.clear()
   inFlightIntelligenceRequests.clear()
+  memoryRemoteConfig = null
   const storage = getChromeStorageLocal()
   if (storage && typeof storage.remove === 'function') {
     try {
@@ -439,7 +440,13 @@ export async function fetchRepoIntelligence(
   if (!options?.forceRefresh) {
     const cached = await readLocalIntelligenceCacheEntry(cacheKey, safeCommitSha)
     if (cached) {
-      return cached
+      // If current user is Pro, but cached data lacks architectureDiagram (e.g. cached prior to Pro upgrade), bypass cache
+      const isProUser = Boolean(session?.isPro)
+      if (isProUser && !cached.architectureDiagram) {
+        // Stale stripped cache entry - proceed to fetch full Pro intelligence
+      } else {
+        return cached
+      }
     }
 
     const existingInFlight = inFlightIntelligenceRequests.get(cacheKey)
@@ -486,10 +493,18 @@ export async function fetchRepoIntelligence(
   return requestPromise
 }
 
+let memoryRemoteConfig: { config: RemoteConfig; timestamp: number } | null = null
+const REMOTE_CONFIG_TTL_MS = 30_000
+
 /**
  * Fetches dynamic feature flags and quota limits from the Edge Worker `/v1/config` endpoint.
+ * Caches in memory for 30 seconds unless options.forceRefresh is true.
  */
-export async function fetchRemoteConfig(): Promise<RemoteConfig> {
+export async function fetchRemoteConfig(options?: { forceRefresh?: boolean }): Promise<RemoteConfig> {
+  if (!options?.forceRefresh && memoryRemoteConfig && Date.now() - memoryRemoteConfig.timestamp < REMOTE_CONFIG_TTL_MS) {
+    return memoryRemoteConfig.config
+  }
+
   const res = await fetch(`${getBackendBaseUrl()}/v1/config`, {
     method: 'GET',
   })
@@ -514,7 +529,7 @@ export async function fetchRemoteConfig(): Promise<RemoteConfig> {
     }
   }
 
-  return {
+  const config: RemoteConfig = {
     freeDailyLimit: Number.isFinite(freeDailyLimit) ? freeDailyLimit : 15,
     proDailyLimit: Number.isFinite(proDailyLimit) ? proDailyLimit : 250,
     featureFlags: {
@@ -527,6 +542,9 @@ export async function fetchRemoteConfig(): Promise<RemoteConfig> {
     },
     analysisModules,
   }
+
+  memoryRemoteConfig = { config, timestamp: Date.now() }
+  return config
 }
 
 /**

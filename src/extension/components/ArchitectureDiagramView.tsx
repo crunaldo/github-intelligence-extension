@@ -20,11 +20,13 @@ import {
   fetchRepoIntelligence,
   sanitizeCommitRef,
   type FilteredAnalysisResult,
+  type ModuleAccessLevel,
 } from '../api/backendClient'
 import {
   getAuthSession,
   initiateProUpgrade,
   refreshProStatus,
+  subscribeToAuthSession,
   type AuthSession,
 } from '../auth/supabaseAuth'
 import { t, type ActiveLocale } from '../i18n'
@@ -35,6 +37,9 @@ type ArchitectureDiagramViewProps = {
   report: RepositoryReport
   locale?: ActiveLocale
   diagramsEnabled?: boolean
+  archAccess?: ModuleAccessLevel
+  isPro?: boolean
+  onAnalysisUpdated?: (updatedAnalysis: FilteredAnalysisResult) => void
   onQuotaExceeded?: () => void
 }
 
@@ -55,6 +60,9 @@ export function ArchitectureDiagramView({
   report,
   locale = 'es',
   diagramsEnabled,
+  archAccess,
+  isPro,
+  onAnalysisUpdated,
   onQuotaExceeded,
 }: ArchitectureDiagramViewProps) {
   const isEs = locale === 'es'
@@ -77,6 +85,17 @@ export function ArchitectureDiagramView({
   const [upgradeNotice, setUpgradeNotice] = useState<string | null>(null)
   const [retryTick, setRetryTick] = useState(0)
   const [forceNextFetch, setForceNextFetch] = useState(false)
+
+  const effectiveIsPro = isPro !== undefined ? isPro : Boolean(session?.isPro)
+  const effectiveArchAccess = archAccess ?? 'pro'
+
+  // Subscribe to live auth session updates across storage
+  useEffect(() => {
+    void getAuthSession().then(setSession).catch(() => {})
+    return subscribeToAuthSession((updated) => {
+      setSession(updated)
+    })
+  }, [])
 
   useEffect(() => {
     if (typeof diagramsEnabled === 'boolean') {
@@ -103,7 +122,8 @@ export function ArchitectureDiagramView({
       setForceNextFetch(false)
     }
 
-    if (report.aiAnalysis && !shouldForce) {
+    // If report already has architectureDiagram and we're not forcing refresh, render directly
+    if (report.aiAnalysis?.architectureDiagram && !shouldForce) {
       setAnalysis(report.aiAnalysis)
       setLoading(false)
       setQuotaExceeded(false)
@@ -114,7 +134,7 @@ export function ArchitectureDiagramView({
           : fetchRemoteConfig().catch(() => null),
       ]).then(([currentSession, remoteConfig]) => {
         if (cancelled) return
-        setSession(currentSession)
+        if (currentSession) setSession(currentSession)
         if (remoteConfig) {
           setRemoteDiagramsEnabled(remoteConfig.featureFlags.enableDiagrams)
         }
@@ -122,13 +142,29 @@ export function ArchitectureDiagramView({
       return
     }
 
+    // If user is truly free (not Pro) and module is configured as Pro-only, and we already have a summary:
+    // Do not waste requests since backend will strip the diagram anyway
+    if (report.aiAnalysis && !shouldForce && !effectiveIsPro && effectiveArchAccess === 'pro') {
+      setAnalysis(report.aiAnalysis)
+      setLoading(false)
+      setQuotaExceeded(false)
+      void getAuthSession().then((s) => !cancelled && s && setSession(s))
+      return
+    }
+
+    // Otherwise (user is Pro, or module is free, or we need to fetch missing architecture diagram):
     setLoading(true)
     setQuotaExceeded(false)
     setMaintenanceMessage(null)
     setErrorMessage(null)
 
     void Promise.all([
-      fetchRepoIntelligence(owner, repo, commitSha, shouldForce ? { forceRefresh: true } : undefined),
+      fetchRepoIntelligence(
+        owner,
+        repo,
+        commitSha,
+        shouldForce || !report.aiAnalysis?.architectureDiagram ? { forceRefresh: true } : undefined
+      ),
       getAuthSession(),
       typeof diagramsEnabled === 'boolean'
         ? Promise.resolve(null)
@@ -137,17 +173,20 @@ export function ArchitectureDiagramView({
       .then(([intel, currentSession, remoteConfig]) => {
         if (cancelled) return
         setAnalysis(intel)
-        setSession(currentSession)
+        if (currentSession) setSession(currentSession)
         if (remoteConfig) {
           setRemoteDiagramsEnabled(remoteConfig.featureFlags.enableDiagrams)
         }
         setLoading(false)
+        if (intel.architectureDiagram) {
+          onAnalysisUpdated?.(intel)
+        }
       })
       .catch(async (err: unknown) => {
         if (cancelled) return
         const currentSession = await getAuthSession().catch(() => null)
         if (cancelled) return
-        setSession(currentSession)
+        if (currentSession) setSession(currentSession)
         const state = classifySummaryError(err)
         if (state.quotaExceeded) {
           setQuotaExceeded(true)
@@ -163,7 +202,16 @@ export function ArchitectureDiagramView({
     return () => {
       cancelled = true
     }
-  }, [report, retryTick, diagramsEnabled, forceNextFetch, onQuotaExceeded])
+  }, [
+    report,
+    retryTick,
+    diagramsEnabled,
+    forceNextFetch,
+    onQuotaExceeded,
+    effectiveIsPro,
+    effectiveArchAccess,
+    onAnalysisUpdated,
+  ])
 
   const rawDiagramCode = analysis?.architectureDiagram?.trim() || ''
   const diagramCode = useMemo(() => sanitizeMermaidDiagram(rawDiagramCode), [rawDiagramCode])
@@ -324,9 +372,24 @@ export function ArchitectureDiagramView({
     )
   }
 
-  const isProDiagramsDisabled = !diagramCode && (!remoteDiagramsEnabled && Boolean(session?.isPro))
+  // 1. Is diagrams module disabled globally or individually?
+  if (effectiveArchAccess === 'disabled' || remoteDiagramsEnabled === false) {
+    return (
+      <div className="architecture-diagram-card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+          <AlertCircle size={15} style={{ color: 'var(--accent-amber)', flexShrink: 0 }} />
+          <span>
+            {isEs
+              ? 'Los diagramas de arquitectura están temporalmente desactivados por configuración.'
+              : 'Architecture diagrams are temporarily disabled via remote configuration.'}
+          </span>
+        </div>
+      </div>
+    )
+  }
 
-  if (!diagramCode && !isProDiagramsDisabled) {
+  // 2. Is this module configured as Pro-only and the user is NOT Pro?
+  if (effectiveArchAccess === 'pro' && !effectiveIsPro) {
     return (
       <div
         className="architecture-diagram-card"
@@ -386,6 +449,34 @@ export function ArchitectureDiagramView({
     )
   }
 
+  // 3. User is Pro (or module is Free), but diagramCode is empty:
+  if (!diagramCode) {
+    return (
+      <div className="architecture-diagram-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+          <AlertCircle size={15} style={{ color: 'var(--accent-amber)', flexShrink: 0 }} />
+          <span>
+            {isEs
+              ? 'No se pudo generar el diagrama de arquitectura para este repositorio.'
+              : 'Could not generate architecture diagram for this repository.'}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => {
+            setForceNextFetch(true)
+            setRetryTick((n) => n + 1)
+          }}
+          style={{ padding: '4px 8px', fontSize: 11, flexShrink: 0 }}
+        >
+          <RefreshCw size={11} />
+          <span>{t('retry_btn', locale)}</span>
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div className="architecture-diagram-card">
@@ -431,20 +522,7 @@ export function ArchitectureDiagramView({
           )}
         </div>
 
-        {isProDiagramsDisabled ? (
-          <div
-            style={{
-              padding: 12,
-              borderRadius: 'var(--radius-sm)',
-              background: 'rgba(245, 158, 11, 0.08)',
-              border: '1px solid rgba(245, 158, 11, 0.3)',
-              fontSize: 12,
-              color: 'var(--text-secondary)',
-            }}
-          >
-            {t('pro_diagrams_disabled_notice', locale)}
-          </div>
-        ) : viewMode === 'diagram' && !renderFailed ? (
+        {viewMode === 'diagram' && !renderFailed ? (
           <div className="diagram-canvas-box" style={{ padding: 10, overflowX: 'auto' }}>
             <div ref={svgContainerRef} className="mermaid-rendered-svg" style={{ width: '100%' }} />
           </div>

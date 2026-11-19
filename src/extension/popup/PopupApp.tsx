@@ -26,11 +26,18 @@ import {
   clearLocalIntelligenceCache,
   fetchRemoteConfig,
   fetchRepoIntelligence,
+  getModuleAccess,
   isDailyQuotaExceeded,
   markDailyQuotaExceeded,
   sanitizeCommitRef,
   type RemoteConfig,
 } from '../api/backendClient'
+import {
+  getAuthSession,
+  refreshProStatus,
+  subscribeToAuthSession,
+  type AuthSession,
+} from '../auth/supabaseAuth'
 import { createReportExport } from '../../features/repository/export'
 import {
   getStoredPreferences,
@@ -86,6 +93,7 @@ export function PopupApp() {
   const [isFavorite, setIsFavorite] = useState<boolean>(false)
   const [activeSubTab, setActiveSubTab] = useState<'hardware' | 'roadmap' | 'details' | null>(null)
   const [remoteConfig, setRemoteConfig] = useState<RemoteConfig | null>(null)
+  const [session, setSession] = useState<AuthSession | null>(null)
   const [refreshNonce, setRefreshNonce] = useState<number>(0)
   const [showSearch, setShowSearch] = useState<boolean>(false)
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false)
@@ -93,10 +101,38 @@ export function PopupApp() {
   const abortControllerRef = useRef<AbortController | null>(null)
   const inFlightUrlRef = useRef<string | null>(null)
 
-  // Detect system hardware and remote config on mount
+  const isPro = Boolean(session?.isPro)
+  const archAccess = getModuleAccess(remoteConfig, 'architectureDiagram', 'pro')
+
+  // Detect system hardware, remote config, and auth session with live sync
   useEffect(() => {
     void detectSystemHardware().then(setHardware)
+    void getAuthSession().then(setSession).catch(() => {})
+    void refreshProStatus().then((s) => s && setSession(s)).catch(() => {})
     void fetchRemoteConfig().then(setRemoteConfig).catch(() => {})
+
+    const unsubscribeAuth = subscribeToAuthSession((updated) => {
+      setSession(updated)
+    })
+
+    const handleSync = () => {
+      void refreshProStatus().then((s) => s && setSession(s)).catch(() => {})
+      void fetchRemoteConfig({ forceRefresh: true }).then(setRemoteConfig).catch(() => {})
+    }
+
+    window.addEventListener('focus', handleSync)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') handleSync()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    const interval = setInterval(handleSync, 45_000)
+
+    return () => {
+      unsubscribeAuth()
+      window.removeEventListener('focus', handleSync)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      clearInterval(interval)
+    }
   }, [])
 
   const compat = useMemo(() => {
@@ -144,13 +180,23 @@ export function PopupApp() {
     if (!force) {
       const cached = await getCachedReport(target.originalUrl)
       if (cached) {
-        await new Promise((r) => setTimeout(r, 450))
-        if (inFlightUrlRef.current !== target.originalUrl) return
-        setReport(cached)
-        setQuotaExceeded(false)
-        setLoading(false)
-        inFlightUrlRef.current = null
-        return
+        const isProUser = Boolean(session?.isPro)
+        const needsArch = isProUser || archAccess === 'free'
+        const hasArch = Boolean(cached.aiAnalysis?.architectureDiagram)
+
+        if (needsArch && cached.aiAnalysis && !hasArch) {
+          // The cached report was created under Free tier without architectureDiagram.
+          // Invalidate the stripped AI analysis so fresh Pro analysis is fetched
+          cached.aiAnalysis = undefined
+        } else {
+          await new Promise((r) => setTimeout(r, 450))
+          if (inFlightUrlRef.current !== target.originalUrl) return
+          setReport(cached)
+          setQuotaExceeded(false)
+          setLoading(false)
+          inFlightUrlRef.current = null
+          return
+        }
       }
     }
 
@@ -796,6 +842,16 @@ export function PopupApp() {
                   report={report}
                   locale={activeLocale}
                   diagramsEnabled={remoteConfig?.featureFlags.enableDiagrams}
+                  archAccess={archAccess}
+                  isPro={isPro}
+                  onAnalysisUpdated={(updatedAnalysis) => {
+                    setReport((prev) => {
+                      if (!prev) return prev
+                      const updated = { ...prev, aiAnalysis: updatedAnalysis }
+                      void saveCachedReport(updated)
+                      return updated
+                    })
+                  }}
                   onQuotaExceeded={() => {
                     setQuotaExceeded(true)
                     setReport(null)

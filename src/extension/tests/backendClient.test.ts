@@ -750,5 +750,71 @@ describe('Extension Backend Client & Auth', () => {
       expect(getModuleAccess(cfg, 'unconfiguredModule', 'free')).toBe('free')
       expect(getModuleAccess(null, 'summary', 'pro')).toBe('pro')
     })
+
+    it('bypasses stripped cache entries lacking architectureDiagram when requester is Pro', async () => {
+      // 1. First fetch as free user: returns summary without architectureDiagram
+      await saveAuthSession({
+        accessToken: 'free-token',
+        user: { id: 'user-free-pro-test', userName: 'protester' },
+        isPro: false,
+      })
+
+      const freeResult = {
+        summary: {
+          headline: 'Free summary',
+          whatItIs: 'A library',
+          whyItMatters: 'Important',
+          practicalUse: 'Useful',
+          targetAudience: 'Developers',
+          stackPills: ['JS'],
+        },
+        providerUsed: 'cfAi',
+        tokensConsumed: 100,
+      }
+
+      const proResult = {
+        summary: {
+          headline: 'Pro summary',
+          whatItIs: 'A library',
+          whyItMatters: 'Important',
+          practicalUse: 'Useful',
+          targetAudience: 'Developers',
+          stackPills: ['JS'],
+        },
+        architectureDiagram: 'graph TD; A-->B;',
+        deepAudit: { strengths: ['Fast'], concerns: [] },
+        providerUsed: 'cfAi',
+        tokensConsumed: 200,
+      }
+
+      let fetchCallCount = 0
+      globalThis.fetch = vi.fn(async (url: string) => {
+        if (url.includes('/v1/analyze')) {
+          fetchCallCount++
+          return {
+            status: 200,
+            ok: true,
+            json: async () => (fetchCallCount === 1 ? freeResult : proResult),
+          }
+        }
+        return { ok: false, status: 404, json: async () => ({}) }
+      }) as unknown as typeof fetch
+
+      const res1 = await fetchRepoIntelligence('owner-test', 'repo-test', 'commit-123')
+      expect(fetchCallCount).toBe(1)
+      expect(res1.architectureDiagram).toBeUndefined()
+
+      // 2. User gets upgraded to Pro
+      await saveAuthSession({
+        accessToken: 'pro-token',
+        user: { id: 'user-free-pro-test', userName: 'protester' },
+        isPro: true,
+      })
+
+      // 3. Second fetch with Pro session: detects missing architectureDiagram and bypasses stale cache
+      const res2 = await fetchRepoIntelligence('owner-test', 'repo-test', 'commit-123')
+      expect(fetchCallCount).toBe(2)
+      expect(res2.architectureDiagram).toBe('graph TD; A-->B;')
+    })
   })
 })
