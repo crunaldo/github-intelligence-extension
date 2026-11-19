@@ -314,4 +314,55 @@ describe('InPageCodeTreeDock', () => {
     expect(inDockSettings).not.toBeNull()
     expect(inDockSettings?.textContent).toContain('Ajustes del Explorador')
   })
+
+  it('renders PR changed files with additions, deletions, and diff status badges', async () => {
+    const root = createRoot(container)
+    const mockPrResolution = {
+      isPrOrCommit: true,
+      type: 'pr' as const,
+      title: 'PR #28000: Add features',
+      files: [
+        {
+          filename: 'src/components/Header.tsx',
+          status: 'modified' as const,
+          additions: 14,
+          deletions: 2,
+          changes: 16,
+          diffAnchor: 'diff-header-anchor',
+        },
+        {
+          filename: 'src/utils/newHelper.ts',
+          status: 'added' as const,
+          additions: 25,
+          deletions: 0,
+          changes: 25,
+          diffAnchor: 'diff-helper-anchor',
+        },
+      ],
+    }
+
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          isAnalyzed={false}
+          defaultOpen={true}
+          prOrCommitResolution={mockPrResolution}
+        />
+      )
+    })
+
+    const modeTabs = container.querySelector('.gpi-mode-tabs')
+    expect(modeTabs).not.toBeNull()
+    expect(modeTabs?.textContent).toContain('PR #28000')
+
+    const fileRows = container.querySelectorAll('.gpi-tree-row')
+    expect(fileRows.length).toBe(2)
+    expect(container.textContent).toContain('src/components/Header.tsx')
+    expect(container.textContent).toContain('+14')
+    expect(container.textContent).toContain('-2')
+    expect(container.textContent).toContain('src/utils/newHelper.ts')
+    expect(container.textContent).toContain('+25')
+  })
 })

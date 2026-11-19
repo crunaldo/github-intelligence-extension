@@ -16,6 +16,7 @@ import { InPageCodeTreeDock } from '../src/extension/components/InPageCodeTreeDo
 import type { CodeTreePreferences } from '../src/extension/storage'
 import { DEFAULT_CODE_TREE_PREFERENCES } from '../src/extension/storage'
 import { applyCodeFontSettings } from '../src/extension/content/codeFontInjector'
+import { parsePrOrCommitUrl } from '../src/extension/utils/prCommitResolver'
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -267,7 +268,9 @@ export default defineContentScript({
         )
 
         if (repo) {
-          const nextKey = `${repo.fullName.toLowerCase()}@${repo.ref || ''}`
+          const prTarget = parsePrOrCommitUrl(currentUrl)
+          const targetSuffix = prTarget.isPrOrCommit ? `${prTarget.type}:${prTarget.id}` : (repo.ref || '')
+          const nextKey = `${repo.fullName.toLowerCase()}@${targetSuffix}`
           if (currentRepoKey !== nextKey) {
             currentRepoKey = nextKey
             updateDock(repo)

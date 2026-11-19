@@ -19,12 +19,20 @@ import {
   Pin,
   PinOff,
   ArrowLeft,
+  GitPullRequest,
+  GitCommit,
 } from 'lucide-react'
 import type { TreeEntry } from '../../features/repository/types'
 import { classifyFile, getFileIcon } from '../utils/fileClassifier'
 import { FileAiExplainerPopover } from './FileAiExplainerPopover'
 import type { CodeTreePreferences } from '../storage'
-import { DEFAULT_CODE_TREE_PREFERENCES, saveStoredPreferences } from '../storage'
+import { DEFAULT_CODE_TREE_PREFERENCES, saveStoredPreferences, getStoredGitHubToken } from '../storage'
+import {
+  parsePrOrCommitUrl,
+  resolvePrOrCommitFiles,
+  type PrFileEntry,
+  type PrOrCommitResolution,
+} from '../utils/prCommitResolver'
 
 export interface InPageCodeTreeDockProps {
   owner: string
@@ -39,6 +47,7 @@ export interface InPageCodeTreeDockProps {
   onOpenSidepanel?: () => void
   onOpenSettings?: () => void
   onTriggerAnalysis?: () => void
+  prOrCommitResolution?: PrOrCommitResolution | null
 }
 
 interface TreeNode {
@@ -68,6 +77,7 @@ export function InPageCodeTreeDock({
   onOpenSidepanel,
   onOpenSettings,
   onTriggerAnalysis,
+  prOrCommitResolution,
 }: InPageCodeTreeDockProps) {
   const [isOpen, setIsOpen] = useState(() => {
     if (defaultOpen !== undefined) return defaultOpen
@@ -116,7 +126,43 @@ export function InPageCodeTreeDock({
   })
   const [explainingFile, setExplainingFile] = useState<string | null>(null)
   const [popoverTop, setPopoverTop] = useState<number>(100)
+  const [prResolution, setPrResolution] = useState<PrOrCommitResolution | null>(() => prOrCommitResolution || null)
+  const [prViewTab, setPrViewTab] = useState<'pr' | 'tree'>('pr')
   const isResizingRef = useRef(false)
+
+  // Resolve PR or Commit changed files when visiting a pull request or commit page
+  useEffect(() => {
+    if (prOrCommitResolution !== undefined) {
+      setPrResolution(prOrCommitResolution)
+      if (prOrCommitResolution && prOrCommitResolution.files.length > 0) {
+        setPrViewTab('pr')
+      }
+      return
+    }
+
+    if (typeof window === 'undefined') return
+    const target = parsePrOrCommitUrl(window.location.href)
+    if (
+      target.isPrOrCommit &&
+      target.owner?.toLowerCase() === owner.toLowerCase() &&
+      target.repo?.toLowerCase() === repo.toLowerCase()
+    ) {
+      getStoredGitHubToken()
+        .then((token) => {
+          resolvePrOrCommitFiles(target, token)
+            .then((res) => {
+              if (res.isPrOrCommit && res.files.length > 0) {
+                setPrResolution(res)
+                setPrViewTab('pr')
+              }
+            })
+            .catch(() => {})
+        })
+        .catch(() => {})
+    } else {
+      setPrResolution(null)
+    }
+  }, [owner, repo, prOrCommitResolution])
 
   // Load saved width & open state from chrome.storage
   useEffect(() => {
@@ -681,8 +727,30 @@ export function InPageCodeTreeDock({
           </div>
         ) : (
           <>
+            {/* PR & Commit Mode Switcher */}
+            {prResolution && prResolution.files.length > 0 && (
+              <div className="gpi-mode-tabs">
+                <button
+                  type="button"
+                  className={`gpi-mode-tab ${prViewTab === 'pr' ? 'active' : ''}`}
+                  onClick={() => setPrViewTab('pr')}
+                >
+                  {prResolution.type === 'pr' ? <GitPullRequest size={12} /> : <GitCommit size={12} />}
+                  <span>{prResolution.title || (prResolution.type === 'pr' ? 'PR' : 'Commit')} ({prResolution.files.length})</span>
+                </button>
+                <button
+                  type="button"
+                  className={`gpi-mode-tab ${prViewTab === 'tree' ? 'active' : ''}`}
+                  onClick={() => setPrViewTab('tree')}
+                >
+                  <Folder size={12} />
+                  <span>Repositorio</span>
+                </button>
+              </div>
+            )}
+
             {/* Search */}
-            {isAnalyzed && (
+            {(isAnalyzed || (prResolution && prResolution.files.length > 0)) && (
               <div className="gpi-search-container">
                 <Search size={12} className="gpi-search-icon" />
                 <input
@@ -697,7 +765,68 @@ export function InPageCodeTreeDock({
 
             {/* Body Content */}
             <div className="gpi-tree-body">
-              {!isAnalyzed ? (
+              {prResolution && prResolution.files.length > 0 && prViewTab === 'pr' ? (
+                (() => {
+                  const query = searchQuery.toLowerCase().trim()
+                  const filtered = prResolution.files.filter((f) =>
+                    query ? f.filename.toLowerCase().includes(query) : true
+                  )
+                  if (filtered.length === 0) {
+                    return (
+                      <div style={{ padding: 20, textAlign: 'center', color: 'var(--gpi-text-muted)', fontSize: 12 }}>
+                        No se encontraron archivos en este cambio
+                      </div>
+                    )
+                  }
+                  return filtered.map((file) => {
+                    const fileUrl = `#${file.diffAnchor}`
+                    return (
+                      <div
+                        key={file.filename}
+                        className="gpi-tree-row"
+                        style={{ paddingLeft: 14, paddingRight: 8 }}
+                        title={file.filename}
+                      >
+                        <a
+                          href={fileUrl}
+                          className="gpi-tree-left"
+                          style={{ textDecoration: 'none', color: 'inherit', flex: 1, minWidth: 0 }}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            const targetEl =
+                              document.getElementById(file.diffAnchor) ||
+                              document.querySelector(`[data-tagsearch-path="${file.filename}"]`) ||
+                              document.querySelector(`[data-path="${file.filename}"]`)
+                            if (targetEl) {
+                              targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                              try {
+                                window.history.replaceState(null, '', `#${file.diffAnchor}`)
+                              } catch {}
+                            } else {
+                              const target = parsePrOrCommitUrl(window.location.href)
+                              if (target.type === 'pr' && target.pullNumber) {
+                                window.location.href = `https://github.com/${owner}/${repo}/pull/${target.pullNumber}/files#${file.diffAnchor}`
+                              }
+                            }
+                          }}
+                        >
+                          {getFileIcon(file.filename, codeTreePreferences?.iconTheme || 'vscode')}
+                          <span className="gpi-tree-label" style={{ fontSize: 12 }}>
+                            {file.filename}
+                          </span>
+                          <span className="gpi-diff-stats">
+                            {file.additions > 0 && <span className="gpi-diff-add">+{file.additions}</span>}
+                            {file.deletions > 0 && <span className="gpi-diff-del">-{file.deletions}</span>}
+                            <span className={`gpi-diff-status gpi-status-${file.status}`}>
+                              {file.status[0].toUpperCase()}
+                            </span>
+                          </span>
+                        </a>
+                      </div>
+                    )
+                  })
+                })()
+              ) : !isAnalyzed ? (
                 <div className="gpi-cta-box">
                   <Zap size={24} style={{ color: '#eab308', margin: '0 auto 8px auto', display: 'block' }} />
                   <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>

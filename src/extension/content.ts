@@ -7,6 +7,7 @@ import type { TreeEntry, RepositoryReport } from '../features/repository/types'
 import type { CodeTreePreferences } from './storage'
 import { DEFAULT_CODE_TREE_PREFERENCES } from './storage'
 import { applyCodeFontSettings } from './content/codeFontInjector'
+import { parsePrOrCommitUrl } from './utils/prCommitResolver'
 
 const RESERVED_NAMES = new Set([
   'about',
@@ -201,7 +202,9 @@ function handleNavigation() {
   }
 
   if (repo) {
-    const nextKey = `${repo.fullName.toLowerCase()}@${repo.ref || ''}`
+    const prTarget = parsePrOrCommitUrl(window.location.href)
+    const targetSuffix = prTarget.isPrOrCommit ? `${prTarget.type}:${prTarget.id}` : (repo.ref || '')
+    const nextKey = `${repo.fullName.toLowerCase()}@${targetSuffix}`
     if (currentRepoKey !== nextKey) {
       currentRepoKey = nextKey
       updateDock(repo)

@@ -440,4 +440,89 @@ export const DOCK_CSS = `
 .gpi-cta-btn:hover {
   background: #2ea043;
 }
+
+/* PR & Commit Changes View */
+.gpi-mode-tabs {
+  display: flex;
+  background: var(--gpi-bg-secondary);
+  border-bottom: 1px solid var(--gpi-border);
+  padding: 4px 8px;
+  gap: 4px;
+}
+
+.gpi-mode-tab {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--gpi-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+}
+
+.gpi-mode-tab.active {
+  background: var(--gpi-bg);
+  color: var(--gpi-accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.gpi-pr-banner {
+  padding: 6px 12px;
+  background: rgba(56, 189, 248, 0.08);
+  border-bottom: 1px solid var(--gpi-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--gpi-text);
+}
+
+.gpi-diff-stats {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-family: ui-monospace, monospace;
+}
+
+.gpi-diff-add {
+  color: #2ea043;
+  font-weight: 600;
+}
+
+.gpi-diff-del {
+  color: #f85149;
+  font-weight: 600;
+}
+
+.gpi-diff-status {
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.gpi-status-added {
+  background: rgba(46, 160, 67, 0.2);
+  color: #2ea043;
+}
+
+.gpi-status-modified {
+  background: rgba(210, 153, 34, 0.2);
+  color: #d29922;
+}
+
+.gpi-status-deleted {
+  background: rgba(248, 81, 73, 0.2);
+  color: #f85149;
+}
 `
