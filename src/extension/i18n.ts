@@ -263,6 +263,16 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     pro_feat_tokens: 'Multi-Token & Enterprise',
     pro_feat_tokens_desc: 'Perfiles de PAT y soporte para dominios corporativos.',
     pro_refresh_status: 'Actualizar estado',
+    pro_tag_best_value: 'MÁS POPULAR',
+    pro_price_val: '$4.99',
+    pro_price_interval: '/ mes',
+    pro_price_cancel_note: 'Suscripción flexible · Cancela cuando quieras',
+    pro_feat_ai_limits: '250 consultas diarias de IA (frente a 15 de Free)',
+    pro_feat_octo_chat: 'Mascota Asistente Octo con streaming en tiempo real',
+    pro_feat_deep_audit: 'Auditoría técnica profunda de fortalezas y riesgos',
+    pro_feat_code_tree: 'Árbol de código en página con temas VS Code y Seti',
+    pro_feat_multi_pat: 'Múltiples perfiles PAT y GitHub Enterprise',
+    pro_active_license_msg: 'Tu cuenta cuenta con acceso ilimitado a todas las capacidades Pro.',
   },
 
   en: {
@@ -470,6 +480,16 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     pro_feat_tokens: 'Multi-Token & Enterprise',
     pro_feat_tokens_desc: 'PAT profiles and enterprise domain support.',
     pro_refresh_status: 'Refresh status',
+    pro_tag_best_value: 'MOST POPULAR',
+    pro_price_val: '$4.99',
+    pro_price_interval: '/ month',
+    pro_price_cancel_note: 'Flexible plan · Cancel anytime',
+    pro_feat_ai_limits: '250 daily AI queries (vs 15 on Free)',
+    pro_feat_octo_chat: 'Octo Assistant Mascot with real-time SSE streaming',
+    pro_feat_deep_audit: 'Deep technical strengths & concerns audit',
+    pro_feat_code_tree: 'In-page code tree with VS Code & Seti themes',
+    pro_feat_multi_pat: 'Multi-account PAT profiles & GitHub Enterprise',
+    pro_active_license_msg: 'Your account has full unlimited access to all Pro features.',
   },
 }
 

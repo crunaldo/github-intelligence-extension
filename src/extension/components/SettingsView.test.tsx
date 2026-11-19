@@ -31,8 +31,8 @@ describe('SettingsView - Collapsible Sections and Pro Plan', () => {
     const proCard = container.querySelector('.pro-plan-hero-card')
     expect(proCard).not.toBeNull()
     expect(proCard?.textContent).toContain('Plan Pro & Autenticación')
-    expect(proCard?.textContent).toContain('Árbol de Código Avanzado')
-    expect(proCard?.textContent).toContain('Auditoría Técnica Profunda')
+    expect(proCard?.textContent).toContain('Árbol de código en página')
+    expect(proCard?.textContent).toContain('Auditoría técnica profunda')
     expect(proCard?.textContent).toContain('Mascota Asistente Octo')
   })
 
