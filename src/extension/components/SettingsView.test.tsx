@@ -4,6 +4,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createRoot } from 'react-dom/client'
 import { SettingsView } from './SettingsView'
 import { DEFAULT_EXTENSION_PREFERENCES } from '../storage'
+import * as supabaseAuth from '../auth/supabaseAuth'
+
+vi.mock('../auth/supabaseAuth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../auth/supabaseAuth')>()
+  return {
+    ...actual,
+    getAuthSession: vi.fn().mockResolvedValue(null),
+    refreshProStatus: vi.fn().mockResolvedValue(null),
+  }
+})
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -31,9 +41,72 @@ describe('SettingsView - Collapsible Sections and Pro Plan', () => {
     const proCard = container.querySelector('.pro-plan-hero-card')
     expect(proCard).not.toBeNull()
     expect(proCard?.textContent).toContain('Plan Pro & Autenticación')
+    expect(proCard?.textContent).toContain('PLAN FREE')
     expect(proCard?.textContent).toContain('Árbol de código en página')
     expect(proCard?.textContent).toContain('Auditoría técnica profunda')
     expect(proCard?.textContent).toContain('Mascota Asistente Octo')
+    expect(proCard?.textContent).toContain('$4.99')
+  })
+
+  it('hides checklist and price when user has active Pro membership', async () => {
+    vi.mocked(supabaseAuth.getAuthSession).mockResolvedValueOnce({
+      accessToken: 'token-123',
+      user: { id: 'usr_1', userName: 'pro_developer' },
+      isPro: true,
+    })
+
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <SettingsView
+          preferences={DEFAULT_EXTENSION_PREFERENCES}
+          onSavePreferences={vi.fn()}
+          onClearCache={vi.fn()}
+          locale="es"
+        />
+      )
+    })
+
+    const proCard = container.querySelector('.pro-plan-hero-card')
+    expect(proCard).not.toBeNull()
+    expect(proCard?.textContent).toContain('PRO ACTIVO')
+    expect(proCard?.textContent).toContain('@pro_developer')
+    // No checklist when Pro
+    expect(proCard?.textContent).not.toContain('Árbol de código en página')
+    expect(proCard?.textContent).not.toContain('Auditoría técnica profunda')
+    // No price when connected
+    expect(proCard?.textContent).not.toContain('$4.99')
+  })
+
+  it('hides price when user is connected to GitHub on Free plan', async () => {
+    vi.mocked(supabaseAuth.getAuthSession).mockResolvedValueOnce({
+      accessToken: 'token-456',
+      user: { id: 'usr_2', userName: 'free_developer' },
+      isPro: false,
+    })
+
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <SettingsView
+          preferences={DEFAULT_EXTENSION_PREFERENCES}
+          onSavePreferences={vi.fn()}
+          onClearCache={vi.fn()}
+          locale="es"
+        />
+      )
+    })
+
+    const proCard = container.querySelector('.pro-plan-hero-card')
+    expect(proCard).not.toBeNull()
+    expect(proCard?.textContent).toContain('PLAN FREE')
+    expect(proCard?.textContent).toContain('@free_developer')
+    // Shows checklist for Free plan
+    expect(proCard?.textContent).toContain('Árbol de código en página')
+    // Does NOT show price when connected
+    expect(proCard?.textContent).not.toContain('$4.99')
+    // Upgrade button without price in label
+    expect(proCard?.textContent).toContain('Mejorar a Pro')
   })
 
   it('has heavy sections collapsed by default and expands them on header click', async () => {

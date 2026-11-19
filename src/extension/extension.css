@@ -3705,104 +3705,53 @@ body {
 }
 
 /* ==========================================================================
-   8. Pro Pricing Hero Card (Magic UI & HeroUI Inspired)
+   8. Pro & Account Plan Card (Clean, High-Legibility)
    ========================================================================== */
-.pro-pricing-magic-card {
+.pro-plan-hero-card {
   position: relative;
-  border-radius: var(--radius-lg, 12px);
-  background: linear-gradient(135deg, rgba(255, 47, 90, 0.05) 0%, rgba(139, 92, 246, 0.08) 50%, rgba(56, 189, 248, 0.05) 100%);
-  border: 1px solid rgba(139, 92, 246, 0.35);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 8px 30px rgba(0, 0, 0, 0.25);
-  overflow: hidden;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  background: var(--bg-card);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 0.2s ease;
 }
 
-[data-theme='light'] .pro-pricing-magic-card {
-  background: linear-gradient(135deg, rgba(255, 47, 90, 0.04) 0%, rgba(139, 92, 246, 0.06) 50%, rgba(56, 189, 248, 0.04) 100%);
-  border-color: rgba(139, 92, 246, 0.3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 20px rgba(0, 0, 0, 0.06);
+.pro-plan-hero-card.is-pro {
+  border-color: rgba(16, 185, 129, 0.4);
 }
 
-@keyframes magic-shine-sweep {
-  0% { transform: translateX(-150%) rotate(45deg); }
-  100% { transform: translateX(250%) rotate(45deg); }
-}
-
-.magic-shine-overlay {
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.03) 40%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.03) 60%,
-    transparent 100%
-  );
-  pointer-events: none;
-  animation: magic-shine-sweep 8s infinite ease-in-out;
-}
-
-@keyframes shimmer-btn-sweep {
-  0% { transform: translateX(-150%); }
-  100% { transform: translateX(150%); }
-}
-
-.magic-shimmer-btn {
-  position: relative;
-  overflow: hidden;
-  background: linear-gradient(135deg, #FF2F5A 0%, #8B5CF6 50%, #38BDF8 100%);
-  color: #ffffff !important;
-  font-weight: 700;
-  border: none;
-  border-radius: var(--radius-sm, 6px);
-  padding: 8px 16px;
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(255, 47, 90, 0.35);
+.pro-badge-pill {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 7px;
-  transition: all 0.2s ease;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-.magic-shimmer-btn::after {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
-  animation: shimmer-btn-sweep 2.8s infinite ease-in-out;
-  pointer-events: none;
+.pro-badge-pill.free {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-medium);
+  color: var(--text-secondary);
 }
 
-.magic-shimmer-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(255, 47, 90, 0.5);
-  filter: brightness(1.05);
-}
-
-.magic-feature-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 0;
-  font-size: 11.5px;
-  line-height: 1.4;
-  color: var(--text-primary);
-}
-
-.magic-check-badge {
-  width: 17px;
-  height: 17px;
-  border-radius: 50%;
-  background: rgba(16, 185, 129, 0.15);
+.pro-badge-pill.active {
+  background: rgba(16, 185, 129, 0.12);
   border: 1px solid rgba(16, 185, 129, 0.35);
   color: var(--accent-emerald);
+}
+
+.pro-benefit-item {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.4;
 }

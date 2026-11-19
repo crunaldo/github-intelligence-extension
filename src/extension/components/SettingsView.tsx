@@ -21,7 +21,6 @@ import {
   ChevronRight,
   Users,
 } from 'lucide-react'
-import { SpotlightCard } from './SpotlightCard'
 import { AnalysisMascot } from './AnalysisMascot'
 import type { ExtensionPreferences } from '../storage'
 import { DEFAULT_CODE_TREE_PREFERENCES } from '../storage'
@@ -324,194 +323,110 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
         </div>
       </div>
 
-      {/* 1.5 Pro Plan & Membership Hero Card (Magic UI & HeroUI Inspired) */}
-      <SpotlightCard
-        className="insight-card pro-plan-hero-card pro-pricing-magic-card"
-        spotlightColor="rgba(255, 47, 90, 0.16)"
-        borderColor="rgba(139, 92, 246, 0.35)"
-        radius="12px"
-        style={{ padding: '18px 16px', position: 'relative', overflow: 'hidden' }}
-      >
-        <div className="magic-shine-overlay" />
-
-        {/* Top Header Row with Mascot, Title & Price Tag */}
+      {/* 1.5 Pro Plan & Membership Card */}
+      <div className={`insight-card pro-plan-hero-card ${authSession?.isPro ? 'is-pro' : ''}`}>
+        {/* Top Header Row with Mascot, Title & Status */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ flexShrink: 0 }}>
-              <AnalysisMascot moodOverride={authSession?.isPro ? 'cool' : 'sparkle'} size={52} />
+              <AnalysisMascot moodOverride={authSession?.isPro ? 'cool' : 'neutral'} size={38} />
             </div>
             <div>
-              <div
-                style={{
-                  display: 'inline-block',
-                  fontSize: 9.5,
-                  fontWeight: 800,
-                  letterSpacing: '0.06em',
-                  textTransform: 'uppercase',
-                  color: 'var(--brand-primary, #FF2F5A)',
-                  background: 'rgba(255, 47, 90, 0.12)',
-                  border: '1px solid rgba(255, 47, 90, 0.25)',
-                  padding: '2px 8px',
-                  borderRadius: 12,
-                  marginBottom: 4,
-                }}
-              >
-                PRO TIER · INTELLIGENCE
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontWeight: 800, fontSize: 13.5, color: 'var(--text-primary)' }}>
+                  {t('pro_plan_title', activeLocale)}
+                </span>
+                {authSession?.isPro ? (
+                  <span className="pro-badge-pill active">
+                    <span
+                      style={{
+                        width: 5,
+                        height: 5,
+                        borderRadius: '50%',
+                        background: 'var(--accent-emerald)',
+                      }}
+                    />
+                    {t('pro_badge_active', activeLocale)}
+                  </span>
+                ) : (
+                  <span className="pro-badge-pill free">
+                    {t('pro_badge_free', activeLocale)}
+                  </span>
+                )}
               </div>
-              <div
-                style={{
-                  fontWeight: 900,
-                  fontSize: 15,
-                  color: 'var(--text-primary)',
-                  letterSpacing: '-0.01em',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                }}
-              >
-                <span>{t('pro_plan_title', activeLocale)}</span>
-                <Sparkles size={14} style={{ color: 'var(--brand-primary, #FF2F5A)' }} />
-              </div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.4 }}>
-                {t('pro_plan_desc', activeLocale)}
+              <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.4 }}>
+                {authSession?.isPro
+                  ? t('pro_active_license_msg', activeLocale)
+                  : t('pro_plan_desc', activeLocale)}
               </div>
             </div>
           </div>
 
-          {/* Price & Status Badge */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-              <span style={{ fontSize: 24, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }}>
-                {t('pro_price_val', activeLocale)}
-              </span>
-              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-                {t('pro_price_interval', activeLocale)}
+          {/* Price Tag: ONLY shown if NOT connected to account */}
+          {!authSession && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {t('pro_price_val', activeLocale)}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {t('pro_price_interval', activeLocale)}
+                </span>
+              </div>
+              <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>
+                {t('pro_price_cancel_note', activeLocale)}
               </span>
             </div>
-
-            {authSession?.isPro ? (
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '3px 10px',
-                  borderRadius: 20,
-                  background: 'rgba(16, 185, 129, 0.15)',
-                  border: '1px solid rgba(16, 185, 129, 0.4)',
-                  color: 'var(--accent-emerald)',
-                  fontSize: 10,
-                  fontWeight: 800,
-                  letterSpacing: '0.04em',
-                  boxShadow: '0 0 10px rgba(16, 185, 129, 0.2)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <span
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: 'var(--accent-emerald)',
-                    boxShadow: '0 0 6px var(--accent-emerald)',
-                  }}
-                />
-                <span>{t('pro_badge_active', activeLocale)}</span>
-              </div>
-            ) : (
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '3px 9px',
-                  borderRadius: 20,
-                  background: 'rgba(255, 47, 90, 0.12)',
-                  border: '1px solid rgba(255, 47, 90, 0.3)',
-                  color: 'var(--brand-primary, #FF2F5A)',
-                  fontSize: 9.5,
-                  fontWeight: 800,
-                  letterSpacing: '0.04em',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <Zap size={11} />
-                <span>{t('pro_tag_best_value', activeLocale)}</span>
-              </div>
-            )}
-            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-              {t('pro_price_cancel_note', activeLocale)}
-            </span>
-          </div>
+          )}
         </div>
 
-        {/* Value Proposition Grid (HeroUI / Magic UI style checklist) */}
-        <div
-          style={{
-            margin: '14px 0',
-            padding: '12px 14px',
-            borderRadius: 'var(--radius-sm, 8px)',
-            background: 'rgba(0, 0, 0, 0.22)',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: '8px 14px',
-          }}
-        >
-          <div className="magic-feature-row">
-            <div className="magic-check-badge">
-              <Check size={11} strokeWidth={3} />
+        {/* Feature Benefits: ONLY shown if NOT Pro */}
+        {!authSession?.isPro && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '6px 14px',
+              paddingTop: 8,
+              borderTop: '1px solid var(--border-subtle)',
+            }}
+          >
+            <div className="pro-benefit-item">
+              <Check size={12} style={{ color: 'var(--accent-emerald)', flexShrink: 0 }} strokeWidth={2.5} />
+              <span>{t('pro_feat_ai_limits', activeLocale)}</span>
             </div>
-            <span>{t('pro_feat_ai_limits', activeLocale)}</span>
-          </div>
-
-          <div className="magic-feature-row">
-            <div className="magic-check-badge">
-              <Check size={11} strokeWidth={3} />
+            <div className="pro-benefit-item">
+              <Check size={12} style={{ color: 'var(--accent-emerald)', flexShrink: 0 }} strokeWidth={2.5} />
+              <span>{t('pro_feat_octo_chat', activeLocale)}</span>
             </div>
-            <span>{t('pro_feat_octo_chat', activeLocale)}</span>
-          </div>
-
-          <div className="magic-feature-row">
-            <div className="magic-check-badge">
-              <Check size={11} strokeWidth={3} />
+            <div className="pro-benefit-item">
+              <Check size={12} style={{ color: 'var(--accent-emerald)', flexShrink: 0 }} strokeWidth={2.5} />
+              <span>{t('pro_feat_deep_audit', activeLocale)}</span>
             </div>
-            <span>{t('pro_feat_deep_audit', activeLocale)}</span>
-          </div>
-
-          <div className="magic-feature-row">
-            <div className="magic-check-badge">
-              <Check size={11} strokeWidth={3} />
+            <div className="pro-benefit-item">
+              <Check size={12} style={{ color: 'var(--accent-emerald)', flexShrink: 0 }} strokeWidth={2.5} />
+              <span>{t('pro_feat_code_tree', activeLocale)}</span>
             </div>
-            <span>{t('pro_feat_code_tree', activeLocale)}</span>
-          </div>
-
-          <div className="magic-feature-row">
-            <div className="magic-check-badge">
-              <Check size={11} strokeWidth={3} />
+            <div className="pro-benefit-item">
+              <Check size={12} style={{ color: 'var(--accent-emerald)', flexShrink: 0 }} strokeWidth={2.5} />
+              <span>{t('pro_feat_multi_pat', activeLocale)}</span>
             </div>
-            <span>{t('pro_feat_multi_pat', activeLocale)}</span>
-          </div>
-
-          <div className="magic-feature-row">
-            <div className="magic-check-badge">
-              <Check size={11} strokeWidth={3} />
+            <div className="pro-benefit-item">
+              <Check size={12} style={{ color: 'var(--accent-emerald)', flexShrink: 0 }} strokeWidth={2.5} />
+              <span>{activeLocale === 'es' ? 'Caché acelerado en Edge (Cloudflare KV)' : 'Edge accelerated cache (Cloudflare KV)'}</span>
             </div>
-            <span>{activeLocale === 'es' ? 'Caché acelerado en Edge (Cloudflare KV)' : 'Edge accelerated cache (Cloudflare KV)'}</span>
           </div>
-        </div>
+        )}
 
-        {/* User Identity & Action Bar (HeroUI Card Footer style) */}
+        {/* User Identity & Action Bar */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 10,
-            padding: '10px 14px',
-            background: 'rgba(0, 0, 0, 0.28)',
-            borderRadius: 'var(--radius-sm, 8px)',
-            border: '1px solid var(--border-subtle)',
+            paddingTop: 8,
+            borderTop: '1px solid var(--border-subtle)',
             flexWrap: 'wrap',
           }}
         >
@@ -519,20 +434,20 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div
                 style={{
-                  width: 24,
-                  height: 24,
+                  width: 22,
+                  height: 22,
                   borderRadius: '50%',
-                  background: 'rgba(56, 189, 248, 0.15)',
-                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-medium)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   color: 'var(--accent-cyan)',
                 }}
               >
-                <Users size={13} />
+                <Users size={12} />
               </div>
-              <div style={{ fontSize: 12 }}>
+              <div style={{ fontSize: 11.5 }}>
                 <span style={{ color: 'var(--text-secondary)' }}>{t('pro_connected_as', activeLocale)} </span>
                 <strong style={{ color: 'var(--text-primary)' }}>
                   @{authSession.user.userName || authSession.user.email || authSession.user.id}
@@ -540,12 +455,12 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
               </div>
             </div>
           ) : (
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Sparkles size={13} style={{ color: 'var(--brand-primary)' }} />
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Sparkles size={12} style={{ color: 'var(--accent-cyan)' }} />
               <span>
                 {activeLocale === 'es'
-                  ? 'Conecta GitHub para activar tu membresía Pro'
-                  : 'Connect GitHub to activate your Pro membership'}
+                  ? 'Conecta GitHub para sincronizar tu cuenta'
+                  : 'Connect GitHub to sync your account'}
               </span>
             </div>
           )}
@@ -554,10 +469,10 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
             {!authSession && (
               <button
                 type="button"
-                className="btn-secondary"
+                className="btn-primary"
                 onClick={() => void handleGitHubSignIn()}
                 disabled={authBusy}
-                style={{ padding: '6px 12px', fontSize: 11.5, fontWeight: 600 }}
+                style={{ padding: '5px 12px', fontSize: 11.5, fontWeight: 600 }}
               >
                 <span>{t('pro_sign_in_github', activeLocale)}</span>
               </button>
@@ -566,13 +481,17 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
             {!authSession?.isPro && (
               <button
                 type="button"
-                className="magic-shimmer-btn"
+                className="btn-primary"
                 onClick={() => void handleUpgradeToPro()}
                 disabled={authBusy}
-                style={{ padding: '6px 16px', fontSize: 12 }}
+                style={{ padding: '5px 12px', fontSize: 11.5, fontWeight: 600 }}
               >
-                <Sparkles size={13} />
-                <span>{t('pro_upgrade_btn', activeLocale)}</span>
+                <Sparkles size={12} />
+                <span>
+                  {authSession
+                    ? (activeLocale === 'es' ? 'Mejorar a Pro' : 'Upgrade to Pro')
+                    : t('pro_upgrade_btn', activeLocale)}
+                </span>
               </button>
             )}
 
@@ -584,11 +503,11 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                   gap: 5,
                   color: 'var(--accent-emerald)',
                   fontSize: 11.5,
-                  fontWeight: 700,
-                  padding: '4px 8px',
+                  fontWeight: 600,
+                  padding: '2px 6px',
                 }}
               >
-                <CheckCircle2 size={14} />
+                <CheckCircle2 size={13} />
                 <span>{activeLocale === 'es' ? 'Licencia Pro Verificada' : 'Pro License Verified'}</span>
               </div>
             )}
@@ -600,9 +519,9 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                 onClick={() => void handleRefreshProStatus()}
                 disabled={authBusy}
                 title={t('pro_refresh_status', activeLocale)}
-                style={{ padding: '6px 10px', fontSize: 11.5 }}
+                style={{ padding: '5px 9px', fontSize: 11.5 }}
               >
-                <RefreshCw size={12} className={authBusy ? 'animate-spin' : ''} />
+                <RefreshCw size={11} className={authBusy ? 'animate-spin' : ''} />
                 <span>{t('pro_refresh_status', activeLocale)}</span>
               </button>
             )}
@@ -614,9 +533,9 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                 onClick={() => void handleSignOut()}
                 disabled={authBusy}
                 title={t('pro_sign_out', activeLocale)}
-                style={{ padding: '6px 10px', fontSize: 11.5 }}
+                style={{ padding: '5px 9px', fontSize: 11.5 }}
               >
-                <LogOut size={12} />
+                <LogOut size={11} />
                 <span>{t('pro_sign_out', activeLocale)}</span>
               </button>
             )}
@@ -627,8 +546,8 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
           <div
             role="alert"
             style={{
-              marginTop: 10,
-              padding: '8px 10px',
+              marginTop: 6,
+              padding: '7px 10px',
               borderRadius: 'var(--radius-sm)',
               fontSize: 11.5,
               display: 'flex',
@@ -643,7 +562,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
             <span>{authNotice}</span>
           </div>
         )}
-      </SpotlightCard>
+      </div>
 
       {/* 2. GitHub Token Configuration Card (Collapsible) */}
       <div className="insight-card" style={{ border: '1px solid var(--border-medium)', padding: 0, overflow: 'hidden' }}>
