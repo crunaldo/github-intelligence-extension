@@ -21,7 +21,7 @@ import {
   ArrowLeft,
 } from 'lucide-react'
 import type { TreeEntry } from '../../features/repository/types'
-import { classifyFile } from '../utils/fileClassifier'
+import { classifyFile, getFileIcon } from '../utils/fileClassifier'
 import { FileAiExplainerPopover } from './FileAiExplainerPopover'
 import type { CodeTreePreferences } from '../storage'
 import { DEFAULT_CODE_TREE_PREFERENCES, saveStoredPreferences } from '../storage'
@@ -54,16 +54,6 @@ const STORAGE_OPEN_KEY = 'gpi_dock_is_open'
 const DEFAULT_WIDTH = 320
 const MIN_WIDTH = 240
 const MAX_WIDTH = 600
-
-function getFileIcon(fileName: string) {
-  const lower = fileName.toLowerCase()
-  if (lower.endsWith('.tsx') || lower.endsWith('.jsx')) return <FileCode size={13} style={{ color: '#38bdf8' }} />
-  if (lower.endsWith('.ts') || lower.endsWith('.js') || lower.endsWith('.mjs')) return <FileCode size={13} style={{ color: '#60a5fa' }} />
-  if (lower.endsWith('.json') || lower.endsWith('.yaml') || lower.endsWith('.yml') || lower.endsWith('.toml')) return <FileJson size={13} style={{ color: '#fbbf24' }} />
-  if (lower.endsWith('.css') || lower.endsWith('.scss') || lower.endsWith('.less')) return <Palette size={13} style={{ color: '#c084fc' }} />
-  if (lower.endsWith('.md') || lower.endsWith('.txt')) return <FileText size={13} style={{ color: '#34d399' }} />
-  return <FileCode size={13} style={{ color: '#94a3b8' }} />
-}
 
 export function InPageCodeTreeDock({
   owner,
@@ -414,7 +404,7 @@ export function InPageCodeTreeDock({
             style={{ textDecoration: 'none', color: 'inherit', flex: 1, minWidth: 0 }}
             onClick={(e) => handleFileClick(e, fileUrl)}
           >
-            {getFileIcon(node.name)}
+            {getFileIcon(node.name, codeTreePreferences.iconTheme || 'vscode')}
             <span className="gpi-tree-label">{node.name}</span>
             {badge.label && (
               <span
