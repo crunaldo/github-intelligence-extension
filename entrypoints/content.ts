@@ -15,6 +15,7 @@ import { injectCodeTreeHost } from '../src/extension/content/dockHost'
 import { InPageCodeTreeDock } from '../src/extension/components/InPageCodeTreeDock'
 import type { CodeTreePreferences } from '../src/extension/storage'
 import { DEFAULT_CODE_TREE_PREFERENCES } from '../src/extension/storage'
+import { applyCodeFontSettings } from '../src/extension/content/codeFontInjector'
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -222,6 +223,7 @@ export default defineContentScript({
               ...DEFAULT_CODE_TREE_PREFERENCES,
               ...(prefs?.codeTree || {}),
             }
+            applyCodeFontSettings(codeTreePrefs)
             renderDock(report, isPro, codeTreePrefs)
           })
         } else {
@@ -301,10 +303,18 @@ export default defineContentScript({
 
       if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
         chrome.storage.onChanged.addListener((changes, areaName) => {
-          if (areaName === 'local' && (changes.gpi_reports || changes.gpi_auth_session || changes.gpi_preferences)) {
-            const repo = parseGitHubRepo(window.location.href)
-            if (repo) {
-              updateDock(repo)
+          if (areaName === 'local') {
+            if (changes.gpi_preferences?.newValue?.codeTree) {
+              applyCodeFontSettings({
+                ...DEFAULT_CODE_TREE_PREFERENCES,
+                ...changes.gpi_preferences.newValue.codeTree,
+              })
+            }
+            if (changes.gpi_reports || changes.gpi_auth_session || changes.gpi_preferences) {
+              const repo = parseGitHubRepo(window.location.href)
+              if (repo) {
+                updateDock(repo)
+              }
             }
           }
         })
