@@ -5,12 +5,12 @@ export const DOCK_CSS = `
   --gpi-border: #30363d;
   --gpi-text: #e6edf3;
   --gpi-text-muted: #8b949e;
-  --gpi-accent: #38bdf8;
-  --gpi-accent-hover: #0284c7;
+  --gpi-accent: #FF3B5C;
+  --gpi-accent-hover: #FF234E;
   --gpi-tab-bg: #1f2937;
-  --gpi-tab-text: #38bdf8;
+  --gpi-tab-text: #FF3B5C;
   --gpi-row-hover: #21262d;
-  --gpi-badge-bg: rgba(56, 189, 248, 0.15);
+  --gpi-badge-bg: rgba(255, 59, 92, 0.15);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
   font-size: 13px;
   line-height: 1.5;
@@ -24,12 +24,12 @@ export const DOCK_CSS = `
   --gpi-border: #d0d7de;
   --gpi-text: #1f2328;
   --gpi-text-muted: #656d76;
-  --gpi-accent: #0969da;
-  --gpi-accent-hover: #0856b5;
+  --gpi-accent: #FF2F5A;
+  --gpi-accent-hover: #E01E47;
   --gpi-tab-bg: #ffffff;
-  --gpi-tab-text: #0969da;
+  --gpi-tab-text: #FF2F5A;
   --gpi-row-hover: #f3f4f6;
-  --gpi-badge-bg: rgba(9, 105, 218, 0.1);
+  --gpi-badge-bg: rgba(255, 47, 90, 0.12);
 }
 
 *, *::before, *::after {
@@ -73,7 +73,7 @@ export const DOCK_CSS = `
   right: -46px;
   width: 46px;
   height: 56px;
-  background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%);
+  background: linear-gradient(135deg, #FF3D60 0%, #FF234E 100%);
   border: 1.5px solid rgba(255, 255, 255, 0.4);
   border-left: none;
   border-radius: 0 12px 12px 0;
@@ -84,21 +84,21 @@ export const DOCK_CSS = `
   gap: 2px;
   cursor: pointer;
   color: #ffffff;
-  box-shadow: 0 0 18px rgba(56, 189, 248, 0.6), 2px 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 18px rgba(255, 47, 90, 0.6), 2px 4px 12px rgba(0, 0, 0, 0.3);
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, background 0.2s ease;
   pointer-events: auto;
   z-index: 100;
 }
 
 :host([data-theme="light"]) .gpi-toggle-tab {
-  background: linear-gradient(135deg, #0969da 0%, #0284c7 100%);
+  background: linear-gradient(135deg, #FF3D60 0%, #FF234E 100%);
   border: 1px solid rgba(255, 255, 255, 0.5);
-  box-shadow: 0 4px 16px rgba(9, 105, 218, 0.45);
+  box-shadow: 0 4px 16px rgba(255, 47, 90, 0.45);
 }
 
 .gpi-toggle-tab:hover {
   transform: translateX(4px) scale(1.06);
-  box-shadow: 0 0 24px rgba(56, 189, 248, 0.85), 4px 6px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 24px rgba(255, 47, 90, 0.85), 4px 6px 16px rgba(0, 0, 0, 0.4);
 }
 
 .gpi-tab-label {
@@ -238,7 +238,7 @@ export const DOCK_CSS = `
 
 .gpi-btn-icon.is-active {
   color: var(--gpi-accent);
-  background: rgba(56, 189, 248, 0.15);
+  background: var(--gpi-badge-bg);
 }
 
 /* In-dock Quick Settings View */
@@ -277,30 +277,55 @@ export const DOCK_CSS = `
   justify-content: center;
   gap: 6px;
   padding: 7px 12px;
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid var(--gpi-border);
   background: var(--gpi-bg-secondary);
   color: var(--gpi-text);
   font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   width: 100%;
 }
 
 .gpi-dock-settings-btn:hover {
+  border-color: rgba(255, 47, 90, 0.4);
+  color: var(--gpi-accent);
+  background: rgba(255, 47, 90, 0.08);
+  transform: translateY(-1px);
+}
+
+.gpi-dock-settings-btn:active {
+  transform: translateY(0);
+}
+
+.gpi-dock-settings-btn.active,
+.gpi-dock-settings-btn.selected {
+  background: rgba(255, 47, 90, 0.12);
   border-color: var(--gpi-accent);
   color: var(--gpi-accent);
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(255, 47, 90, 0.15);
 }
 
 .gpi-dock-settings-btn.primary {
-  background: var(--gpi-accent);
-  color: #0d1117;
-  border-color: var(--gpi-accent);
+  background: linear-gradient(135deg, #FF3D60 0%, #FF234E 100%);
+  color: #ffffff !important;
+  border: none;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(255, 47, 90, 0.32);
 }
 
 .gpi-dock-settings-btn.primary:hover {
-  background: var(--gpi-accent-hover);
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(255, 47, 90, 0.45);
+  color: #ffffff !important;
+}
+
+.gpi-dock-settings-btn.primary:active {
+  transform: translateY(0);
+  filter: brightness(0.96);
 }
 
 /* Search Bar */
@@ -362,7 +387,7 @@ export const DOCK_CSS = `
 }
 
 .gpi-tree-row.is-active-item {
-  background: rgba(56, 189, 248, 0.18);
+  background: var(--gpi-badge-bg);
   color: var(--gpi-accent);
   font-weight: 600;
   border-left: 3px solid var(--gpi-accent);
@@ -371,9 +396,9 @@ export const DOCK_CSS = `
 }
 
 :host([data-theme="light"]) .gpi-tree-row.is-active-item {
-  background: rgba(9, 105, 218, 0.12);
-  color: #0969da;
-  border-left-color: #0969da;
+  background: var(--gpi-badge-bg);
+  color: var(--gpi-accent);
+  border-left-color: var(--gpi-accent);
 }
 
 .gpi-tree-row.is-active-item .gpi-tree-label {
@@ -494,7 +519,7 @@ export const DOCK_CSS = `
 
 .gpi-pr-banner {
   padding: 6px 12px;
-  background: rgba(56, 189, 248, 0.08);
+  background: var(--gpi-badge-bg);
   border-bottom: 1px solid var(--gpi-border);
   display: flex;
   align-items: center;

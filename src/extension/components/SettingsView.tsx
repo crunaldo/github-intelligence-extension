@@ -386,7 +386,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: 'var(--accent-cyan)',
+                  color: 'var(--brand-primary)',
                 }}
               >
                 <Users size={12} />
@@ -400,7 +400,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
             </div>
           ) : (
             <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Sparkles size={12} style={{ color: 'var(--accent-cyan)' }} />
+              <Sparkles size={12} style={{ color: 'var(--brand-primary)' }} />
               <span>
                 {activeLocale === 'es'
                   ? 'Conecta GitHub para sincronizar tu cuenta'
@@ -529,7 +529,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <KeyRound size={16} style={{ color: 'var(--accent-cyan)' }} />
+            <KeyRound size={16} style={{ color: 'var(--brand-primary)' }} />
             <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
               {t('github_token_title', activeLocale)}
             </span>
@@ -589,7 +589,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                 style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 12, color: 'var(--text-primary)' }}>
-                  <HelpCircle size={14} style={{ color: 'var(--accent-cyan)' }} />
+                  <HelpCircle size={14} style={{ color: 'var(--brand-primary)' }} />
                   <span>{t('instructions_title', activeLocale)}</span>
                 </div>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
@@ -684,7 +684,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Users size={16} style={{ color: 'var(--accent-cyan)' }} />
+            <Users size={16} style={{ color: 'var(--brand-primary)' }} />
             <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
               {t('token_profiles_title', activeLocale)}
             </span>
@@ -694,8 +694,8 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                 fontWeight: 700,
                 padding: '2px 6px',
                 borderRadius: 10,
-                background: (preferences.tokenProfiles || []).length > 0 ? 'var(--accent-cyan-subtle)' : 'rgba(100, 116, 139, 0.15)',
-                color: (preferences.tokenProfiles || []).length > 0 ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                background: (preferences.tokenProfiles || []).length > 0 ? 'var(--brand-primary-soft)' : 'rgba(100, 116, 139, 0.15)',
+                color: (preferences.tokenProfiles || []).length > 0 ? 'var(--brand-primary)' : 'var(--text-muted)',
               }}
             >
               {(preferences.tokenProfiles || []).length} {activeLocale === 'es' ? 'perfiles' : 'profiles'}
@@ -731,8 +731,8 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                         justifyContent: 'space-between',
                         padding: '8px 10px',
                         borderRadius: 'var(--radius-sm)',
-                        background: isActive ? 'var(--accent-cyan-subtle)' : 'var(--bg-input)',
-                        border: `1px solid ${isActive ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
+                        background: isActive ? 'var(--brand-primary-soft)' : 'var(--bg-input)',
+                        border: `1px solid ${isActive ? 'var(--brand-primary)' : 'var(--border-subtle)'}`,
                       }}
                     >
                       <button
@@ -748,11 +748,11 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                           gap: 8,
                         }}
                       >
-                        <span style={{ fontWeight: 600, fontSize: 12, color: isActive ? 'var(--accent-cyan)' : 'var(--text-primary)' }}>
+                        <span style={{ fontWeight: 600, fontSize: 12, color: isActive ? 'var(--brand-primary)' : 'var(--text-primary)' }}>
                           {p.label}
                         </span>
                         {isActive && (
-                          <span style={{ fontSize: 10, background: 'var(--accent-cyan)', color: '#fff', padding: '1px 5px', borderRadius: 10, fontWeight: 700 }}>
+                          <span style={{ fontSize: 10, background: 'var(--brand-primary)', color: '#fff', padding: '1px 5px', borderRadius: 10, fontWeight: 700 }}>
                             {t('token_profiles_active', activeLocale)}
                           </span>
                         )}
@@ -852,7 +852,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <FolderTree size={16} style={{ color: 'var(--accent-cyan)' }} />
+                <FolderTree size={16} style={{ color: 'var(--brand-primary)' }} />
                 <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
                   {t('code_tree_settings_title', activeLocale)}
                 </span>
@@ -892,8 +892,8 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                     justifyContent: 'space-between',
                     padding: '10px 12px',
                     borderRadius: 'var(--radius-sm)',
-                    background: isTreeEnabled ? 'var(--accent-cyan-subtle)' : 'var(--bg-input)',
-                    border: `1px solid ${isTreeEnabled ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
+                    background: isTreeEnabled ? 'var(--brand-primary-soft)' : 'var(--bg-input)',
+                    border: `1px solid ${isTreeEnabled ? 'var(--brand-primary)' : 'var(--border-subtle)'}`,
                     marginBottom: 14,
                   }}
                 >
@@ -910,7 +910,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                     aria-label={t('code_tree_enabled', activeLocale)}
                     checked={isTreeEnabled}
                     onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, enabled: e.target.checked } })}
-                    style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--accent-cyan)' }}
+                    style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-primary)' }}
                   />
                 </div>
 
@@ -938,7 +938,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                       type="checkbox"
                       checked={codeTree.pinPerWindow}
                       onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, pinPerWindow: e.target.checked } })}
-                      style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--accent-cyan)' }}
+                      style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-primary)' }}
                     />
                   </div>
 
@@ -956,7 +956,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                       type="checkbox"
                       checked={codeTree.openFoldersOnClick}
                       onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, openFoldersOnClick: e.target.checked } })}
-                      style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--accent-cyan)' }}
+                      style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-primary)' }}
                     />
                   </div>
 
@@ -974,7 +974,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                       type="checkbox"
                       checked={codeTree.hoverToOpen}
                       onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, hoverToOpen: e.target.checked } })}
-                      style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--accent-cyan)' }}
+                      style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-primary)' }}
                     />
                   </div>
 
@@ -998,9 +998,9 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                               justifyContent: 'center',
                               padding: '7px 10px',
                               borderRadius: 'var(--radius-sm)',
-                              borderColor: isSelected ? 'var(--accent-cyan)' : undefined,
-                              background: isSelected ? 'var(--accent-cyan-subtle)' : undefined,
-                              color: isSelected ? 'var(--accent-cyan)' : 'var(--text-primary)',
+                              borderColor: isSelected ? 'var(--brand-primary)' : undefined,
+                              background: isSelected ? 'var(--brand-primary-soft)' : undefined,
+                              color: isSelected ? 'var(--brand-primary)' : 'var(--text-primary)',
                               fontWeight: isSelected ? 700 : 500,
                             }}
                           >
@@ -1017,7 +1017,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                       <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)' }}>
                         {t('code_tree_vertical_pos', activeLocale)}
                       </div>
-                      <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--accent-cyan)', fontWeight: 700 }}>
+                      <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--brand-primary)', fontWeight: 700 }}>
                         {codeTree.tabVerticalPos}%
                       </span>
                     </div>
@@ -1028,7 +1028,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                       step={2}
                       value={codeTree.tabVerticalPos}
                       onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, tabVerticalPos: Number(e.target.value) } })}
-                      style={{ width: '100%', accentColor: 'var(--accent-cyan)', cursor: 'pointer' }}
+                      style={{ width: '100%', accentColor: 'var(--brand-primary)', cursor: 'pointer' }}
                     />
                   </div>
 
@@ -1109,9 +1109,9 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                               padding: '6px 8px',
                               fontSize: 11,
                               borderRadius: 'var(--radius-sm)',
-                              borderColor: isSelected ? 'var(--accent-cyan)' : undefined,
-                              background: isSelected ? 'var(--accent-cyan-subtle)' : undefined,
-                              color: isSelected ? 'var(--accent-cyan)' : 'var(--text-primary)',
+                              borderColor: isSelected ? 'var(--brand-primary)' : undefined,
+                              background: isSelected ? 'var(--brand-primary-soft)' : undefined,
+                              color: isSelected ? 'var(--brand-primary)' : 'var(--text-primary)',
                               fontWeight: isSelected ? 700 : 500,
                             }}
                           >
@@ -1160,7 +1160,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                       <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)' }}>
                         {t('code_tree_font_size', activeLocale)}
                       </div>
-                      <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--accent-cyan)', fontWeight: 700 }}>
+                      <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--brand-primary)', fontWeight: 700 }}>
                         {codeTree.codeFontSize || 13}px
                       </span>
                     </div>
@@ -1171,7 +1171,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                       step={1}
                       value={codeTree.codeFontSize || 13}
                       onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, codeFontSize: Number(e.target.value) } })}
-                      style={{ width: '100%', accentColor: 'var(--accent-cyan)', cursor: 'pointer' }}
+                      style={{ width: '100%', accentColor: 'var(--brand-primary)', cursor: 'pointer' }}
                     />
                   </div>
 
@@ -1189,7 +1189,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                       type="checkbox"
                       checked={codeTree.codeFontLigatures !== false}
                       onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, codeFontLigatures: e.target.checked } })}
-                      style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--accent-cyan)' }}
+                      style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-primary)' }}
                     />
                   </div>
 
@@ -1241,7 +1241,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
             type="checkbox"
             checked={preferences.autoSync}
             onChange={(e) => void onSavePreferences({ autoSync: e.target.checked })}
-            style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--accent-cyan)' }}
+            style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--brand-primary)' }}
           />
         </div>
       </div>
@@ -1249,7 +1249,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
       {/* Language Selector Card */}
       <div className="insight-card" style={{ border: '1px solid var(--border-medium)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <Globe size={16} style={{ color: 'var(--accent-cyan)' }} />
+          <Globe size={16} style={{ color: 'var(--brand-primary)' }} />
           <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
             {t('language_title', activeLocale)}
           </span>
@@ -1287,9 +1287,9 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                   justifyContent: 'center',
                   padding: '9px 8px',
                   borderRadius: 'var(--radius-sm)',
-                  borderColor: isSelected ? 'var(--accent-cyan)' : undefined,
-                  background: isSelected ? 'var(--accent-cyan-subtle)' : undefined,
-                  color: isSelected ? 'var(--accent-cyan)' : 'var(--text-primary)',
+                  borderColor: isSelected ? 'var(--brand-primary)' : undefined,
+                  background: isSelected ? 'var(--brand-primary-soft)' : undefined,
+                  color: isSelected ? 'var(--brand-primary)' : 'var(--text-primary)',
                   fontWeight: isSelected ? 700 : 500,
                   transition: 'all 0.15s ease',
                 }}
@@ -1321,8 +1321,9 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
               style={{
                 justifyContent: 'center',
                 padding: '8px 10px',
-                borderColor: preferences.theme === key ? 'var(--accent-cyan)' : undefined,
-                color: preferences.theme === key ? 'var(--accent-cyan)' : undefined,
+                borderColor: preferences.theme === key ? 'var(--brand-primary)' : undefined,
+                background: preferences.theme === key ? 'var(--brand-primary-soft)' : undefined,
+                color: preferences.theme === key ? 'var(--brand-primary)' : undefined,
               }}
             >
               <Icon size={13} />

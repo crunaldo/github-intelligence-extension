@@ -704,10 +704,6 @@ export function InPageCodeTreeDock({
             <button
               type="button"
               className={`gpi-btn-icon ${isPinned ? 'is-active' : ''}`}
-              style={{
-                color: isPinned ? 'var(--gpi-accent)' : undefined,
-                background: isPinned ? 'rgba(56, 189, 248, 0.15)' : undefined,
-              }}
               onClick={() => updateIsPinned(!isPinned)}
               title={isPinned ? 'Despinear panel del explorador (Unpin)' : 'Pinear panel al navegador (Pin)'}
             >
@@ -716,10 +712,6 @@ export function InPageCodeTreeDock({
             <button
               type="button"
               className={`gpi-btn-icon ${activeView === 'settings' ? 'is-active' : ''}`}
-              style={{
-                color: activeView === 'settings' ? 'var(--gpi-accent)' : undefined,
-                background: activeView === 'settings' ? 'rgba(56, 189, 248, 0.15)' : undefined,
-              }}
               onClick={() => {
                 if (onOpenSettings) {
                   onOpenSettings()
@@ -830,7 +822,7 @@ export function InPageCodeTreeDock({
                     <button
                       key={pos}
                       type="button"
-                      className={`gpi-dock-settings-btn ${isSelected ? 'primary' : ''}`}
+                      className={`gpi-dock-settings-btn ${isSelected ? 'active' : ''}`}
                       onClick={() => {
                         void saveStoredPreferences({
                           codeTree: { ...codeTreePreferences, tabPosition: pos },
@@ -854,7 +846,7 @@ export function InPageCodeTreeDock({
                     <button
                       key={th}
                       type="button"
-                      className={`gpi-dock-settings-btn ${isSelected ? 'primary' : ''}`}
+                      className={`gpi-dock-settings-btn ${isSelected ? 'active' : ''}`}
                       onClick={() => {
                         void saveStoredPreferences({
                           codeTree: { ...codeTreePreferences, iconTheme: th },

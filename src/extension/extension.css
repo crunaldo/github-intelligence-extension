@@ -33,6 +33,7 @@
 
   /* Radiant Brand Accents */
   --accent-cyan: #FF2F5A;
+  --accent-cyan-subtle: #FFE5EC;
   --accent-cyan-glow: rgba(255, 47, 90, 0.22);
   --accent-emerald: #10B981;
   --accent-emerald-glow: rgba(16, 185, 129, 0.22);
@@ -56,6 +57,13 @@
 }
 
 [data-theme='dark'] {
+  /* Brand Tokens in Dark Theme */
+  --brand-primary: #FF3B5C;
+  --brand-primary-hover: #FF5270;
+  --brand-primary-active: #E01E47;
+  --brand-primary-soft: rgba(255, 59, 92, 0.15);
+  --brand-primary-soft-hover: rgba(255, 59, 92, 0.25);
+
   --bg-app: #0D0F14;
   --bg-surface: #141822;
   --bg-surface-elevated: #1B202D;
@@ -72,6 +80,7 @@
   --text-inverse: #0D0F14;
 
   --accent-cyan: #FF3B5C;
+  --accent-cyan-subtle: rgba(255, 59, 92, 0.15);
   --accent-cyan-glow: rgba(255, 59, 92, 0.28);
   --accent-emerald: #10B981;
   --accent-emerald-glow: rgba(16, 185, 129, 0.25);
@@ -882,6 +891,20 @@ body {
 .btn-secondary:hover {
   background: var(--bg-card-hover);
   border-color: var(--border-medium);
+}
+
+.btn-secondary.active {
+  border-color: var(--brand-primary) !important;
+  background: var(--brand-primary-soft) !important;
+  color: var(--brand-primary) !important;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(255, 47, 90, 0.15);
+}
+
+.btn-secondary.active:hover {
+  border-color: var(--brand-primary-hover) !important;
+  background: var(--brand-primary-soft-hover) !important;
+  color: var(--brand-primary-hover) !important;
 }
 
 /* Compare Matrix */
