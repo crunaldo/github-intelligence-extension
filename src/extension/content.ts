@@ -243,10 +243,11 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === 'local') {
-        if (changes.gpi_preferences?.newValue?.codeTree) {
+        const newPrefs = changes.gpi_preferences?.newValue as { codeTree?: CodeTreePreferences } | undefined
+        if (newPrefs?.codeTree) {
           applyCodeFontSettings({
             ...DEFAULT_CODE_TREE_PREFERENCES,
-            ...changes.gpi_preferences.newValue.codeTree,
+            ...newPrefs.codeTree,
           })
         }
         if (changes.gpi_reports || changes.gpi_auth_session || changes.gpi_preferences) {

@@ -52,6 +52,51 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
   const [authSession, setAuthSession] = useState<AuthSession | null>(null)
   const [authBusy, setAuthBusy] = useState(false)
   const [authNotice, setAuthNotice] = useState<string | null>(null)
+  const [newProfileLabel, setNewProfileLabel] = useState('')
+  const [newProfileToken, setNewProfileToken] = useState('')
+
+  const handleAddProfile = async () => {
+    if (!newProfileToken.trim()) return
+    const id = `profile_${Date.now()}`
+    const newProfile = {
+      id,
+      label: newProfileLabel.trim() || `Profile ${(preferences.tokenProfiles || []).length + 1}`,
+      token: newProfileToken.trim(),
+    }
+    const nextProfiles = [...(preferences.tokenProfiles || []), newProfile]
+    await onSavePreferences({
+      tokenProfiles: nextProfiles,
+      activeProfileId: id,
+      githubToken: newProfile.token,
+    })
+    setNewProfileLabel('')
+    setNewProfileToken('')
+  }
+
+  const handleSelectProfile = async (profileId: string) => {
+    if (profileId === 'default') {
+      await onSavePreferences({
+        activeProfileId: 'default',
+      })
+      return
+    }
+    const found = (preferences.tokenProfiles || []).find((p) => p.id === profileId)
+    if (found) {
+      await onSavePreferences({
+        activeProfileId: found.id,
+        githubToken: found.token,
+      })
+    }
+  }
+
+  const handleDeleteProfile = async (profileId: string) => {
+    const nextProfiles = (preferences.tokenProfiles || []).filter((p) => p.id !== profileId)
+    const isDeletingActive = preferences.activeProfileId === profileId
+    await onSavePreferences({
+      tokenProfiles: nextProfiles,
+      ...(isDeletingActive ? { activeProfileId: 'default' } : {}),
+    })
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -437,6 +482,119 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
         )}
       </div>
 
+      {/* 2.2 Token Profiles (Multi-Account PAT) */}
+      <div className="insight-card" id="token-profiles-settings" style={{ border: '1px solid var(--border-medium)' }}>
+        <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', marginBottom: 4 }}>
+          {t('token_profiles_title', activeLocale)}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
+          {t('token_profiles_desc', activeLocale)}
+        </div>
+
+        {/* Existing Profiles List */}
+        {preferences.tokenProfiles && preferences.tokenProfiles.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+            {preferences.tokenProfiles.map((p) => {
+              const isActive = preferences.activeProfileId === p.id
+              return (
+                <div
+                  key={p.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: isActive ? 'var(--accent-cyan-subtle)' : 'var(--bg-input)',
+                    border: `1px solid ${isActive ? 'var(--accent-cyan)' : 'var(--border-subtle)'}`,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleSelectProfile(p.id)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <span style={{ fontWeight: 600, fontSize: 12, color: isActive ? 'var(--accent-cyan)' : 'var(--text-primary)' }}>
+                      {p.label}
+                    </span>
+                    {isActive && (
+                      <span style={{ fontSize: 10, background: 'var(--accent-cyan)', color: '#fff', padding: '1px 5px', borderRadius: 10, fontWeight: 700 }}>
+                        {t('token_profiles_active', activeLocale)}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteProfile(p.id)}
+                    className="btn-secondary"
+                    style={{ padding: '3px 6px', color: 'var(--accent-rose)', border: 'none' }}
+                    title={t('token_profiles_delete', activeLocale)}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Add New Profile */}
+        <div style={{ display: 'flex', gap: 6, flexDirection: 'column' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 6 }}>
+            <input
+              type="text"
+              placeholder={t('token_profiles_label_placeholder', activeLocale)}
+              value={newProfileLabel}
+              onChange={(e) => setNewProfileLabel(e.target.value)}
+              style={{
+                padding: '6px 8px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border-medium)',
+                color: 'var(--text-primary)',
+                fontSize: 12,
+              }}
+            />
+            <input
+              type="password"
+              placeholder={t('token_profiles_token_placeholder', activeLocale)}
+              value={newProfileToken}
+              onChange={(e) => setNewProfileToken(e.target.value)}
+              style={{
+                padding: '6px 8px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border-medium)',
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 12,
+              }}
+            />
+          </div>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleAddProfile}
+            disabled={!newProfileToken.trim()}
+            style={{
+              padding: '6px 10px',
+              fontSize: 12,
+              justifyContent: 'center',
+            }}
+          >
+            <span>{t('token_profiles_add', activeLocale)}</span>
+          </button>
+        </div>
+      </div>
+
       {/* 2.5 Code Tree Lateral Dock Settings Card */}
       {(() => {
         const codeTree = preferences.codeTree || DEFAULT_CODE_TREE_PREFERENCES
@@ -610,6 +768,141 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
                   placeholder={t('code_tree_hide_urls_placeholder', activeLocale)}
                   value={codeTree.hideWhenUrlMatches}
                   onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, hideWhenUrlMatches: e.target.value } })}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-input)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontSize: 12,
+                  }}
+                />
+              </div>
+
+              <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
+
+              {/* Icon Theme Selector */}
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  {t('code_tree_icon_theme', activeLocale)}
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  {t('code_tree_icon_theme_desc', activeLocale)}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                  {(['vscode', 'seti', 'github'] as const).map((th) => {
+                    const isSelected = (codeTree.iconTheme || 'vscode') === th
+                    return (
+                      <button
+                        key={th}
+                        type="button"
+                        className={`btn-secondary ${isSelected ? 'active' : ''}`}
+                        onClick={() => void onSavePreferences({ codeTree: { ...codeTree, iconTheme: th } })}
+                        style={{
+                          justifyContent: 'center',
+                          padding: '6px 8px',
+                          fontSize: 11,
+                          borderRadius: 'var(--radius-sm)',
+                          borderColor: isSelected ? 'var(--accent-cyan)' : undefined,
+                          background: isSelected ? 'var(--accent-cyan-subtle)' : undefined,
+                          color: isSelected ? 'var(--accent-cyan)' : 'var(--text-primary)',
+                          fontWeight: isSelected ? 700 : 500,
+                        }}
+                      >
+                        <span>{th === 'vscode' ? 'VS Code' : th === 'seti' ? 'Seti UI' : 'GitHub'}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
+
+              {/* Code Font Family */}
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)' }}>
+                  {t('code_tree_font_family', activeLocale)}
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2, marginBottom: 6 }}>
+                  {t('code_tree_font_family_desc', activeLocale)}
+                </div>
+                <select
+                  aria-label={t('code_tree_font_family', activeLocale)}
+                  value={codeTree.codeFontFamily || 'default'}
+                  onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, codeFontFamily: e.target.value as any } })}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-input)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontSize: 12,
+                  }}
+                >
+                  <option value="default">GitHub Native (Default)</option>
+                  <option value="jetbrains">JetBrains Mono</option>
+                  <option value="fira">Fira Code</option>
+                  <option value="cascadia">Cascadia Code</option>
+                  <option value="source-code">Source Code Pro</option>
+                </select>
+              </div>
+
+              {/* Code Font Size */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)' }}>
+                    {t('code_tree_font_size', activeLocale)}
+                  </div>
+                  <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--accent-cyan)', fontWeight: 700 }}>
+                    {codeTree.codeFontSize || 13}px
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={11}
+                  max={20}
+                  step={1}
+                  value={codeTree.codeFontSize || 13}
+                  onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, codeFontSize: Number(e.target.value) } })}
+                  style={{ width: '100%', accentColor: 'var(--accent-cyan)', cursor: 'pointer' }}
+                />
+              </div>
+
+              {/* Code Font Ligatures */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)' }}>
+                    {t('code_tree_font_ligatures', activeLocale)}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    {t('code_tree_font_ligatures_desc', activeLocale)}
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={codeTree.codeFontLigatures !== false}
+                  onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, codeFontLigatures: e.target.checked } })}
+                  style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--accent-cyan)' }}
+                />
+              </div>
+
+              <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
+
+              {/* Custom Enterprise Domains */}
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)' }}>
+                  {t('code_tree_enterprise_domains', activeLocale)}
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2, marginBottom: 6 }}>
+                  {t('code_tree_enterprise_domains_desc', activeLocale)}
+                </div>
+                <input
+                  type="text"
+                  placeholder={t('code_tree_enterprise_placeholder', activeLocale)}
+                  value={codeTree.customEnterpriseDomains || ''}
+                  onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, customEnterpriseDomains: e.target.value } })}
                   style={{
                     width: '100%',
                     padding: '7px 10px',

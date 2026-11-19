@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createRoot } from 'react-dom/client'
 import { InPageCodeTreeDock } from './InPageCodeTreeDock'
 import type { TreeEntry } from '../../features/repository/types'
+import { DEFAULT_CODE_TREE_PREFERENCES } from '../storage'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -134,6 +135,7 @@ describe('InPageCodeTreeDock', () => {
           owner="facebook"
           repo="react"
           codeTreePreferences={{
+            ...DEFAULT_CODE_TREE_PREFERENCES,
             hoverToOpen: true,
             openFoldersOnClick: true,
             pinPerWindow: true,
@@ -166,6 +168,7 @@ describe('InPageCodeTreeDock', () => {
           owner="facebook"
           repo="react"
           codeTreePreferences={{
+            ...DEFAULT_CODE_TREE_PREFERENCES,
             hoverToOpen: false,
             openFoldersOnClick: true,
             pinPerWindow: true,
@@ -193,6 +196,7 @@ describe('InPageCodeTreeDock', () => {
             owner="facebook"
             repo="react"
             codeTreePreferences={{
+              ...DEFAULT_CODE_TREE_PREFERENCES,
               hoverToOpen: false,
               openFoldersOnClick: true,
               pinPerWindow: true,
@@ -227,6 +231,7 @@ describe('InPageCodeTreeDock', () => {
           initialEntries={mockEntries}
           defaultOpen={true}
           codeTreePreferences={{
+            ...DEFAULT_CODE_TREE_PREFERENCES,
             hoverToOpen: false,
             openFoldersOnClick: true,
             pinPerWindow: true,

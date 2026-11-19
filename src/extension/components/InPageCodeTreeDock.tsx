@@ -692,6 +692,59 @@ export function InPageCodeTreeDock({
               </div>
             </div>
 
+            {/* Icon Theme */}
+            <div style={{ marginTop: 4 }}>
+              <div className="gpi-dock-settings-title" style={{ marginBottom: 6 }}>Tema de Iconos</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                {(['vscode', 'seti', 'github'] as const).map((th) => {
+                  const isSelected = (codeTreePreferences?.iconTheme || 'vscode') === th
+                  return (
+                    <button
+                      key={th}
+                      type="button"
+                      className={`gpi-dock-settings-btn ${isSelected ? 'primary' : ''}`}
+                      onClick={() => {
+                        void saveStoredPreferences({
+                          codeTree: { ...codeTreePreferences, iconTheme: th },
+                        })
+                      }}
+                      style={{ fontSize: 11 }}
+                    >
+                      {th === 'vscode' ? 'VS Code' : th === 'seti' ? 'Seti' : 'GitHub'}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Code Font */}
+            <div style={{ marginTop: 4 }}>
+              <div className="gpi-dock-settings-title" style={{ marginBottom: 4 }}>Fuente de Código</div>
+              <select
+                value={codeTreePreferences?.codeFontFamily || 'default'}
+                onChange={(e) => {
+                  void saveStoredPreferences({
+                    codeTree: { ...codeTreePreferences, codeFontFamily: e.target.value as any },
+                  })
+                }}
+                style={{
+                  width: '100%',
+                  padding: '5px 8px',
+                  borderRadius: 4,
+                  background: 'var(--gpi-bg)',
+                  border: '1px solid var(--gpi-border)',
+                  color: 'var(--gpi-text)',
+                  fontSize: 11,
+                }}
+              >
+                <option value="default">GitHub (Por defecto)</option>
+                <option value="jetbrains">JetBrains Mono</option>
+                <option value="fira">Fira Code</option>
+                <option value="cascadia">Cascadia Code</option>
+                <option value="source-code">Source Code Pro</option>
+              </select>
+            </div>
+
             {/* Shortcut Info */}
             <div style={{ marginTop: 4 }}>
               <div className="gpi-dock-settings-title">Atajo de teclado</div>

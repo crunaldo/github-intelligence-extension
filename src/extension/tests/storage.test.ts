@@ -42,8 +42,7 @@ function createMockChromeStorage(initial: Record<string, unknown> = {}) {
 describe('storage.ts - Pro Preferences', () => {
   beforeEach(() => {
     const storageMock = createMockChromeStorage()
-    // @ts-expect-error Mocking chrome extension globals
-    globalThis.chrome = {
+    ;(globalThis as any).chrome = {
       storage: { local: storageMock.local },
     }
   })
