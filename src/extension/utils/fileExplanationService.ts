@@ -30,9 +30,9 @@ async function getStoredQuota(): Promise<{ date: string; used: number }> {
   if (typeof chrome !== 'undefined' && chrome.storage?.local) {
     try {
       const data = await chrome.storage.local.get(STORAGE_FILE_QUOTA_KEY)
-      const stored = data?.[STORAGE_FILE_QUOTA_KEY]
-      if (stored && typeof stored.used === 'number' && stored.date) {
-        return stored
+      const stored = data?.[STORAGE_FILE_QUOTA_KEY] as { date?: string; used?: number } | undefined
+      if (stored && typeof stored.used === 'number' && typeof stored.date === 'string') {
+        return { date: stored.date, used: stored.used }
       }
     } catch {
       // fallback to memory

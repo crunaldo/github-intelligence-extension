@@ -5,8 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { InPageCodeTreeDock } from './InPageCodeTreeDock'
 import type { TreeEntry } from '../../features/repository/types'
 
-// @ts-expect-error test flag
-globalThis.IS_REACT_ACT_ENVIRONMENT = true
+;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('InPageCodeTreeDock', () => {
   let container: HTMLDivElement
@@ -61,9 +60,9 @@ describe('InPageCodeTreeDock', () => {
 
   it('renders file hierarchy and filters by search query when analyzed', async () => {
     const mockEntries: TreeEntry[] = [
-      { path: 'src/index.ts', type: 'blob', size: 1200 },
-      { path: 'src/components/Button.tsx', type: 'blob', size: 2400 },
-      { path: 'package.json', type: 'blob', size: 850 },
+      { path: 'src/index.ts', type: 'blob', size: 1200, sha: '1', url: '' },
+      { path: 'src/components/Button.tsx', type: 'blob', size: 2400, sha: '2', url: '' },
+      { path: 'package.json', type: 'blob', size: 850, sha: '3', url: '' },
     ]
 
     const root = createRoot(container)

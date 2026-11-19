@@ -6,8 +6,7 @@ import { FileAiExplainerPopover } from './FileAiExplainerPopover'
 import * as explanationService from '../utils/fileExplanationService'
 
 // Configure React 19 act environment for happy-dom
-// @ts-expect-error test flag
-globalThis.IS_REACT_ACT_ENVIRONMENT = true
+;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('FileAiExplainerPopover', () => {
   let container: HTMLDivElement

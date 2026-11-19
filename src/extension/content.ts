@@ -102,7 +102,7 @@ function updateDock(repo: ParsedRepoInfo) {
       React.createElement(InPageCodeTreeDock, {
         owner: repo.owner,
         repo: repo.repo,
-        ref: repo.ref || report?.defaultBranch || 'main',
+        ref: repo.ref || report?.resolvedRef || report?.repository?.defaultBranch || 'main',
         initialEntries: treeEntries,
         isAnalyzed: isAnalyzed,
         isPro: isPro,
@@ -119,9 +119,9 @@ function updateDock(repo: ParsedRepoInfo) {
   // Load from chrome.storage.local
   if (typeof chrome !== 'undefined' && chrome.storage?.local) {
     chrome.storage.local.get(['gpi_reports', 'gpi_auth_user'], (res) => {
-      const reports = res?.gpi_reports || {}
+      const reports = (res?.gpi_reports as Record<string, RepositoryReport>) || {}
       const report = reports[repo.fullName] as RepositoryReport | undefined
-      const authUser = res?.gpi_auth_user
+      const authUser = res?.gpi_auth_user as { isPro?: boolean } | undefined
       const isPro = Boolean(authUser?.isPro)
       renderDock(report, isPro)
     })
