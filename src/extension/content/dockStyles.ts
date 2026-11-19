@@ -125,6 +125,14 @@ export const DOCK_CSS = `
   100% { transform: scale(0.85); opacity: 0.6; }
 }
 
+.gpi-toggle-tab.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transform: translateX(-100%) scale(0.7);
+  transition: opacity 0.2s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.2s ease;
+}
+
 /* Right-side dock variant */
 .gpi-dock-container.position-right {
   left: auto;
@@ -153,6 +161,10 @@ export const DOCK_CSS = `
 
 .gpi-dock-container.position-right .gpi-toggle-tab:hover {
   transform: translateX(-4px) scale(1.06);
+}
+
+.gpi-dock-container.position-right .gpi-toggle-tab.is-hidden {
+  transform: translateX(100%) scale(0.7);
 }
 
 .gpi-dock-container.position-right .gpi-resize-handle {
@@ -222,6 +234,73 @@ export const DOCK_CSS = `
 .gpi-btn-icon:hover {
   color: var(--gpi-text);
   background: var(--gpi-row-hover);
+}
+
+.gpi-btn-icon.is-active {
+  color: var(--gpi-accent);
+  background: rgba(56, 189, 248, 0.15);
+}
+
+/* In-dock Quick Settings View */
+.gpi-dock-settings-view {
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  gap: 12px;
+  overflow-y: auto;
+  height: calc(100% - 48px);
+}
+
+.gpi-dock-settings-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.gpi-dock-settings-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gpi-text);
+}
+
+.gpi-dock-settings-desc {
+  font-size: 11px;
+  color: var(--gpi-text-muted);
+  line-height: 1.35;
+  margin-top: 2px;
+}
+
+.gpi-dock-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--gpi-border);
+  background: var(--gpi-bg-secondary);
+  color: var(--gpi-text);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.gpi-dock-settings-btn:hover {
+  border-color: var(--gpi-accent);
+  color: var(--gpi-accent);
+}
+
+.gpi-dock-settings-btn.primary {
+  background: var(--gpi-accent);
+  color: #0d1117;
+  border-color: var(--gpi-accent);
+}
+
+.gpi-dock-settings-btn.primary:hover {
+  background: var(--gpi-accent-hover);
 }
 
 /* Search Bar */

@@ -87,56 +87,79 @@ function updateBadge(hasRepo: boolean, tabId?: number) {
 // Listen to messages from content script, popup, or side panel
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'OPEN_SIDEPANEL') {
+    const tabId = sender.tab?.id
     const windowId = sender.tab?.windowId || message.windowId
-    if (windowId && chrome.sidePanel?.open) {
-      ;(async () => {
-        try {
-          await chrome.sidePanel.open({ windowId })
-          sendResponse({ ok: true })
-        } catch (err) {
-          sendResponse({ ok: false, error: String(err) })
-        }
-      })()
-      return true
+    if (chrome.sidePanel?.open) {
+      const openOptions = tabId ? { tabId } : (windowId ? { windowId } : undefined)
+      if (openOptions) {
+        chrome.sidePanel.open(openOptions)
+          .then(() => sendResponse({ ok: true }))
+          .catch((err) => {
+            if (tabId && windowId) {
+              chrome.sidePanel.open({ windowId })
+                .then(() => sendResponse({ ok: true }))
+                .catch((fallbackErr) => sendResponse({ ok: false, error: String(fallbackErr) }))
+            } else {
+              sendResponse({ ok: false, error: String(err) })
+            }
+          })
+        return true
+      }
     }
-    sendResponse({ ok: false, error: 'Side panel API not supported or no windowId' })
+    sendResponse({ ok: false, error: 'Side panel API not supported or no tabId/windowId' })
     return true
   }
 
   if (message?.type === 'OPEN_SIDEPANEL_SETTINGS') {
+    const tabId = sender.tab?.id
     const windowId = sender.tab?.windowId || message.windowId
-    if (windowId && chrome.sidePanel?.open) {
-      ;(async () => {
-        try {
-          await chrome.sidePanel.open({ windowId })
-          if (chrome.storage?.session) {
-            try {
-              await chrome.storage.session.set({
-                gpi_pending_nav: {
-                  tab: 'settings',
-                  target: message.target || 'codeTree',
-                  timestamp: Date.now(),
-                },
-              })
-            } catch {
-              // Ignore session storage failure
-            }
-          }
-          setTimeout(() => {
-            chrome.runtime.sendMessage({
-              type: 'NAVIGATE_SIDEPANEL_TAB',
-              tab: 'settings',
-              target: message.target || 'codeTree',
-            }).catch(() => {})
-          }, 150)
-          sendResponse({ ok: true })
-        } catch (err) {
-          sendResponse({ ok: false, error: String(err) })
-        }
-      })()
-      return true
+
+    if (chrome.storage?.session) {
+      chrome.storage.session.set({
+        gpi_pending_nav: {
+          tab: 'settings',
+          target: message.target || 'codeTree',
+          timestamp: Date.now(),
+        },
+      }).catch(() => {})
     }
-    sendResponse({ ok: false, error: 'Side panel API not supported or no windowId' })
+
+    if (chrome.sidePanel?.open) {
+      const openOptions = tabId ? { tabId } : (windowId ? { windowId } : undefined)
+      if (openOptions) {
+        chrome.sidePanel.open(openOptions)
+          .then(() => {
+            setTimeout(() => {
+              chrome.runtime.sendMessage({
+                type: 'NAVIGATE_SIDEPANEL_TAB',
+                tab: 'settings',
+                target: message.target || 'codeTree',
+              }).catch(() => {})
+            }, 120)
+            sendResponse({ ok: true })
+          })
+          .catch((err) => {
+            if (tabId && windowId) {
+              chrome.sidePanel.open({ windowId })
+                .then(() => {
+                  setTimeout(() => {
+                    chrome.runtime.sendMessage({
+                      type: 'NAVIGATE_SIDEPANEL_TAB',
+                      tab: 'settings',
+                      target: message.target || 'codeTree',
+                    }).catch(() => {})
+                  }, 120)
+                  sendResponse({ ok: true })
+                })
+                .catch((fallbackErr) => sendResponse({ ok: false, error: String(fallbackErr) }))
+            } else {
+              sendResponse({ ok: false, error: String(err) })
+            }
+          })
+        return true
+      }
+    }
+    sendResponse({ ok: false, error: 'Side panel API not supported or no tabId/windowId' })
     return true
   }
 

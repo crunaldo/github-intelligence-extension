@@ -173,6 +173,18 @@ export default defineContentScript({
             })
           }
 
+          const isPinnedOrOpen = (() => {
+            try {
+              return (
+                sessionStorage.getItem('gpi_code_tree_pinned') === 'true' ||
+                sessionStorage.getItem('gpi_dock_is_open') === 'true' ||
+                localStorage.getItem('gpi_code_tree_pinned') === 'true'
+              )
+            } catch {
+              return false
+            }
+          })()
+
           dockRoot?.render(
             React.createElement(InPageCodeTreeDock, {
               owner: repo.owner,
@@ -181,6 +193,7 @@ export default defineContentScript({
               initialEntries: treeEntries,
               isAnalyzed: isAnalyzed,
               isPro: isPro,
+              defaultOpen: isPinnedOrOpen,
               vulnerableManifests,
               codeTreePreferences: codeTreePrefs,
               onOpenSidepanel: () => {

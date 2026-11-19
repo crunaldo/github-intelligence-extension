@@ -11,6 +11,10 @@ describe('InPageCodeTreeDock', () => {
   let container: HTMLDivElement
 
   beforeEach(() => {
+    try {
+      sessionStorage.removeItem('gpi_code_tree_pinned')
+      sessionStorage.removeItem('gpi_dock_is_open')
+    } catch {}
     container = document.createElement('div')
     document.body.appendChild(container)
   })
@@ -244,5 +248,70 @@ describe('InPageCodeTreeDock', () => {
 
     const drawer = container.querySelector('.gpi-dock-drawer')
     expect(drawer?.className).toContain('open')
+  })
+
+  it('hides toggle tab when dock is open (.is-hidden)', async () => {
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          isAnalyzed={true}
+          defaultOpen={true}
+        />
+      )
+    })
+
+    const toggleBtn = container.querySelector('.gpi-toggle-tab')
+    expect(toggleBtn?.className).toContain('is-hidden')
+  })
+
+  it('toggles pin state and saves to sessionStorage when pin button is clicked', async () => {
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          isAnalyzed={true}
+          defaultOpen={true}
+        />
+      )
+    })
+
+    const pinBtn = container.querySelector('button[title*="panel"]')
+    expect(pinBtn).not.toBeNull()
+
+    await React.act(async () => {
+      pinBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(sessionStorage.getItem('gpi_code_tree_pinned')).toBe('false')
+  })
+
+  it('renders in-dock quick settings view when settings button is clicked', async () => {
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          isAnalyzed={true}
+          defaultOpen={true}
+        />
+      )
+    })
+
+    const settingsBtn = container.querySelector('button[title*="Ajustes"]')
+    expect(settingsBtn).not.toBeNull()
+
+    await React.act(async () => {
+      settingsBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const inDockSettings = container.querySelector('.gpi-dock-settings-view')
+    expect(inDockSettings).not.toBeNull()
+    expect(inDockSettings?.textContent).toContain('Ajustes del Explorador')
   })
 })

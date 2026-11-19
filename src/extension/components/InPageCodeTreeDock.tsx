@@ -16,12 +16,15 @@ import {
   Zap,
   FolderTree,
   Settings,
+  Pin,
+  PinOff,
+  ArrowLeft,
 } from 'lucide-react'
 import type { TreeEntry } from '../../features/repository/types'
 import { classifyFile } from '../utils/fileClassifier'
 import { FileAiExplainerPopover } from './FileAiExplainerPopover'
 import type { CodeTreePreferences } from '../storage'
-import { DEFAULT_CODE_TREE_PREFERENCES } from '../storage'
+import { DEFAULT_CODE_TREE_PREFERENCES, saveStoredPreferences } from '../storage'
 
 export interface InPageCodeTreeDockProps {
   owner: string
@@ -68,7 +71,7 @@ export function InPageCodeTreeDock({
   ref = 'main',
   initialEntries = [],
   isAnalyzed = false,
-  defaultOpen = false,
+  defaultOpen,
   isPro = false,
   vulnerableManifests = [],
   codeTreePreferences = DEFAULT_CODE_TREE_PREFERENCES,
@@ -76,8 +79,45 @@ export function InPageCodeTreeDock({
   onOpenSettings,
   onTriggerAnalysis,
 }: InPageCodeTreeDockProps) {
-  const [isOpen, setIsOpen] = useState(defaultOpen)
-  const [width, setWidth] = useState(DEFAULT_WIDTH)
+  const [isOpen, setIsOpen] = useState(() => {
+    if (defaultOpen !== undefined) return defaultOpen
+    try {
+      const savedPin = sessionStorage.getItem('gpi_code_tree_pinned')
+      if (savedPin === 'true') return true
+      const sessionOpen = sessionStorage.getItem(STORAGE_OPEN_KEY)
+      if (sessionOpen !== null) return sessionOpen === 'true'
+      const localOpen = localStorage.getItem(STORAGE_OPEN_KEY)
+      if (localOpen !== null) return localOpen === 'true'
+    } catch {
+      // fallback
+    }
+    return false
+  })
+
+  const [isPinned, setIsPinned] = useState(() => {
+    try {
+      const savedPin = sessionStorage.getItem('gpi_code_tree_pinned')
+      if (savedPin !== null) return savedPin === 'true'
+      const localPin = localStorage.getItem('gpi_code_tree_pinned')
+      if (localPin !== null) return localPin === 'true'
+    } catch {
+      // fallback
+    }
+    return codeTreePreferences?.pinPerWindow ?? true
+  })
+
+  const [activeView, setActiveView] = useState<'tree' | 'settings'>('tree')
+  const [width, setWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_WIDTH_KEY)
+      if (saved) {
+        const parsed = Number(saved)
+        if (parsed >= MIN_WIDTH && parsed <= MAX_WIDTH) return parsed
+      }
+    } catch {}
+    return DEFAULT_WIDTH
+  })
+
   const [searchQuery, setSearchQuery] = useState('')
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({
     src: true,
@@ -88,30 +128,84 @@ export function InPageCodeTreeDock({
   const [popoverTop, setPopoverTop] = useState<number>(100)
   const isResizingRef = useRef(false)
 
-  // Load saved width & open state
+  // Load saved width & open state from chrome.storage
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      chrome.storage.local.get([STORAGE_WIDTH_KEY, STORAGE_OPEN_KEY], (res) => {
+      chrome.storage.local.get([STORAGE_WIDTH_KEY, STORAGE_OPEN_KEY, 'gpi_code_tree_pinned'], (res) => {
         const saved = res?.[STORAGE_WIDTH_KEY]
         if (typeof saved === 'number' && saved >= MIN_WIDTH && saved <= MAX_WIDTH) {
           setWidth(saved)
         }
-        if (typeof res?.[STORAGE_OPEN_KEY] === 'boolean' && defaultOpen === undefined) {
+        if (typeof res?.['gpi_code_tree_pinned'] === 'boolean') {
+          setIsPinned(res['gpi_code_tree_pinned'])
+          if (res['gpi_code_tree_pinned']) {
+            setIsOpen(true)
+          }
+        }
+        if (typeof res?.[STORAGE_OPEN_KEY] === 'boolean' && !defaultOpen) {
           setIsOpen(res[STORAGE_OPEN_KEY])
         }
       })
     }
   }, [defaultOpen])
 
-  const toggleDock = (openState?: boolean) => {
-    setIsOpen((prev) => {
-      const next = typeof openState === 'boolean' ? openState : !prev
-      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-        chrome.storage.local.set({ [STORAGE_OPEN_KEY]: next }).catch(() => {})
-      }
-      return next
-    })
+  const updateIsOpen = (next: boolean) => {
+    setIsOpen(next)
+    try {
+      sessionStorage.setItem(STORAGE_OPEN_KEY, String(next))
+      localStorage.setItem(STORAGE_OPEN_KEY, String(next))
+    } catch {}
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.set({ [STORAGE_OPEN_KEY]: next }).catch(() => {})
+    }
   }
+
+  const updateIsPinned = (next: boolean) => {
+    setIsPinned(next)
+    try {
+      sessionStorage.setItem('gpi_code_tree_pinned', String(next))
+      localStorage.setItem('gpi_code_tree_pinned', String(next))
+    } catch {}
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.set({ gpi_code_tree_pinned: next }).catch(() => {})
+    }
+    if (next) {
+      updateIsOpen(true)
+    }
+  }
+
+  const toggleDock = (openState?: boolean) => {
+    const next = typeof openState === 'boolean' ? openState : !isOpen
+    updateIsOpen(next)
+  }
+
+  // Push GitHub page body when pinned like Octotree/IDE
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const isRight = codeTreePreferences?.tabPosition === 'right'
+
+    if (isOpen && isPinned) {
+      document.body.classList.add('gpi-dock-pinned')
+      if (isRight) {
+        document.body.style.marginRight = `${width}px`
+        document.body.style.marginLeft = ''
+      } else {
+        document.body.style.marginLeft = `${width}px`
+        document.body.style.marginRight = ''
+      }
+      document.body.style.transition = 'margin 0.2s ease'
+    } else {
+      document.body.classList.remove('gpi-dock-pinned')
+      document.body.style.marginLeft = ''
+      document.body.style.marginRight = ''
+    }
+
+    return () => {
+      document.body.classList.remove('gpi-dock-pinned')
+      document.body.style.marginLeft = ''
+      document.body.style.marginRight = ''
+    }
+  }, [isOpen, isPinned, width, codeTreePreferences?.tabPosition])
 
   // Keyboard shortcut support (default: Alt+W or custom)
   useEffect(() => {
@@ -235,15 +329,15 @@ export function InPageCodeTreeDock({
     e.preventDefault()
     e.stopPropagation()
 
-    // Keep dock open across file navigation
-    if (codeTreePreferences?.pinPerWindow !== false) {
-      setIsOpen(true)
-    }
+    // Always keep dock open across file navigation
+    updateIsOpen(true)
 
     // Trigger synthetic link click on document.body so GitHub Turbo intercepts it cleanly
     if (typeof document !== 'undefined') {
       const link = document.createElement('a')
       link.href = fileUrl
+      link.setAttribute('data-turbo', 'true')
+      link.setAttribute('data-turbo-frame', '_top')
       link.style.display = 'none'
       document.body.appendChild(link)
       link.click()
@@ -356,9 +450,9 @@ export function InPageCodeTreeDock({
 
   return (
     <div className={`gpi-dock-container ${isRight ? 'position-right' : ''}`}>
-      {/* Prominent Glowing Toggle Tab Handle */}
+      {/* Prominent Glowing Toggle Tab Handle (Hidden when drawer is open so it never overlaps content) */}
       <div
-        className="gpi-toggle-tab"
+        className={`gpi-toggle-tab ${isOpen ? 'is-hidden' : ''}`}
         style={{ top: `${verticalPos}vh` }}
         onClick={() => toggleDock()}
         onMouseEnter={() => {
@@ -421,26 +515,45 @@ export function InPageCodeTreeDock({
             )}
             <button
               type="button"
-              className="gpi-btn-icon"
+              className={`gpi-btn-icon ${isPinned ? 'is-active' : ''}`}
+              style={{
+                color: isPinned ? 'var(--gpi-accent)' : undefined,
+                background: isPinned ? 'rgba(56, 189, 248, 0.15)' : undefined,
+              }}
+              onClick={() => updateIsPinned(!isPinned)}
+              title={isPinned ? 'Despinear panel del explorador (Unpin)' : 'Pinear panel al navegador (Pin)'}
+            >
+              {isPinned ? <Pin size={13} style={{ fill: 'currentColor' }} /> : <PinOff size={13} />}
+            </button>
+            <button
+              type="button"
+              className={`gpi-btn-icon ${activeView === 'settings' ? 'is-active' : ''}`}
+              style={{
+                color: activeView === 'settings' ? 'var(--gpi-accent)' : undefined,
+                background: activeView === 'settings' ? 'rgba(56, 189, 248, 0.15)' : undefined,
+              }}
               onClick={() => {
                 if (onOpenSettings) {
                   onOpenSettings()
-                } else {
+                } else if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
                   chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL_SETTINGS', target: 'codeTree' }).catch(() => {})
                 }
+                setActiveView((prev) => (prev === 'settings' ? 'tree' : 'settings'))
               }}
               title="Ajustes del Árbol de Código"
             >
               <Settings size={13} />
             </button>
-            <button
-              type="button"
-              className="gpi-btn-icon"
-              onClick={() => toggleAll(!Object.values(openFolders).some(Boolean))}
-              title="Expandir/Colapsar todo"
-            >
-              <ChevronsUpDown size={13} />
-            </button>
+            {activeView === 'tree' && (
+              <button
+                type="button"
+                className="gpi-btn-icon"
+                onClick={() => toggleAll(!Object.values(openFolders).some(Boolean))}
+                title="Expandir/Colapsar todo"
+              >
+                <ChevronsUpDown size={13} />
+              </button>
+            )}
             <button
               type="button"
               className="gpi-btn-icon"
@@ -452,54 +565,182 @@ export function InPageCodeTreeDock({
           </div>
         </div>
 
-        {/* Search */}
-        {isAnalyzed && (
-          <div className="gpi-search-container">
-            <Search size={12} className="gpi-search-icon" />
-            <input
-              type="text"
-              className="gpi-search-input"
-              placeholder="Filtrar archivos..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-        )}
-
-        {/* Body Content */}
-        <div className="gpi-tree-body">
-          {!isAnalyzed ? (
-            <div className="gpi-cta-box">
-              <Zap size={24} style={{ color: '#eab308', margin: '0 auto 8px auto', display: 'block' }} />
-              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
-                Repositorio no analizado
-              </div>
-              <div style={{ fontSize: 11.5, color: 'var(--gpi-text-muted)', lineHeight: 1.4 }}>
-                Analiza el repositorio para explorar árbol de código, dependencias y explicaciones de IA.
+        {/* View Switching: In-Dock Settings vs Tree Content */}
+        {activeView === 'settings' ? (
+          <div className="gpi-dock-settings-view">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--gpi-text)' }}>
+                Ajustes del Explorador
               </div>
               <button
                 type="button"
-                className="gpi-cta-btn"
+                className="gpi-btn-icon"
+                onClick={() => setActiveView('tree')}
+                title="Volver al árbol de archivos"
+              >
+                <ArrowLeft size={14} />
+              </button>
+            </div>
+
+            {/* Pin per window */}
+            <div className="gpi-dock-settings-row">
+              <div>
+                <div className="gpi-dock-settings-title">Pinear al navegador (Pin)</div>
+                <div className="gpi-dock-settings-desc">Fija el explorador a la pantalla y desplaza el contenido de GitHub.</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={isPinned}
+                onChange={(e) => updateIsPinned(e.target.checked)}
+                style={{ width: 17, height: 17, cursor: 'pointer', accentColor: 'var(--gpi-accent)' }}
+              />
+            </div>
+
+            {/* Open folders on click */}
+            <div className="gpi-dock-settings-row">
+              <div>
+                <div className="gpi-dock-settings-title">Abrir carpetas con 1 clic</div>
+                <div className="gpi-dock-settings-desc">Alterna carpetas al hacer clic en cualquier parte de su fila.</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={codeTreePreferences?.openFoldersOnClick !== false}
+                onChange={(e) => {
+                  void saveStoredPreferences({
+                    codeTree: { ...codeTreePreferences, openFoldersOnClick: e.target.checked },
+                  })
+                }}
+                style={{ width: 17, height: 17, cursor: 'pointer', accentColor: 'var(--gpi-accent)' }}
+              />
+            </div>
+
+            {/* Hover to open */}
+            <div className="gpi-dock-settings-row">
+              <div>
+                <div className="gpi-dock-settings-title">Hover to open</div>
+                <div className="gpi-dock-settings-desc">Despliega el explorador al pasar el puntero sobre la pestaña.</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={Boolean(codeTreePreferences?.hoverToOpen)}
+                onChange={(e) => {
+                  void saveStoredPreferences({
+                    codeTree: { ...codeTreePreferences, hoverToOpen: e.target.checked },
+                  })
+                }}
+                style={{ width: 17, height: 17, cursor: 'pointer', accentColor: 'var(--gpi-accent)' }}
+              />
+            </div>
+
+            {/* Position */}
+            <div>
+              <div className="gpi-dock-settings-title" style={{ marginBottom: 6 }}>Lado de la pantalla</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                {(['left', 'right'] as const).map((pos) => {
+                  const isSelected = (codeTreePreferences?.tabPosition || 'left') === pos
+                  return (
+                    <button
+                      key={pos}
+                      type="button"
+                      className={`gpi-dock-settings-btn ${isSelected ? 'primary' : ''}`}
+                      onClick={() => {
+                        void saveStoredPreferences({
+                          codeTree: { ...codeTreePreferences, tabPosition: pos },
+                        })
+                      }}
+                    >
+                      {pos === 'left' ? 'Izquierda' : 'Derecha'}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Shortcut Info */}
+            <div style={{ marginTop: 4 }}>
+              <div className="gpi-dock-settings-title">Atajo de teclado</div>
+              <div className="gpi-dock-settings-desc">
+                Presiona <kbd style={{ background: 'var(--gpi-bg)', padding: '2px 5px', borderRadius: 4, border: '1px solid var(--gpi-border)' }}>{codeTreePreferences?.shortcut || 'Alt+W'}</kbd> para alternar el explorador.
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                type="button"
+                className="gpi-dock-settings-btn primary"
                 onClick={() => {
-                  if (onTriggerAnalysis) {
-                    onTriggerAnalysis()
-                  } else if (onOpenSidepanel) {
-                    onOpenSidepanel()
+                  if (onOpenSettings) {
+                    onOpenSettings()
+                  } else if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+                    chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL_SETTINGS', target: 'codeTree' }).catch(() => {})
                   }
                 }}
               >
-                <Zap size={13} />
-                <span>Analizar repositorio (1 clic)</span>
+                <ExternalLink size={12} />
+                <span>Abrir ajustes en Panel Lateral</span>
+              </button>
+              <button
+                type="button"
+                className="gpi-dock-settings-btn"
+                onClick={() => setActiveView('tree')}
+              >
+                <span>Volver al árbol de archivos</span>
               </button>
             </div>
-          ) : Object.keys(treeRoot).length > 0 ? (
-            renderNodes(treeRoot)
-          ) : (
-            <div style={{ padding: 20, textAlign: 'center', color: 'var(--gpi-text-muted)', fontSize: 12 }}>
-              {searchQuery ? 'No se encontraron archivos' : 'Sin archivos disponibles'}
+          </div>
+        ) : (
+          <>
+            {/* Search */}
+            {isAnalyzed && (
+              <div className="gpi-search-container">
+                <Search size={12} className="gpi-search-icon" />
+                <input
+                  type="text"
+                  className="gpi-search-input"
+                  placeholder="Filtrar archivos..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+            )}
+
+            {/* Body Content */}
+            <div className="gpi-tree-body">
+              {!isAnalyzed ? (
+                <div className="gpi-cta-box">
+                  <Zap size={24} style={{ color: '#eab308', margin: '0 auto 8px auto', display: 'block' }} />
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
+                    Repositorio no analizado
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--gpi-text-muted)', lineHeight: 1.4 }}>
+                    Analiza el repositorio para explorar árbol de código, dependencias y explicaciones de IA.
+                  </div>
+                  <button
+                    type="button"
+                    className="gpi-cta-btn"
+                    onClick={() => {
+                      if (onTriggerAnalysis) {
+                        onTriggerAnalysis()
+                      } else if (onOpenSidepanel) {
+                        onOpenSidepanel()
+                      }
+                    }}
+                  >
+                    <Zap size={13} />
+                    <span>Analizar repositorio (1 clic)</span>
+                  </button>
+                </div>
+              ) : Object.keys(treeRoot).length > 0 ? (
+                renderNodes(treeRoot)
+              ) : (
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--gpi-text-muted)', fontSize: 12 }}>
+                  {searchQuery ? 'No se encontraron archivos' : 'Sin archivos disponibles'}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
       {/* AI Explanation Popover - Fixed position outside scroll body */}
