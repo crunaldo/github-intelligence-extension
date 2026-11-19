@@ -17,6 +17,7 @@ import type { CodeTreePreferences } from '../src/extension/storage'
 import { DEFAULT_CODE_TREE_PREFERENCES } from '../src/extension/storage'
 import { applyCodeFontSettings } from '../src/extension/content/codeFontInjector'
 import { parsePrOrCommitUrl } from '../src/extension/utils/prCommitResolver'
+import type { AppLanguage } from '../src/extension/i18n'
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -156,7 +157,8 @@ export default defineContentScript({
         const renderDock = (
           report?: RepositoryReport,
           isPro = false,
-          codeTreePrefs: CodeTreePreferences = DEFAULT_CODE_TREE_PREFERENCES
+          codeTreePrefs: CodeTreePreferences = DEFAULT_CODE_TREE_PREFERENCES,
+          language: AppLanguage = 'auto'
         ) => {
           const treeEntries: TreeEntry[] =
             report?.tree && report.tree.length > 0 ? report.tree : report?.importantFiles || []
@@ -198,6 +200,7 @@ export default defineContentScript({
               defaultOpen: isPinnedOrOpen,
               vulnerableManifests,
               codeTreePreferences: codeTreePrefs,
+              language,
               targetUrl: window.location.href,
               enableLazyTreeFetch: true,
               onOpenSidepanel: () => {
@@ -221,7 +224,8 @@ export default defineContentScript({
               | undefined
             const authSession = res?.gpi_auth_session as { isPro?: boolean } | undefined
             const isPro = Boolean(authSession?.isPro)
-            const prefs = res?.gpi_preferences as { codeTree?: CodeTreePreferences } | undefined
+            const prefs = res?.gpi_preferences as { codeTree?: CodeTreePreferences; language?: AppLanguage } | undefined
+            const language: AppLanguage = prefs?.language || 'auto'
             const codeTreePrefs: CodeTreePreferences = {
               ...DEFAULT_CODE_TREE_PREFERENCES,
               ...(prefs?.codeTree || {}),
@@ -231,7 +235,7 @@ export default defineContentScript({
               return
             }
             applyCodeFontSettings(codeTreePrefs)
-            renderDock(report, isPro, codeTreePrefs)
+            renderDock(report, isPro, codeTreePrefs, language)
           })
         } else {
           renderDock()
@@ -314,7 +318,7 @@ export default defineContentScript({
       if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
         chrome.storage.onChanged.addListener((changes, areaName) => {
           if (areaName === 'local') {
-            const newPrefs = changes.gpi_preferences?.newValue as { codeTree?: CodeTreePreferences } | undefined
+            const newPrefs = changes.gpi_preferences?.newValue as { codeTree?: CodeTreePreferences; language?: AppLanguage } | undefined
             if (newPrefs?.codeTree) {
               applyCodeFontSettings({
                 ...DEFAULT_CODE_TREE_PREFERENCES,

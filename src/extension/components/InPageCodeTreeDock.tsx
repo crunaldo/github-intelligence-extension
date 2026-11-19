@@ -95,7 +95,45 @@ export function InPageCodeTreeDock({
   targetUrl,
   enableLazyTreeFetch = false,
 }: InPageCodeTreeDockProps) {
-  const activeLocale: ActiveLocale = locale || (language ? resolveActiveLanguage(language) : 'es')
+  const [currentLang, setCurrentLang] = useState<AppLanguage | undefined>(language)
+
+  useEffect(() => {
+    if (language) {
+      setCurrentLang(language)
+    }
+  }, [language])
+
+  useEffect(() => {
+    if (typeof chrome === 'undefined' || !chrome.storage?.onChanged) return
+
+    const handleStorageChange = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string
+    ) => {
+      if (areaName === 'local' && changes.gpi_preferences?.newValue) {
+        const newPrefs = changes.gpi_preferences.newValue as { language?: AppLanguage }
+        if (newPrefs?.language) {
+          setCurrentLang(newPrefs.language)
+        }
+      }
+    }
+
+    try {
+      chrome.storage.onChanged.addListener(handleStorageChange)
+    } catch {
+      // ignore in test or unsupported env
+    }
+
+    return () => {
+      try {
+        chrome.storage.onChanged.removeListener(handleStorageChange)
+      } catch {
+        // ignore
+      }
+    }
+  }, [])
+
+  const activeLocale: ActiveLocale = locale || (currentLang ? resolveActiveLanguage(currentLang) : 'es')
 
   const [isOpen, setIsOpen] = useState(() => {
     if (defaultOpen !== undefined) return defaultOpen
@@ -837,6 +875,36 @@ export function InPageCodeTreeDock({
                       }}
                     >
                       {pos === 'left' ? t('code_tree_position_left', activeLocale) : t('code_tree_position_right', activeLocale)}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Language Selection */}
+            <div style={{ marginTop: 4 }}>
+              <div className="gpi-dock-settings-title" style={{ marginBottom: 6 }}>
+                {t('language_title', activeLocale)}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                {[
+                  { key: 'auto' as AppLanguage, label: t('language_auto', activeLocale) },
+                  { key: 'es' as AppLanguage, label: 'Español' },
+                  { key: 'en' as AppLanguage, label: 'English' },
+                ].map(({ key, label }) => {
+                  const isSelected = (currentLang || 'auto') === key
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`gpi-dock-settings-btn ${isSelected ? 'active' : ''}`}
+                      onClick={() => {
+                        setCurrentLang(key)
+                        void saveStoredPreferences({ language: key })
+                      }}
+                      style={{ fontSize: 11 }}
+                    >
+                      {label}
                     </button>
                   )
                 })}

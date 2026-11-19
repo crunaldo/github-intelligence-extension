@@ -258,7 +258,9 @@ export function DirectoryTree({
 
         <div className="directory-tree-actions">
           <span className="directory-tree-counter">
-            {filterQuery ? `${matchedCount} de ${totalFilesCount}` : `${totalFilesCount}`} {isEs ? 'archivos' : 'files'}
+            {filterQuery
+              ? (isEs ? `${matchedCount} de ${totalFilesCount} archivos` : `${matchedCount} of ${totalFilesCount} files`)
+              : (isEs ? `${totalFilesCount} archivos` : `${totalFilesCount} files`)}
           </span>
           <button
             type="button"

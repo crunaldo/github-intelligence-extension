@@ -588,4 +588,54 @@ describe('InPageCodeTreeDock', () => {
       root.unmount()
     })
   })
+
+  it('allows switching language directly from quick settings drawer', async () => {
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          isAnalyzed={false}
+          defaultOpen={true}
+          language="es"
+        />
+      )
+    })
+
+    expect(container.textContent).toContain('Repositorio no analizado')
+
+    // Open quick settings
+    const settingsBtn = container.querySelector('button[title*="Ajustes"]')
+    await React.act(async () => {
+      settingsBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // Click English button in language selector inside quick settings
+    const langButtons = Array.from(container.querySelectorAll('.gpi-dock-settings-btn'))
+    const englishBtn = langButtons.find((btn) => btn.textContent?.includes('English'))
+    expect(englishBtn).toBeDefined()
+
+    await React.act(async () => {
+      englishBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // Return to tree
+    const backBtn = Array.from(container.querySelectorAll('.gpi-dock-settings-btn')).find((b) =>
+      b.textContent?.includes('Back to file tree')
+    )
+    expect(backBtn).toBeDefined()
+
+    await React.act(async () => {
+      backBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // Main dock should now be in English
+    expect(container.textContent).toContain('Repository not analyzed')
+    expect(container.textContent).toContain('Analyze repository (1 click)')
+
+    await React.act(async () => {
+      root.unmount()
+    })
+  })
 })
