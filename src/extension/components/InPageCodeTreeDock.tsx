@@ -48,6 +48,7 @@ export interface InPageCodeTreeDockProps {
   onOpenSettings?: () => void
   onTriggerAnalysis?: () => void
   prOrCommitResolution?: PrOrCommitResolution | null
+  targetUrl?: string
 }
 
 interface TreeNode {
@@ -78,6 +79,7 @@ export function InPageCodeTreeDock({
   onOpenSettings,
   onTriggerAnalysis,
   prOrCommitResolution,
+  targetUrl,
 }: InPageCodeTreeDockProps) {
   const [isOpen, setIsOpen] = useState(() => {
     if (defaultOpen !== undefined) return defaultOpen
@@ -140,8 +142,10 @@ export function InPageCodeTreeDock({
       return
     }
 
-    if (typeof window === 'undefined') return
-    const target = parsePrOrCommitUrl(window.location.href)
+    const currentUrl = targetUrl || (typeof window !== 'undefined' ? window.location.href : '')
+    if (!currentUrl) return
+
+    const target = parsePrOrCommitUrl(currentUrl, codeTreePreferences?.customEnterpriseDomains)
     if (
       target.isPrOrCommit &&
       target.owner?.toLowerCase() === owner.toLowerCase() &&
@@ -162,7 +166,7 @@ export function InPageCodeTreeDock({
     } else {
       setPrResolution(null)
     }
-  }, [owner, repo, prOrCommitResolution])
+  }, [owner, repo, targetUrl, prOrCommitResolution, codeTreePreferences?.customEnterpriseDomains])
 
   // Load saved width & open state from chrome.storage
   useEffect(() => {

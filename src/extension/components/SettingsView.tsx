@@ -82,6 +82,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
     }
     const found = (preferences.tokenProfiles || []).find((p) => p.id === profileId)
     if (found) {
+      setToken(found.token)
       await onSavePreferences({
         activeProfileId: found.id,
         githubToken: found.token,
@@ -92,9 +93,12 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
   const handleDeleteProfile = async (profileId: string) => {
     const nextProfiles = (preferences.tokenProfiles || []).filter((p) => p.id !== profileId)
     const isDeletingActive = preferences.activeProfileId === profileId
+    if (isDeletingActive) {
+      setToken('')
+    }
     await onSavePreferences({
       tokenProfiles: nextProfiles,
-      ...(isDeletingActive ? { activeProfileId: 'default' } : {}),
+      ...(isDeletingActive ? { activeProfileId: 'default', githubToken: '' } : {}),
     })
   }
 

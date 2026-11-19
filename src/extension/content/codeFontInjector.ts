@@ -4,19 +4,19 @@ export const CODE_FONT_STYLE_ID = 'gpi-code-font-style'
 
 const FONT_MAP: Record<CodeTreePreferences['codeFontFamily'], { name: string; importUrl?: string }> = {
   jetbrains: {
-    name: "'JetBrains Mono', monospace",
+    name: "'JetBrains Mono', 'JetBrainsMono Nerd Font', 'JetBrainsMono-Regular', monospace",
     importUrl: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap',
   },
   fira: {
-    name: "'Fira Code', monospace",
+    name: "'Fira Code', 'FiraCode Nerd Font', 'FiraCode-Regular', monospace",
     importUrl: 'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap',
   },
   cascadia: {
-    name: "'Cascadia Code', monospace",
+    name: "'Cascadia Code', 'Cascadia Mono', 'CascadiaCode-Regular', monospace",
     importUrl: 'https://fonts.googleapis.com/css2?family=Cascadia+Code:wght@400;500;600&display=swap',
   },
   'source-code': {
-    name: "'Source Code Pro', monospace",
+    name: "'Source Code Pro', 'SourceCodePro-Regular', monospace",
     importUrl: 'https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500;600&display=swap',
   },
   default: {

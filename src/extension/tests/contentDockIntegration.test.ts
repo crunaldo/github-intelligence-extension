@@ -23,4 +23,19 @@ describe('content script dock integration helpers', () => {
     const commitParsed = parseGitHubRepo('https://github.com/facebook/react/commit/a1b2c3d4e5')
     expect(commitParsed?.ref).toBe('a1b2c3d4e5')
   })
+
+  it('supports custom GitHub Enterprise domains', () => {
+    const customDomains = 'github.company.internal, git.corp.com'
+
+    // Should mount and parse on enterprise domain
+    expect(shouldMountDock('https://github.company.internal/myorg/myproject', customDomains)).toBe(true)
+    expect(shouldMountDock('https://git.corp.com/tools/service/tree/main', customDomains)).toBe(true)
+    expect(shouldMountDock('https://unauthorized-domain.com/myorg/myproject', customDomains)).toBe(false)
+
+    const parsed = parseGitHubRepo('https://github.company.internal/myorg/myproject/tree/dev', customDomains)
+    expect(parsed).not.toBeNull()
+    expect(parsed?.owner).toBe('myorg')
+    expect(parsed?.repo).toBe('myproject')
+    expect(parsed?.ref).toBe('dev')
+  })
 })

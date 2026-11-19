@@ -45,10 +45,21 @@ export interface ParsedRepoInfo {
   url: string
 }
 
-export function parseGitHubRepo(urlStr: string): ParsedRepoInfo | null {
+export function isSupportedGitHubHost(hostname: string, customDomains?: string): boolean {
+  const host = hostname.toLowerCase()
+  if (host === 'github.com' || host === 'www.github.com') return true
+  if (!customDomains) return false
+  const allowed = customDomains
+    .split(',')
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean)
+  return allowed.includes(host)
+}
+
+export function parseGitHubRepo(urlStr: string, customDomains?: string): ParsedRepoInfo | null {
   try {
     const url = new URL(urlStr)
-    if (url.hostname.toLowerCase() !== 'github.com') return null
+    if (!isSupportedGitHubHost(url.hostname, customDomains)) return null
     const parts = url.pathname.split('/').filter(Boolean)
     if (parts.length < 2) return null
 
@@ -67,15 +78,15 @@ export function parseGitHubRepo(urlStr: string): ParsedRepoInfo | null {
       repo,
       ref,
       fullName: `${owner}/${repo}`,
-      url: `https://github.com/${owner}/${repo}${ref ? `/tree/${ref}` : ''}`,
+      url: `https://${url.hostname}/${owner}/${repo}${ref ? `/tree/${ref}` : ''}`,
     }
   } catch {
     return null
   }
 }
 
-export function shouldMountDock(urlStr: string): boolean {
-  return parseGitHubRepo(urlStr) !== null
+export function shouldMountDock(urlStr: string, customDomains?: string): boolean {
+  return parseGitHubRepo(urlStr, customDomains) !== null
 }
 
 // In-page dock lifecycle manager
@@ -141,6 +152,7 @@ function updateDock(repo: ParsedRepoInfo) {
         defaultOpen: isPinnedOrOpen,
         vulnerableManifests,
         codeTreePreferences: codeTreePrefs,
+        targetUrl: window.location.href,
         onOpenSidepanel: () => {
           chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' }).catch(() => {})
         },
@@ -203,7 +215,10 @@ function handleNavigation() {
 
   if (repo) {
     const prTarget = parsePrOrCommitUrl(window.location.href)
-    const targetSuffix = prTarget.isPrOrCommit ? `${prTarget.type}:${prTarget.id}` : (repo.ref || '')
+    const isFilesTab = window.location.href.includes('/files')
+    const targetSuffix = prTarget.isPrOrCommit
+      ? `${prTarget.type}:${prTarget.id}${isFilesTab ? ':files' : ''}`
+      : (repo.ref || '')
     const nextKey = `${repo.fullName.toLowerCase()}@${targetSuffix}`
     if (currentRepoKey !== nextKey) {
       currentRepoKey = nextKey

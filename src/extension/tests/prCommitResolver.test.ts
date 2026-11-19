@@ -41,9 +41,29 @@ describe('prCommitResolver', () => {
       expect(parsePrOrCommitUrl('https://github.com/facebook/react/blob/main/README.md').isPrOrCommit).toBe(false)
       expect(parsePrOrCommitUrl('https://google.com').isPrOrCommit).toBe(false)
     })
+
+    it('parses PR and commit on GitHub Enterprise domains', () => {
+      const customDomains = 'github.corp.internal'
+      const pr = parsePrOrCommitUrl('https://github.corp.internal/org/repo/pull/50', customDomains)
+      expect(pr.isPrOrCommit).toBe(true)
+      expect(pr.host).toBe('github.corp.internal')
+      expect(pr.pullNumber).toBe(50)
+    })
   })
 
   describe('resolvePrOrCommitFiles', () => {
+    it('uses GitHub Enterprise api/v3 URL for enterprise targets', async () => {
+      let requestedUrl = ''
+      vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async (input) => {
+        requestedUrl = String(input)
+        return new Response(JSON.stringify([]), { status: 200 })
+      })
+
+      const target = parsePrOrCommitUrl('https://github.corp.internal/org/repo/pull/50', 'github.corp.internal')
+      await resolvePrOrCommitFiles(target, 'ghp_token')
+
+      expect(requestedUrl).toContain('https://github.corp.internal/api/v3/repos/org/repo/pulls/50/files')
+    })
     it('fetches PR changed files via GitHub REST API', async () => {
       const mockFiles = [
         {

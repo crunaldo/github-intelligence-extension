@@ -149,4 +149,43 @@ describe('SettingsView - Code Tree Settings', () => {
       })
     )
   })
+
+  it('clears githubToken when active profile is deleted', async () => {
+    const onSavePreferences = vi.fn().mockResolvedValue(undefined)
+    const root = createRoot(container)
+    const prefsWithProfile = {
+      ...DEFAULT_EXTENSION_PREFERENCES,
+      githubToken: 'ghp_active_secret',
+      activeProfileId: 'work_1',
+      tokenProfiles: [
+        { id: 'work_1', label: 'Work', token: 'ghp_active_secret' },
+      ],
+    }
+
+    await React.act(async () => {
+      root.render(
+        <SettingsView
+          preferences={prefsWithProfile}
+          onSavePreferences={onSavePreferences}
+          onClearCache={vi.fn()}
+          locale="es"
+        />
+      )
+    })
+
+    const deleteBtn = container.querySelector('#token-profiles-settings button[title*="Eliminar"]') as HTMLButtonElement
+    expect(deleteBtn).not.toBeNull()
+
+    await React.act(async () => {
+      deleteBtn.click()
+    })
+
+    expect(onSavePreferences).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tokenProfiles: [],
+        activeProfileId: 'default',
+        githubToken: '',
+      })
+    )
+  })
 })

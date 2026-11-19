@@ -198,6 +198,7 @@ export default defineContentScript({
               defaultOpen: isPinnedOrOpen,
               vulnerableManifests,
               codeTreePreferences: codeTreePrefs,
+              targetUrl: window.location.href,
               onOpenSidepanel: () => {
                 chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' }).catch(() => {})
               },
@@ -269,7 +270,10 @@ export default defineContentScript({
 
         if (repo) {
           const prTarget = parsePrOrCommitUrl(currentUrl)
-          const targetSuffix = prTarget.isPrOrCommit ? `${prTarget.type}:${prTarget.id}` : (repo.ref || '')
+          const isFilesTab = currentUrl.includes('/files')
+          const targetSuffix = prTarget.isPrOrCommit
+            ? `${prTarget.type}:${prTarget.id}${isFilesTab ? ':files' : ''}`
+            : (repo.ref || '')
           const nextKey = `${repo.fullName.toLowerCase()}@${targetSuffix}`
           if (currentRepoKey !== nextKey) {
             currentRepoKey = nextKey

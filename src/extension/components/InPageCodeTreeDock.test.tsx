@@ -370,4 +370,52 @@ describe('InPageCodeTreeDock', () => {
     expect(container.textContent).toContain('src/utils/newHelper.ts')
     expect(container.textContent).toContain('+25')
   })
+
+  it('re-renders and updates view when targetUrl navigates between PRs', async () => {
+    const root = createRoot(container)
+    const pr1 = {
+      isPrOrCommit: true,
+      type: 'pr' as const,
+      title: 'PR #100',
+      files: [{ filename: 'src/Old.ts', status: 'modified' as const, additions: 1, deletions: 1, changes: 2, diffAnchor: 'diff-1' }],
+    }
+    const pr2 = {
+      isPrOrCommit: true,
+      type: 'pr' as const,
+      title: 'PR #101',
+      files: [{ filename: 'src/New.ts', status: 'added' as const, additions: 5, deletions: 0, changes: 5, diffAnchor: 'diff-2' }],
+    }
+
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          isAnalyzed={false}
+          defaultOpen={true}
+          prOrCommitResolution={pr1}
+          targetUrl="https://github.com/facebook/react/pull/100"
+        />
+      )
+    })
+
+    expect(container.textContent).toContain('src/Old.ts')
+
+    // Navigate to PR 101
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          isAnalyzed={false}
+          defaultOpen={true}
+          prOrCommitResolution={pr2}
+          targetUrl="https://github.com/facebook/react/pull/101"
+        />
+      )
+    })
+
+    expect(container.textContent).toContain('src/New.ts')
+    expect(container.textContent).not.toContain('src/Old.ts')
+  })
 })

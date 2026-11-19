@@ -13,11 +13,23 @@ export interface PrFileEntry {
 export interface PrOrCommitTarget {
   isPrOrCommit: boolean
   type: 'pr' | 'commit' | null
+  host?: string
   owner?: string
   repo?: string
   id?: string
   pullNumber?: number
   commitSha?: string
+}
+
+export function isSupportedGitHubHost(hostname: string, customDomains?: string): boolean {
+  const host = hostname.toLowerCase()
+  if (host === 'github.com' || host === 'www.github.com') return true
+  if (!customDomains) return false
+  const allowed = customDomains
+    .split(',')
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean)
+  return allowed.includes(host)
 }
 
 export interface PrOrCommitResolution {
@@ -27,9 +39,14 @@ export interface PrOrCommitResolution {
   files: PrFileEntry[]
 }
 
-export function parsePrOrCommitUrl(urlStr: string): PrOrCommitTarget {
+export function parsePrOrCommitUrl(urlStr: string, customDomains?: string): PrOrCommitTarget {
   try {
     const url = new URL(urlStr)
+    const host = url.hostname.toLowerCase()
+    if (!isSupportedGitHubHost(host, customDomains)) {
+      return { isPrOrCommit: false, type: null }
+    }
+
     const parts = url.pathname.split('/').filter(Boolean)
     if (parts.length < 4) {
       return { isPrOrCommit: false, type: null }
@@ -46,6 +63,7 @@ export function parsePrOrCommitUrl(urlStr: string): PrOrCommitTarget {
         return {
           isPrOrCommit: true,
           type: 'pr',
+          host,
           owner,
           repo,
           id,
@@ -58,6 +76,7 @@ export function parsePrOrCommitUrl(urlStr: string): PrOrCommitTarget {
       return {
         isPrOrCommit: true,
         type: 'commit',
+        host,
         owner,
         repo,
         id,
@@ -144,21 +163,41 @@ export async function resolvePrOrCommitFiles(
     headers.Authorization = `Bearer ${token}`
   }
 
+  const host = target.host || 'github.com'
+  const isEnterprise = host !== 'github.com' && host !== 'www.github.com'
+  const apiBase = isEnterprise ? `https://${host}/api/v3` : 'https://api.github.com'
+
   try {
     if (target.type === 'pr' && target.pullNumber) {
-      const apiUrl = `https://api.github.com/repos/${target.owner}/${target.repo}/pulls/${target.pullNumber}/files?per_page=100`
-      const res = await fetch(apiUrl, { headers })
-      if (!res.ok) {
-        throw new Error(`GitHub API error: ${res.status}`)
-      }
-      const rawFiles = (await res.json()) as Array<{
+      let page = 1
+      const rawFiles: Array<{
         filename: string
         status?: string
         additions?: number
         deletions?: number
         changes?: number
         raw_url?: string
-      }>
+      }> = []
+
+      while (page <= 3) {
+        const apiUrl = `${apiBase}/repos/${target.owner}/${target.repo}/pulls/${target.pullNumber}/files?per_page=100&page=${page}`
+        const res = await fetch(apiUrl, { headers })
+        if (!res.ok) {
+          throw new Error(`GitHub API error: ${res.status}`)
+        }
+        const pageFiles = (await res.json()) as Array<{
+          filename: string
+          status?: string
+          additions?: number
+          deletions?: number
+          changes?: number
+          raw_url?: string
+        }>
+        if (!Array.isArray(pageFiles) || pageFiles.length === 0) break
+        rawFiles.push(...pageFiles)
+        if (pageFiles.length < 100) break
+        page++
+      }
 
       const files: PrFileEntry[] = await Promise.all(
         rawFiles.map(async (f) => ({
@@ -181,7 +220,7 @@ export async function resolvePrOrCommitFiles(
     }
 
     if (target.type === 'commit' && target.commitSha) {
-      const apiUrl = `https://api.github.com/repos/${target.owner}/${target.repo}/commits/${target.commitSha}`
+      const apiUrl = `${apiBase}/repos/${target.owner}/${target.repo}/commits/${target.commitSha}`
       const res = await fetch(apiUrl, { headers })
       if (!res.ok) {
         throw new Error(`GitHub API error: ${res.status}`)
