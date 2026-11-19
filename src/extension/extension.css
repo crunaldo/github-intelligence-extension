@@ -3755,3 +3755,98 @@ body {
   color: var(--text-secondary);
   line-height: 1.4;
 }
+
+/* ==========================================================================
+   Plan Section Actions & Global Buttons (Brand Identity)
+   ========================================================================== */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-gradient);
+  color: #ffffff !important;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(255, 47, 90, 0.28);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(255, 47, 90, 0.42);
+  color: #ffffff !important;
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+  filter: brightness(0.96);
+}
+
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+
+.btn-github-auth {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 13px;
+  border-radius: var(--radius-sm);
+  background: #24292f;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+
+.btn-github-auth:hover {
+  background: #2f363d;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  color: #ffffff !important;
+}
+
+.btn-github-auth:active {
+  transform: translateY(0);
+}
+
+.btn-github-auth:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+[data-theme='light'] .btn-github-auth {
+  background: #24292f;
+  color: #ffffff !important;
+  border-color: transparent;
+}
+
+[data-theme='light'] .btn-github-auth:hover {
+  background: #1b1f24;
+}
+
+.btn-secondary.btn-signout:hover {
+  border-color: rgba(255, 47, 90, 0.35);
+  color: var(--brand-primary);
+  background: rgba(255, 47, 90, 0.08);
+}
