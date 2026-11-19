@@ -76,7 +76,7 @@ export function shouldMountDock(urlStr: string): boolean {
 
 // In-page dock lifecycle manager
 let dockRoot: Root | null = null
-let currentRepoFullName: string | null = null
+let currentRepoKey: string | null = null
 
 function updateDock(repo: ParsedRepoInfo) {
   if (typeof document === 'undefined') return
@@ -98,6 +98,18 @@ function updateDock(repo: ParsedRepoInfo) {
     const treeEntries: TreeEntry[] = report?.tree && report.tree.length > 0 ? report.tree : report?.importantFiles || []
     const isAnalyzed = Boolean(report && treeEntries.length > 0)
 
+    // Extract vulnerable manifests if security findings exist
+    const vulnerableManifests: string[] = []
+    const auditConcerns = report?.aiAnalysis?.deepAudit?.concerns || []
+    if (auditConcerns.length > 0 && report?.dependencies) {
+      report.dependencies.forEach((dep) => {
+        const isMentioned = auditConcerns.some((c) => c.toLowerCase().includes(dep.name.toLowerCase()))
+        if (isMentioned && dep.manifest) {
+          vulnerableManifests.push(dep.manifest)
+        }
+      })
+    }
+
     dockRoot?.render(
       React.createElement(InPageCodeTreeDock, {
         owner: repo.owner,
@@ -106,6 +118,7 @@ function updateDock(repo: ParsedRepoInfo) {
         initialEntries: treeEntries,
         isAnalyzed: isAnalyzed,
         isPro: isPro,
+        vulnerableManifests,
         onOpenSidepanel: () => {
           chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' }).catch(() => {})
         },
@@ -118,11 +131,11 @@ function updateDock(repo: ParsedRepoInfo) {
 
   // Load from chrome.storage.local
   if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-    chrome.storage.local.get(['gpi_reports', 'gpi_auth_user'], (res) => {
+    chrome.storage.local.get(['gpi_reports', 'gpi_auth_session'], (res) => {
       const reports = (res?.gpi_reports as Record<string, RepositoryReport>) || {}
-      const report = reports[repo.fullName] as RepositoryReport | undefined
-      const authUser = res?.gpi_auth_user as { isPro?: boolean } | undefined
-      const isPro = Boolean(authUser?.isPro)
+      const report = (reports[repo.fullName.toLowerCase()] || reports[repo.fullName]) as RepositoryReport | undefined
+      const authSession = res?.gpi_auth_session as { isPro?: boolean } | undefined
+      const isPro = Boolean(authSession?.isPro)
       renderDock(report, isPro)
     })
   } else {
@@ -139,7 +152,7 @@ function unmountDock() {
   if (host && host.parentNode) {
     host.parentNode.removeChild(host)
   }
-  currentRepoFullName = null
+  currentRepoKey = null
 }
 
 function handleNavigation() {
@@ -158,8 +171,9 @@ function handleNavigation() {
   }
 
   if (repo) {
-    if (currentRepoFullName !== repo.fullName) {
-      currentRepoFullName = repo.fullName
+    const nextKey = `${repo.fullName.toLowerCase()}@${repo.ref || ''}`
+    if (currentRepoKey !== nextKey) {
+      currentRepoKey = nextKey
       updateDock(repo)
     }
   } else {
@@ -192,10 +206,10 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   })
   observer.observe(document.documentElement, { childList: true, subtree: true })
 
-  // Listen to chrome.storage.local changes (e.g. analysis finishes in Sidepanel/Popup)
+  // Listen to chrome.storage.local changes (e.g. analysis finishes in Sidepanel/Popup or login/pro change)
   if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName === 'local' && (changes.gpi_reports || changes.gpi_auth_user)) {
+      if (areaName === 'local' && (changes.gpi_reports || changes.gpi_auth_session)) {
         const repo = parseGitHubRepo(window.location.href)
         if (repo) {
           updateDock(repo)

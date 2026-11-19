@@ -63,10 +63,6 @@ export function FileAiExplainerPopover({
   return (
     <div
       style={{
-        position: 'absolute',
-        left: '100%',
-        top: 0,
-        marginLeft: 8,
         width: 320,
         background: 'var(--gpi-bg, #0d1117)',
         border: '1px solid var(--gpi-border, #30363d)',
@@ -132,31 +128,37 @@ export function FileAiExplainerPopover({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#ef4444', fontWeight: 600, marginBottom: 4 }}>
             <AlertTriangle size={14} />
-            <span>Límite Diario Alcanzado</span>
+            <span>
+              {error.toLowerCase().includes('cuota') || error.toLowerCase().includes('límite')
+                ? 'Límite Diario Alcanzado'
+                : 'Archivo no disponible'}
+            </span>
           </div>
           <p style={{ margin: '0 0 8px 0', fontSize: 11, color: 'var(--gpi-text-muted, #8b949e)' }}>{error}</p>
-          <button
-            type="button"
-            onClick={onUpgradeToPro}
-            style={{
-              width: '100%',
-              padding: '6px 10px',
-              background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 4,
-              fontWeight: 600,
-              fontSize: 11,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-            }}
-          >
-            <Crown size={12} />
-            <span>Actualizar a PRO (Ilimitado)</span>
-          </button>
+          {(error.toLowerCase().includes('cuota') || error.toLowerCase().includes('límite')) && (
+            <button
+              type="button"
+              onClick={onUpgradeToPro}
+              style={{
+                width: '100%',
+                padding: '6px 10px',
+                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: 4,
+                fontWeight: 600,
+                fontSize: 11,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+              }}
+            >
+              <Crown size={12} />
+              <span>Actualizar a PRO (Ilimitado)</span>
+            </button>
+          )}
         </div>
       )}
 

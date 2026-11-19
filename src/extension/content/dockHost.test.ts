@@ -32,12 +32,23 @@ describe('dockHost', () => {
     res1.cleanup()
   })
 
-  it('detects GitHub color mode correctly', () => {
+  it('detects GitHub color mode correctly including auto mode', () => {
     document.documentElement.setAttribute('data-color-mode', 'dark')
     expect(getGitHubTheme()).toBe('dark')
 
     document.documentElement.setAttribute('data-color-mode', 'light')
     expect(getGitHubTheme()).toBe('light')
+
+    // GitHub default: data-color-mode="auto" with system light mode
+    document.documentElement.setAttribute('data-color-mode', 'auto')
+    document.documentElement.setAttribute('data-dark-theme', 'dark')
+    document.documentElement.setAttribute('data-light-theme', 'light')
+    window.matchMedia = () => ({ matches: false } as MediaQueryList) // not dark -> light
+    expect(getGitHubTheme()).toBe('light')
+
+    // System dark mode
+    window.matchMedia = () => ({ matches: true } as MediaQueryList) // dark -> dark
+    expect(getGitHubTheme()).toBe('dark')
 
     document.documentElement.removeAttribute('data-color-mode')
     document.documentElement.setAttribute('data-dark-theme', 'dark_dimmed')

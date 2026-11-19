@@ -29,6 +29,7 @@ export interface InPageCodeTreeDockProps {
   isAnalyzed?: boolean
   defaultOpen?: boolean
   isPro?: boolean
+  vulnerableManifests?: string[]
   onOpenSidepanel?: () => void
   onTriggerAnalysis?: () => void
 }
@@ -42,6 +43,7 @@ interface TreeNode {
 }
 
 const STORAGE_WIDTH_KEY = 'gpi_dock_width'
+const STORAGE_OPEN_KEY = 'gpi_dock_is_open'
 const DEFAULT_WIDTH = 320
 const MIN_WIDTH = 240
 const MAX_WIDTH = 600
@@ -64,6 +66,7 @@ export function InPageCodeTreeDock({
   isAnalyzed = false,
   defaultOpen = false,
   isPro = false,
+  vulnerableManifests = [],
   onOpenSidepanel,
   onTriggerAnalysis,
 }: InPageCodeTreeDockProps) {
@@ -76,26 +79,40 @@ export function InPageCodeTreeDock({
     lib: true,
   })
   const [explainingFile, setExplainingFile] = useState<string | null>(null)
+  const [popoverTop, setPopoverTop] = useState<number>(100)
   const isResizingRef = useRef(false)
 
-  // Load saved width
+  // Load saved width & open state
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      chrome.storage.local.get(STORAGE_WIDTH_KEY, (res) => {
+      chrome.storage.local.get([STORAGE_WIDTH_KEY, STORAGE_OPEN_KEY], (res) => {
         const saved = res?.[STORAGE_WIDTH_KEY]
         if (typeof saved === 'number' && saved >= MIN_WIDTH && saved <= MAX_WIDTH) {
           setWidth(saved)
         }
+        if (typeof res?.[STORAGE_OPEN_KEY] === 'boolean' && defaultOpen === undefined) {
+          setIsOpen(res[STORAGE_OPEN_KEY])
+        }
       })
     }
-  }, [])
+  }, [defaultOpen])
+
+  const toggleDock = (openState?: boolean) => {
+    setIsOpen((prev) => {
+      const next = typeof openState === 'boolean' ? openState : !prev
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        chrome.storage.local.set({ [STORAGE_OPEN_KEY]: next }).catch(() => {})
+      }
+      return next
+    })
+  }
 
   // Keyboard shortcut: Alt+W / Option+W
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && (e.key === 'w' || e.key === 'W')) {
         e.preventDefault()
-        setIsOpen((prev) => !prev)
+        toggleDock()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -230,62 +247,50 @@ export function InPageCodeTreeDock({
       }
 
       // File Row
-      const badge = classifyFile(node.path)
+      const badge = classifyFile(node.path, vulnerableManifests)
       const isExplainingThis = explainingFile === node.path
 
       return (
-        <div key={node.path} style={{ position: 'relative' }}>
+        <div
+          key={node.path}
+          className="gpi-tree-row"
+          style={{ paddingLeft: depth * 14 + 24 }}
+          title={node.path}
+        >
           <a
             href={fileUrl}
-            className="gpi-tree-row"
-            style={{ paddingLeft: depth * 14 + 24 }}
-            title={node.path}
-            onClick={(e) => {
-              // Standard anchor triggers GitHub Turbo automatically
-            }}
+            className="gpi-tree-left"
+            style={{ textDecoration: 'none', color: 'inherit', flex: 1, minWidth: 0 }}
           >
-            <div className="gpi-tree-left">
-              {getFileIcon(node.name)}
-              <span className="gpi-tree-label">{node.name}</span>
-              {badge.label && (
-                <span
-                  className="gpi-tree-badge"
-                  style={{
-                    color: badge.iconColor,
-                    border: `1px solid ${badge.iconColor}33`,
-                  }}
-                >
-                  {badge.label}
-                </span>
-              )}
-            </div>
-
-            <button
-              type="button"
-              className="gpi-ai-trigger-btn"
-              title="Explicar archivo con IA"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                setExplainingFile(isExplainingThis ? null : node.path)
-              }}
-            >
-              <Sparkles size={12} />
-            </button>
+            {getFileIcon(node.name)}
+            <span className="gpi-tree-label">{node.name}</span>
+            {badge.label && (
+              <span
+                className="gpi-tree-badge"
+                style={{
+                  color: badge.iconColor,
+                  border: `1px solid ${badge.iconColor}33`,
+                }}
+              >
+                {badge.label}
+              </span>
+            )}
           </a>
 
-          {/* AI Explanation Popover */}
-          {isExplainingThis && (
-            <FileAiExplainerPopover
-              filePath={node.path}
-              owner={owner}
-              repo={repo}
-              ref={ref}
-              isPro={isPro}
-              onClose={() => setExplainingFile(null)}
-              onUpgradeToPro={onOpenSidepanel}
-            />
-          )}
+          <button
+            type="button"
+            className="gpi-ai-trigger-btn"
+            title="Explicar archivo con IA"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              const rect = e.currentTarget.getBoundingClientRect()
+              setPopoverTop(rect.top)
+              setExplainingFile(isExplainingThis ? null : node.path)
+            }}
+          >
+            <Sparkles size={12} />
+          </button>
         </div>
       )
     })
@@ -296,7 +301,7 @@ export function InPageCodeTreeDock({
       {/* Pinned Toggle Tab Handle */}
       <div
         className="gpi-toggle-tab"
-        onClick={() => setIsOpen((prev) => !prev)}
+        onClick={() => toggleDock()}
         title={isOpen ? 'Ocultar árbol de código (Alt+W)' : 'Mostrar árbol de código (Alt+W)'}
       >
         {isOpen ? <SidebarClose size={16} /> : <SidebarOpen size={16} />}
@@ -350,7 +355,7 @@ export function InPageCodeTreeDock({
             <button
               type="button"
               className="gpi-btn-icon"
-              onClick={() => setIsOpen(false)}
+              onClick={() => toggleDock(false)}
               title="Cerrar (Alt+W)"
             >
               <X size={14} />
@@ -407,6 +412,29 @@ export function InPageCodeTreeDock({
           )}
         </div>
       </div>
+
+      {/* AI Explanation Popover - Fixed position outside scroll body to prevent clipping */}
+      {explainingFile && isOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            left: `${width + 10}px`,
+            top: `${Math.min(typeof window !== 'undefined' ? window.innerHeight - 340 : 200, Math.max(80, popoverTop))}px`,
+            zIndex: 2147483647,
+            pointerEvents: 'auto',
+          }}
+        >
+          <FileAiExplainerPopover
+            filePath={explainingFile}
+            owner={owner}
+            repo={repo}
+            ref={ref}
+            isPro={isPro}
+            onClose={() => setExplainingFile(null)}
+            onUpgradeToPro={onOpenSidepanel}
+          />
+        </div>
+      )}
     </div>
   )
 }

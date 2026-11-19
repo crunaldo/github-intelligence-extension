@@ -18,5 +18,9 @@ describe('content script dock integration helpers', () => {
     expect(parsed?.repo).toBe('react')
     expect(parsed?.ref).toBe('dev')
     expect(parsed?.fullName).toBe('facebook/react')
+
+    // Commit SHA ref
+    const commitParsed = parseGitHubRepo('https://github.com/facebook/react/commit/a1b2c3d4e5')
+    expect(commitParsed?.ref).toBe('a1b2c3d4e5')
   })
 })
