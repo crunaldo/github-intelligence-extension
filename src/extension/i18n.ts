@@ -184,6 +184,10 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     // Code Tree Lateral Dock Settings
     code_tree_settings_title: 'Árbol de Código Lateral (Dock en GitHub)',
     code_tree_settings_desc: 'Configura la barra lateral desplegable y explorador de archivos embebido en GitHub.',
+    code_tree_enabled: 'Habilitar explorador de código en GitHub',
+    code_tree_enabled_desc: 'Muestra la pestaña lateral y el explorador de archivos embebido en las páginas de GitHub.',
+    code_tree_status_active: 'Habilitado',
+    code_tree_status_disabled: 'Desactivado',
     code_tree_hover_to_open: 'Abrir al pasar el cursor (Hover to open)',
     code_tree_hover_to_open_desc: 'Despliega el panel del árbol automáticamente al posar el puntero sobre la pestaña lateral.',
     code_tree_open_folders_click: 'Abrir carpetas con un solo clic (Open folders on click)',
@@ -369,6 +373,10 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     // Code Tree Lateral Dock Settings
     code_tree_settings_title: 'Side Code Tree (GitHub In-Page Dock)',
     code_tree_settings_desc: 'Configure the sliding file tree explorer embedded directly inside GitHub repository pages.',
+    code_tree_enabled: 'Enable in-page code tree dock on GitHub',
+    code_tree_enabled_desc: 'Show the sliding drawer and directory explorer directly inside GitHub pages.',
+    code_tree_status_active: 'Enabled',
+    code_tree_status_disabled: 'Disabled',
     code_tree_hover_to_open: 'Hover to open',
     code_tree_hover_to_open_desc: 'Automatically expand the code tree drawer when hovering over the lateral toggle tab.',
     code_tree_open_folders_click: 'Open folders on click',

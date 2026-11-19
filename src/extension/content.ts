@@ -179,6 +179,10 @@ function updateDock(repo: ParsedRepoInfo) {
         ...DEFAULT_CODE_TREE_PREFERENCES,
         ...(prefs?.codeTree || {}),
       }
+      if (codeTreePrefs.enabled === false) {
+        unmountDock()
+        return
+      }
       applyCodeFontSettings(codeTreePrefs)
       renderDock(report, isPro, codeTreePrefs)
     })
@@ -267,7 +271,11 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         if (changes.gpi_reports || changes.gpi_auth_session || changes.gpi_preferences) {
           const repo = parseGitHubRepo(window.location.href)
           if (repo) {
-            updateDock(repo)
+            if (newPrefs?.codeTree && newPrefs.codeTree.enabled === false) {
+              unmountDock()
+            } else {
+              updateDock(repo)
+            }
           }
         }
       }

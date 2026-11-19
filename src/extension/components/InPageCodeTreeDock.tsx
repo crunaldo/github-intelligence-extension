@@ -531,7 +531,7 @@ export function InPageCodeTreeDock({
     }
   }
 
-  if (isHiddenByUrl) {
+  if (codeTreePreferences?.enabled === false || isHiddenByUrl) {
     return null
   }
 

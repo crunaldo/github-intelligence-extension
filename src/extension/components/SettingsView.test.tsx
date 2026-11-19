@@ -53,10 +53,10 @@ describe('SettingsView - Code Tree Settings', () => {
     })
 
     const checkboxes = container.querySelectorAll<HTMLInputElement>('#code-tree-settings input[type="checkbox"]')
-    expect(checkboxes.length).toBeGreaterThanOrEqual(3)
+    expect(checkboxes.length).toBeGreaterThanOrEqual(4)
 
-    // Toggle hoverToOpen checkbox (3rd checkbox in codeTree settings)
-    const hoverCheckbox = checkboxes[2]
+    // Toggle hoverToOpen checkbox (4th checkbox in codeTree settings now that master toggle is 1st)
+    const hoverCheckbox = checkboxes[3]
     await React.act(async () => {
       hoverCheckbox.click()
     })
@@ -66,6 +66,72 @@ describe('SettingsView - Code Tree Settings', () => {
         codeTree: expect.objectContaining({ hoverToOpen: true }),
       })
     )
+  })
+
+  it('allows disabling the code tree feature completely via master toggle', async () => {
+    const onSavePreferences = vi.fn().mockResolvedValue(undefined)
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <SettingsView
+          preferences={DEFAULT_EXTENSION_PREFERENCES}
+          onSavePreferences={onSavePreferences}
+          onClearCache={vi.fn()}
+          locale="es"
+        />
+      )
+    })
+
+    const masterToggle = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Habilitar explorador de código en GitHub"]'
+    )
+    expect(masterToggle).not.toBeNull()
+    expect(masterToggle?.checked).toBe(true)
+
+    await React.act(async () => {
+      masterToggle?.click()
+    })
+
+    expect(onSavePreferences).toHaveBeenCalledWith(
+      expect.objectContaining({
+        codeTree: expect.objectContaining({ enabled: false }),
+      })
+    )
+  })
+
+  it('allows collapsing and expanding sections in settings', async () => {
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <SettingsView
+          preferences={DEFAULT_EXTENSION_PREFERENCES}
+          onSavePreferences={vi.fn()}
+          onClearCache={vi.fn()}
+          locale="es"
+        />
+      )
+    })
+
+    const codeTreeHeader = container.querySelector('#code-tree-settings > div') as HTMLElement
+    expect(codeTreeHeader).not.toBeNull()
+
+    // Currently expanded: pin per window is visible
+    expect(container.querySelector('#code-tree-settings')?.textContent).toContain('Pin per window')
+
+    // Click header to collapse
+    await React.act(async () => {
+      codeTreeHeader.click()
+    })
+
+    // Now collapsed: inner content should be hidden
+    expect(container.querySelector('#code-tree-settings')?.textContent).not.toContain('Pin per window')
+
+    // Click header again to expand
+    await React.act(async () => {
+      codeTreeHeader.click()
+    })
+
+    expect(container.querySelector('#code-tree-settings')?.textContent).toContain('Pin per window')
   })
 
   it('renders Icon Theme buttons and switches theme on click', async () => {

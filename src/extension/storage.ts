@@ -3,6 +3,7 @@ import { setConfiguredGitHubToken } from '../features/repository/github'
 import type { AppLanguage } from './i18n'
 
 export type CodeTreePreferences = {
+  enabled: boolean
   hoverToOpen: boolean
   openFoldersOnClick: boolean
   pinPerWindow: boolean
@@ -18,6 +19,7 @@ export type CodeTreePreferences = {
 }
 
 export const DEFAULT_CODE_TREE_PREFERENCES: CodeTreePreferences = {
+  enabled: true,
   hoverToOpen: false,
   openFoldersOnClick: true,
   pinPerWindow: true,
