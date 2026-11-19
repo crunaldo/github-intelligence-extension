@@ -218,39 +218,71 @@ export function ColloquialSummaryCard({
       )}
 
       {/* Main explanation */}
-      <div className="colloquial-box-lead">
-        <div className="colloquial-label-kicker" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span>{t('what_is_it', locale)}</span>
-        </div>
-        <p className="colloquial-text-lead">{summary.whatItIs}</p>
-      </div>
-
-      {/* 2-Column Bento Highlights */}
-      <div className="colloquial-grid-two">
-        <div className="colloquial-mini-card">
-          <div className="colloquial-mini-header">
-            <Lightbulb size={13} className="text-amber" />
-            <span>{t('why_it_matters', locale)}</span>
+      {loading ? (
+        <div className="colloquial-ai-loading-box">
+          <div className="colloquial-ai-loading-header">
+            <div className="colloquial-ai-pulse-icon">
+              <Sparkles size={16} className="animate-pulse" />
+            </div>
+            <div className="colloquial-ai-loading-text">
+              <span className="colloquial-ai-loading-title">
+                {locale === 'es' ? 'Estructurando explicación con IA...' : 'Structuring AI explanation...'}
+              </span>
+              <span className="colloquial-ai-loading-subtitle">
+                {locale === 'es'
+                  ? 'Sintetizando propósito, valor clave y aplicaciones prácticas'
+                  : 'Synthesizing purpose, key value, and practical use cases'}
+              </span>
+            </div>
           </div>
-          <p className="colloquial-mini-text">{summary.whyItMatters}</p>
-        </div>
 
-        <div className="colloquial-mini-card">
-          <div className="colloquial-mini-header">
-            <Terminal size={13} style={{ color: 'var(--text-secondary)' }} />
-            <span>{t('in_practice', locale)}</span>
+          <div className="colloquial-shimmer-body">
+            <div className="colloquial-shimmer-line line-lead" />
+            <div className="colloquial-shimmer-line line-long" />
+            <div className="colloquial-shimmer-line line-medium" />
+            <div className="colloquial-shimmer-grid">
+              <div className="colloquial-shimmer-box" />
+              <div className="colloquial-shimmer-box" />
+            </div>
           </div>
-          <p className="colloquial-mini-text">{summary.practicalUse}</p>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="colloquial-box-lead">
+            <div className="colloquial-label-kicker" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span>{t('what_is_it', locale)}</span>
+            </div>
+            <p className="colloquial-text-lead">{summary.whatItIs}</p>
+          </div>
 
-      {/* Audience Footer */}
-      <div className="colloquial-footer-tag">
-        <Users size={13} className="text-muted" />
-        <span>
-          {t('ideal_for', locale)} <strong>{summary.targetAudience}</strong>
-        </span>
-      </div>
+          {/* 2-Column Bento Highlights */}
+          <div className="colloquial-grid-two">
+            <div className="colloquial-mini-card">
+              <div className="colloquial-mini-header">
+                <Lightbulb size={13} className="text-amber" />
+                <span>{t('why_it_matters', locale)}</span>
+              </div>
+              <p className="colloquial-mini-text">{summary.whyItMatters}</p>
+            </div>
+
+            <div className="colloquial-mini-card">
+              <div className="colloquial-mini-header">
+                <Terminal size={13} style={{ color: 'var(--text-secondary)' }} />
+                <span>{t('in_practice', locale)}</span>
+              </div>
+              <p className="colloquial-mini-text">{summary.practicalUse}</p>
+            </div>
+          </div>
+
+          {/* Audience Footer */}
+          <div className="colloquial-footer-tag">
+            <Users size={13} className="text-muted" />
+            <span>
+              {t('ideal_for', locale)} <strong>{summary.targetAudience}</strong>
+            </span>
+          </div>
+        </>
+      )}
     </div>
   )
 }

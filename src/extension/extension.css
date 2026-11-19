@@ -3597,3 +3597,109 @@ body {
   line-height: 1.4;
   text-align: center;
 }
+
+
+/* Colloquial AI Loading Shimmer */
+.colloquial-ai-loading-box {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+[data-theme='light'] .colloquial-ai-loading-box {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.colloquial-ai-loading-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.colloquial-ai-pulse-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(88, 166, 255, 0.12);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--brand-primary);
+  flex-shrink: 0;
+}
+
+.colloquial-ai-loading-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.colloquial-ai-loading-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.colloquial-ai-loading-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.colloquial-shimmer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.colloquial-shimmer-line {
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.04) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.8s infinite ease-in-out;
+}
+
+[data-theme='light'] .colloquial-shimmer-line {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.04) 25%, rgba(0, 0, 0, 0.09) 50%, rgba(0, 0, 0, 0.04) 75%);
+  background-size: 200% 100%;
+}
+
+.colloquial-shimmer-line.line-lead {
+  height: 15px;
+  width: 90%;
+}
+
+.colloquial-shimmer-line.line-long {
+  width: 100%;
+}
+
+.colloquial-shimmer-line.line-medium {
+  width: 72%;
+}
+
+.colloquial-shimmer-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.colloquial-shimmer-box {
+  height: 44px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 25%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.03) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.8s infinite ease-in-out;
+}
+
+[data-theme='light'] .colloquial-shimmer-box {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.03) 25%, rgba(0, 0, 0, 0.08) 50%, rgba(0, 0, 0, 0.03) 75%);
+  background-size: 200% 100%;
+}

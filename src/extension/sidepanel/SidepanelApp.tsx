@@ -74,6 +74,7 @@ import { InteractiveBeamLoader } from '../components/InteractiveBeamLoader'
 import { SegmentedPill } from '../components/SegmentedPill'
 import { DirectoryTree } from '../components/DirectoryTree'
 import { QuotaExceededCard } from '../components/QuotaExceededCard'
+import { DeepTechnicalAuditCard } from '../components/DeepTechnicalAuditCard'
 
 type SidepanelNav = 'analyze' | 'reports' | 'compare' | 'favorites' | 'settings'
 type ReportSection = 'overview' | 'architecture' | 'files' | 'dependencies' | 'releases' | 'sources'
@@ -213,7 +214,16 @@ export function SidepanelApp() {
         // 1. Fetch GitHub metadata, commits, tree and manifests
         const res = await analyzeGitHubRepository(target, controller.signal)
 
-        // 2. Await AI intelligence so loading animation remains active until all data is ready
+        if (inFlightUrlRef.current !== target.originalUrl) return
+
+        // PROGRESSIVE STREAMING UI:
+        // As soon as GitHub data arrives, reveal the full UI immediately!
+        // The user can explore repo info, files, dependencies, install command, etc.
+        setReport(res)
+        setLoading(false)
+        setNav('analyze')
+
+        // 2. Fetch AI intelligence in background while user explores the repository
         const owner = res.repository?.owner || target.owner
         const repo = res.repository?.name || target.repository
         const commitSha = sanitizeCommitRef(
@@ -227,7 +237,9 @@ export function SidepanelApp() {
             commitSha,
             force ? { forceRefresh: true } : undefined
           )
+          if (inFlightUrlRef.current !== target.originalUrl) return
           res.aiAnalysis = aiAnalysis
+          setReport((prev) => (prev ? { ...prev, aiAnalysis } : res))
         } catch (aiErr: unknown) {
           const summaryErr = classifySummaryError(aiErr)
           if (summaryErr.quotaExceeded) {
@@ -248,7 +260,7 @@ export function SidepanelApp() {
         if (force) {
           setRefreshNonce((n) => n + 1)
         }
-        setReport(res)
+        setReport((prev) => prev || res)
         setQuotaExceeded(false)
         try {
           await saveCachedReport(res)
@@ -799,6 +811,9 @@ export function SidepanelApp() {
                 {/* Sub-section Content */}
                 {reportSection === 'overview' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {/* 🛡️ 2. Auditoría Técnica Profunda (Fortalezas & Riesgos) */}
+                    <DeepTechnicalAuditCard report={report} locale={activeLocale} />
+
                     {/* 🩺 3. Índice de Salud & Actividad Detallado */}
                     {healthAccess !== 'disabled' && (
                       healthAccess === 'pro' && !isPro ? (

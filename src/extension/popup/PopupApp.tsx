@@ -55,6 +55,7 @@ import { resolveActiveLanguage, t } from '../i18n'
 import { EditorLaunchButtons } from '../components/EditorLaunchButtons'
 import { RepoHealthCard } from '../components/RepoHealthCard'
 import { ArchitectureDiagramView } from '../components/ArchitectureDiagramView'
+import { DeepTechnicalAuditCard } from '../components/DeepTechnicalAuditCard'
 import { PackageInstallCommand } from '../components/PackageInstallCommand'
 import { ApiErrorCard } from '../components/ApiErrorCard'
 import { ExtHeaderBrand } from '../components/ExtHeaderBrand'
@@ -169,7 +170,14 @@ export function PopupApp() {
       // 1. Fetch GitHub metadata, commits, tree and manifests
       const res = await analyzeGitHubRepository(target, controller.signal)
 
-      // 2. Await AI intelligence so loading animation remains active until all data is ready
+      if (inFlightUrlRef.current !== target.originalUrl) return
+
+      // PROGRESSIVE STREAMING UI:
+      // Reveal the full report immediately so user doesn't wait on AI
+      setReport(res)
+      setLoading(false)
+
+      // 2. Fetch AI intelligence in background
       const owner = res.repository?.owner || target.owner
       const repo = res.repository?.name || target.repository
       const commitSha = sanitizeCommitRef(
@@ -183,7 +191,9 @@ export function PopupApp() {
           commitSha,
           force ? { forceRefresh: true } : undefined
         )
+        if (inFlightUrlRef.current !== target.originalUrl) return
         res.aiAnalysis = aiAnalysis
+        setReport((prev) => (prev ? { ...prev, aiAnalysis } : res))
       } catch (aiErr: unknown) {
         const summaryErr = classifySummaryError(aiErr)
         if (summaryErr.quotaExceeded) {
@@ -204,7 +214,7 @@ export function PopupApp() {
       if (force) {
         setRefreshNonce((n) => n + 1)
       }
-      setReport(res)
+      setReport((prev) => prev || res)
       setQuotaExceeded(false)
       try {
         await saveCachedReport(res)
@@ -781,7 +791,7 @@ export function PopupApp() {
             {/* Módulo Desplegable: Detalles Técnicos & Lenguajes */}
             {activeSubTab === 'details' && (
               <div className="subtab-view-container animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {/* 📊 4. Diagrama Visual de Arquitectura Pro & Auditoría Profunda */}
+                {/* 📊 4. Diagrama Visual de Arquitectura Pro */}
                 <ArchitectureDiagramView
                   report={report}
                   locale={activeLocale}
@@ -791,6 +801,9 @@ export function PopupApp() {
                     setReport(null)
                   }}
                 />
+
+                {/* 🛡️ Auditoría Técnica Profunda */}
+                <DeepTechnicalAuditCard report={report} locale={activeLocale} />
 
                 {/* 🩺 3. Índice de Salud & Actividad Detallado */}
                 <RepoHealthCard report={report} locale={activeLocale} />
