@@ -6,6 +6,7 @@ import { InPageCodeTreeDock } from './components/InPageCodeTreeDock'
 import type { TreeEntry, RepositoryReport } from '../features/repository/types'
 import type { CodeTreePreferences } from './storage'
 import { DEFAULT_CODE_TREE_PREFERENCES } from './storage'
+import type { AppLanguage } from './i18n'
 import { applyCodeFontSettings } from './content/codeFontInjector'
 import { parsePrOrCommitUrl } from './utils/prCommitResolver'
 
@@ -112,7 +113,8 @@ function updateDock(repo: ParsedRepoInfo) {
   const renderDock = (
     report?: RepositoryReport,
     isPro = false,
-    codeTreePrefs: CodeTreePreferences = DEFAULT_CODE_TREE_PREFERENCES
+    codeTreePrefs: CodeTreePreferences = DEFAULT_CODE_TREE_PREFERENCES,
+    language: AppLanguage = 'auto'
   ) => {
     const treeEntries: TreeEntry[] = report?.tree && report.tree.length > 0 ? report.tree : report?.importantFiles || []
     const isAnalyzed = Boolean(report && treeEntries.length > 0)
@@ -152,6 +154,7 @@ function updateDock(repo: ParsedRepoInfo) {
         defaultOpen: isPinnedOrOpen,
         vulnerableManifests,
         codeTreePreferences: codeTreePrefs,
+        language,
         targetUrl: window.location.href,
         enableLazyTreeFetch: true,
         onOpenSidepanel: () => {
@@ -174,7 +177,8 @@ function updateDock(repo: ParsedRepoInfo) {
       const report = (reports[repo.fullName.toLowerCase()] || reports[repo.fullName]) as RepositoryReport | undefined
       const authSession = res?.gpi_auth_session as { isPro?: boolean } | undefined
       const isPro = Boolean(authSession?.isPro)
-      const prefs = res?.gpi_preferences as { codeTree?: CodeTreePreferences } | undefined
+      const prefs = res?.gpi_preferences as { codeTree?: CodeTreePreferences; language?: AppLanguage } | undefined
+      const language: AppLanguage = prefs?.language || 'auto'
       const codeTreePrefs: CodeTreePreferences = {
         ...DEFAULT_CODE_TREE_PREFERENCES,
         ...(prefs?.codeTree || {}),
@@ -184,7 +188,7 @@ function updateDock(repo: ParsedRepoInfo) {
         return
       }
       applyCodeFontSettings(codeTreePrefs)
-      renderDock(report, isPro, codeTreePrefs)
+      renderDock(report, isPro, codeTreePrefs, language)
     })
   } else {
     renderDock()

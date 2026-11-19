@@ -508,4 +508,84 @@ describe('InPageCodeTreeDock', () => {
     expect(parsed.src).toBe(true)
     expect(parsed['src/utils']).toBe(true)
   })
+
+  it('respects language="en" prop and translates UI to English', async () => {
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          isAnalyzed={false}
+          defaultOpen={true}
+          language="en"
+        />
+      )
+    })
+
+    // English CTA
+    expect(container.textContent).toContain('Repository not analyzed')
+    expect(container.textContent).toContain('Analyze repository (1 click)')
+
+    // English toggle/header titles
+    const settingsBtn = container.querySelector('button[title*="Settings"]')
+    expect(settingsBtn).not.toBeNull()
+
+    // Switch to quick settings
+    await React.act(async () => {
+      settingsBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const inDockSettings = container.querySelector('.gpi-dock-settings-view')
+    expect(inDockSettings?.textContent).toContain('Explorer Settings')
+    expect(inDockSettings?.textContent).toContain('Screen side')
+    expect(inDockSettings?.textContent).toContain('Left')
+    expect(inDockSettings?.textContent).toContain('Right')
+    expect(inDockSettings?.textContent).toContain('Open settings in Sidepanel')
+    expect(inDockSettings?.textContent).toContain('Back to file tree')
+
+    await React.act(async () => {
+      root.unmount()
+    })
+  })
+
+  it('respects language="es" prop and translates UI to Spanish', async () => {
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          isAnalyzed={false}
+          defaultOpen={true}
+          language="es"
+        />
+      )
+    })
+
+    // Spanish CTA
+    expect(container.textContent).toContain('Repositorio no analizado')
+    expect(container.textContent).toContain('Analizar repositorio (1 clic)')
+
+    // Spanish settings button
+    const settingsBtn = container.querySelector('button[title*="Ajustes"]')
+    expect(settingsBtn).not.toBeNull()
+
+    // Switch to quick settings
+    await React.act(async () => {
+      settingsBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const inDockSettings = container.querySelector('.gpi-dock-settings-view')
+    expect(inDockSettings?.textContent).toContain('Ajustes del Explorador')
+    expect(inDockSettings?.textContent).toContain('Lado de la pantalla')
+    expect(inDockSettings?.textContent).toContain('Izquierda')
+    expect(inDockSettings?.textContent).toContain('Derecha')
+    expect(inDockSettings?.textContent).toContain('Abrir ajustes en Panel Lateral')
+    expect(inDockSettings?.textContent).toContain('Volver al árbol de archivos')
+
+    await React.act(async () => {
+      root.unmount()
+    })
+  })
 })

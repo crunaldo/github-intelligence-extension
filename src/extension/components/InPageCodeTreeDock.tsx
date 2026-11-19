@@ -40,6 +40,7 @@ import {
   mergeActiveAncestors,
   fetchRepoGitTree,
 } from '../utils/treePathSync'
+import { t, resolveActiveLanguage, type AppLanguage, type ActiveLocale } from '../i18n'
 
 export interface InPageCodeTreeDockProps {
   owner: string
@@ -51,6 +52,8 @@ export interface InPageCodeTreeDockProps {
   isPro?: boolean
   vulnerableManifests?: string[]
   codeTreePreferences?: CodeTreePreferences
+  language?: AppLanguage
+  locale?: ActiveLocale
   onOpenSidepanel?: () => void
   onOpenSettings?: () => void
   onTriggerAnalysis?: () => void
@@ -83,6 +86,8 @@ export function InPageCodeTreeDock({
   isPro = false,
   vulnerableManifests = [],
   codeTreePreferences = DEFAULT_CODE_TREE_PREFERENCES,
+  language,
+  locale,
   onOpenSidepanel,
   onOpenSettings,
   onTriggerAnalysis,
@@ -90,6 +95,8 @@ export function InPageCodeTreeDock({
   targetUrl,
   enableLazyTreeFetch = false,
 }: InPageCodeTreeDockProps) {
+  const activeLocale: ActiveLocale = locale || (language ? resolveActiveLanguage(language) : 'es')
+
   const [isOpen, setIsOpen] = useState(() => {
     if (defaultOpen !== undefined) return defaultOpen
     try {
@@ -620,7 +627,7 @@ export function InPageCodeTreeDock({
           <button
             type="button"
             className="gpi-ai-trigger-btn"
-            title="Explicar archivo con IA"
+            title={t('dock_explain_file_ai', activeLocale)}
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
@@ -655,8 +662,8 @@ export function InPageCodeTreeDock({
         }}
         title={
           isOpen
-            ? `Ocultar árbol de código (${codeTreePreferences?.shortcut || 'Alt+W'})`
-            : `Mostrar árbol de código (${codeTreePreferences?.shortcut || 'Alt+W'})`
+            ? t('dock_toggle_tab_hide', activeLocale, { shortcut: codeTreePreferences?.shortcut || 'Alt+W' })
+            : t('dock_toggle_tab_show', activeLocale, { shortcut: codeTreePreferences?.shortcut || 'Alt+W' })
         }
       >
         <FolderTree size={17} />
@@ -678,7 +685,7 @@ export function InPageCodeTreeDock({
             document.body.style.cursor = 'col-resize'
             document.body.style.userSelect = 'none'
           }}
-          title="Arrastrar para redimensionar"
+          title={t('dock_resize_title', activeLocale)}
         />
 
         {/* Header */}
@@ -696,7 +703,7 @@ export function InPageCodeTreeDock({
                 type="button"
                 className="gpi-btn-icon"
                 onClick={onOpenSidepanel}
-                title="Abrir en Panel Lateral (Sidepanel)"
+                title={t('dock_open_sidepanel', activeLocale)}
               >
                 <ExternalLink size={13} />
               </button>
@@ -705,7 +712,7 @@ export function InPageCodeTreeDock({
               type="button"
               className={`gpi-btn-icon ${isPinned ? 'is-active' : ''}`}
               onClick={() => updateIsPinned(!isPinned)}
-              title={isPinned ? 'Despinear panel del explorador (Unpin)' : 'Pinear panel al navegador (Pin)'}
+              title={isPinned ? t('dock_unpin_title', activeLocale) : t('dock_pin_title', activeLocale)}
             >
               {isPinned ? <Pin size={13} style={{ fill: 'currentColor' }} /> : <PinOff size={13} />}
             </button>
@@ -720,7 +727,7 @@ export function InPageCodeTreeDock({
                 }
                 setActiveView((prev) => (prev === 'settings' ? 'tree' : 'settings'))
               }}
-              title="Ajustes del Árbol de Código"
+              title={t('dock_settings_title', activeLocale)}
             >
               <Settings size={13} />
             </button>
@@ -729,7 +736,7 @@ export function InPageCodeTreeDock({
                 type="button"
                 className="gpi-btn-icon"
                 onClick={() => toggleAll(!Object.values(openFolders).some(Boolean))}
-                title="Expandir/Colapsar todo"
+                title={t('dock_toggle_all', activeLocale)}
               >
                 <ChevronsUpDown size={13} />
               </button>
@@ -738,7 +745,7 @@ export function InPageCodeTreeDock({
               type="button"
               className="gpi-btn-icon"
               onClick={() => toggleDock(false)}
-              title={`Cerrar (${codeTreePreferences?.shortcut || 'Alt+W'})`}
+              title={t('dock_close_title', activeLocale, { shortcut: codeTreePreferences?.shortcut || 'Alt+W' })}
             >
               <X size={14} />
             </button>
@@ -750,13 +757,13 @@ export function InPageCodeTreeDock({
           <div className="gpi-dock-settings-view">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--gpi-text)' }}>
-                Ajustes del Explorador
+                {t('dock_quick_settings_title', activeLocale)}
               </div>
               <button
                 type="button"
                 className="gpi-btn-icon"
                 onClick={() => setActiveView('tree')}
-                title="Volver al árbol de archivos"
+                title={t('dock_back_to_tree', activeLocale)}
               >
                 <ArrowLeft size={14} />
               </button>
@@ -765,8 +772,8 @@ export function InPageCodeTreeDock({
             {/* Pin per window */}
             <div className="gpi-dock-settings-row">
               <div>
-                <div className="gpi-dock-settings-title">Pinear al navegador (Pin)</div>
-                <div className="gpi-dock-settings-desc">Fija el explorador a la pantalla y desplaza el contenido de GitHub.</div>
+                <div className="gpi-dock-settings-title">{t('code_tree_pin_per_window', activeLocale)}</div>
+                <div className="gpi-dock-settings-desc">{t('code_tree_pin_per_window_desc', activeLocale)}</div>
               </div>
               <input
                 type="checkbox"
@@ -779,8 +786,8 @@ export function InPageCodeTreeDock({
             {/* Open folders on click */}
             <div className="gpi-dock-settings-row">
               <div>
-                <div className="gpi-dock-settings-title">Abrir carpetas con 1 clic</div>
-                <div className="gpi-dock-settings-desc">Alterna carpetas al hacer clic en cualquier parte de su fila.</div>
+                <div className="gpi-dock-settings-title">{t('code_tree_open_folders_click', activeLocale)}</div>
+                <div className="gpi-dock-settings-desc">{t('code_tree_open_folders_click_desc', activeLocale)}</div>
               </div>
               <input
                 type="checkbox"
@@ -797,8 +804,8 @@ export function InPageCodeTreeDock({
             {/* Hover to open */}
             <div className="gpi-dock-settings-row">
               <div>
-                <div className="gpi-dock-settings-title">Hover to open</div>
-                <div className="gpi-dock-settings-desc">Despliega el explorador al pasar el puntero sobre la pestaña.</div>
+                <div className="gpi-dock-settings-title">{t('code_tree_hover_to_open', activeLocale)}</div>
+                <div className="gpi-dock-settings-desc">{t('code_tree_hover_to_open_desc', activeLocale)}</div>
               </div>
               <input
                 type="checkbox"
@@ -814,7 +821,7 @@ export function InPageCodeTreeDock({
 
             {/* Position */}
             <div>
-              <div className="gpi-dock-settings-title" style={{ marginBottom: 6 }}>Lado de la pantalla</div>
+              <div className="gpi-dock-settings-title" style={{ marginBottom: 6 }}>{t('dock_screen_side', activeLocale)}</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                 {(['left', 'right'] as const).map((pos) => {
                   const isSelected = (codeTreePreferences?.tabPosition || 'left') === pos
@@ -829,7 +836,7 @@ export function InPageCodeTreeDock({
                         })
                       }}
                     >
-                      {pos === 'left' ? 'Izquierda' : 'Derecha'}
+                      {pos === 'left' ? t('code_tree_position_left', activeLocale) : t('code_tree_position_right', activeLocale)}
                     </button>
                   )
                 })}
@@ -838,7 +845,7 @@ export function InPageCodeTreeDock({
 
             {/* Icon Theme */}
             <div style={{ marginTop: 4 }}>
-              <div className="gpi-dock-settings-title" style={{ marginBottom: 6 }}>Tema de Iconos</div>
+              <div className="gpi-dock-settings-title" style={{ marginBottom: 6 }}>{t('dock_icon_theme', activeLocale)}</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
                 {(['vscode', 'seti', 'github'] as const).map((th) => {
                   const isSelected = (codeTreePreferences?.iconTheme || 'vscode') === th
@@ -863,7 +870,7 @@ export function InPageCodeTreeDock({
 
             {/* Code Font */}
             <div style={{ marginTop: 4 }}>
-              <div className="gpi-dock-settings-title" style={{ marginBottom: 4 }}>Fuente de Código</div>
+              <div className="gpi-dock-settings-title" style={{ marginBottom: 4 }}>{t('dock_code_font', activeLocale)}</div>
               <select
                 value={codeTreePreferences?.codeFontFamily || 'default'}
                 onChange={(e) => {
@@ -881,7 +888,7 @@ export function InPageCodeTreeDock({
                   fontSize: 11,
                 }}
               >
-                <option value="default">GitHub (Por defecto)</option>
+                <option value="default">{t('dock_code_font_default', activeLocale)}</option>
                 <option value="jetbrains">JetBrains Mono</option>
                 <option value="fira">Fira Code</option>
                 <option value="cascadia">Cascadia Code</option>
@@ -891,9 +898,13 @@ export function InPageCodeTreeDock({
 
             {/* Shortcut Info */}
             <div style={{ marginTop: 4 }}>
-              <div className="gpi-dock-settings-title">Atajo de teclado</div>
+              <div className="gpi-dock-settings-title">{t('dock_keyboard_shortcut', activeLocale)}</div>
               <div className="gpi-dock-settings-desc">
-                Presiona <kbd style={{ background: 'var(--gpi-bg)', padding: '2px 5px', borderRadius: 4, border: '1px solid var(--gpi-border)' }}>{codeTreePreferences?.shortcut || 'Alt+W'}</kbd> para alternar el explorador.
+                {activeLocale === 'es' ? (
+                  <>Presiona <kbd style={{ background: 'var(--gpi-bg)', padding: '2px 5px', borderRadius: 4, border: '1px solid var(--gpi-border)' }}>{codeTreePreferences?.shortcut || 'Alt+W'}</kbd> para alternar el explorador.</>
+                ) : (
+                  <>Press <kbd style={{ background: 'var(--gpi-bg)', padding: '2px 5px', borderRadius: 4, border: '1px solid var(--gpi-border)' }}>{codeTreePreferences?.shortcut || 'Alt+W'}</kbd> to toggle explorer.</>
+                )}
               </div>
             </div>
 
@@ -911,14 +922,14 @@ export function InPageCodeTreeDock({
                 }}
               >
                 <ExternalLink size={12} />
-                <span>Abrir ajustes en Panel Lateral</span>
+                <span>{t('dock_open_sidepanel_settings', activeLocale)}</span>
               </button>
               <button
                 type="button"
                 className="gpi-dock-settings-btn"
                 onClick={() => setActiveView('tree')}
               >
-                <span>Volver al árbol de archivos</span>
+                <span>{t('dock_back_to_tree', activeLocale)}</span>
               </button>
             </div>
           </div>
@@ -941,7 +952,7 @@ export function InPageCodeTreeDock({
                   onClick={() => setPrViewTab('tree')}
                 >
                   <Folder size={12} />
-                  <span>Repositorio</span>
+                  <span>{t('dock_pr_repo_tab', activeLocale)}</span>
                 </button>
               </div>
             )}
@@ -953,7 +964,7 @@ export function InPageCodeTreeDock({
                 <input
                   type="text"
                   className="gpi-search-input"
-                  placeholder="Filtrar archivos..."
+                  placeholder={t('dock_search_placeholder', activeLocale)}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -971,7 +982,7 @@ export function InPageCodeTreeDock({
                   if (filtered.length === 0) {
                     return (
                       <div style={{ padding: 20, textAlign: 'center', color: 'var(--gpi-text-muted)', fontSize: 12 }}>
-                        No se encontraron archivos en este cambio
+                        {t('dock_pr_no_files', activeLocale)}
                       </div>
                     )
                   }
@@ -1029,7 +1040,7 @@ export function InPageCodeTreeDock({
                 <>
                   {!isAnalyzed && onTriggerAnalysis && (
                     <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--gpi-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(234, 179, 8, 0.08)' }}>
-                      <span style={{ fontSize: 11, color: 'var(--gpi-text-muted)' }}>Árbol cargado en vivo</span>
+                      <span style={{ fontSize: 11, color: 'var(--gpi-text-muted)' }}>{t('dock_live_tree_badge', activeLocale)}</span>
                       <button
                         type="button"
                         onClick={onTriggerAnalysis}
@@ -1044,10 +1055,10 @@ export function InPageCodeTreeDock({
                           alignItems: 'center',
                           gap: 4,
                         }}
-                        title="Analizar dependencias y seguridad con IA"
+                        title={t('dock_analyze_title', activeLocale)}
                       >
                         <Zap size={11} />
-                        Analizar con IA
+                        {t('dock_analyze_btn', activeLocale)}
                       </button>
                     </div>
                   )}
@@ -1056,16 +1067,16 @@ export function InPageCodeTreeDock({
               ) : isLoadingTree ? (
                 <div style={{ padding: 24, textAlign: 'center', color: 'var(--gpi-text-muted)', fontSize: 12 }}>
                   <div className="gpi-tab-pulse-dot" style={{ margin: '0 auto 8px auto', background: 'var(--gpi-accent)' }} />
-                  Cargando archivos del repositorio...
+                  {t('dock_loading_tree', activeLocale)}
                 </div>
               ) : !isAnalyzed ? (
                 <div className="gpi-cta-box">
                   <Zap size={24} style={{ color: '#eab308', margin: '0 auto 8px auto', display: 'block' }} />
                   <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
-                    Repositorio no analizado
+                    {t('dock_unverified_repo_title', activeLocale)}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--gpi-text-muted)', lineHeight: 1.4 }}>
-                    Analiza el repositorio para explorar árbol de código, dependencias y explicaciones de IA.
+                    {t('dock_unverified_repo_desc', activeLocale)}
                   </div>
                   <button
                     type="button"
@@ -1079,12 +1090,12 @@ export function InPageCodeTreeDock({
                     }}
                   >
                     <Zap size={13} />
-                    <span>Analizar repositorio (1 clic)</span>
+                    <span>{t('dock_analyze_repo_cta', activeLocale)}</span>
                   </button>
                 </div>
               ) : (
                 <div style={{ padding: 20, textAlign: 'center', color: 'var(--gpi-text-muted)', fontSize: 12 }}>
-                  {searchQuery ? 'No se encontraron archivos' : 'Sin archivos disponibles'}
+                  {searchQuery ? t('dock_no_files_found', activeLocale) : t('dock_no_files_available', activeLocale)}
                 </div>
               )}
             </div>
@@ -1110,6 +1121,7 @@ export function InPageCodeTreeDock({
             repo={repo}
             ref={ref}
             isPro={isPro}
+            locale={activeLocale}
             onClose={() => setExplainingFile(null)}
             onUpgradeToPro={onOpenSidepanel}
           />

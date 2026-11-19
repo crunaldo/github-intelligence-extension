@@ -4,6 +4,7 @@ import {
   explainFileWithAi,
   type FileExplanation,
 } from '../utils/fileExplanationService'
+import { t, type ActiveLocale } from '../i18n'
 
 export interface FileAiExplainerPopoverProps {
   filePath: string
@@ -11,6 +12,7 @@ export interface FileAiExplainerPopoverProps {
   repo: string
   ref?: string
   isPro: boolean
+  locale?: ActiveLocale
   onClose: () => void
   onUpgradeToPro?: () => void
 }
@@ -21,6 +23,7 @@ export function FileAiExplainerPopover({
   repo,
   ref,
   isPro,
+  locale = 'es',
   onClose,
   onUpgradeToPro,
 }: FileAiExplainerPopoverProps) {
@@ -87,7 +90,7 @@ export function FileAiExplainerPopover({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
-          <Sparkles size={14} style={{ color: '#38bdf8' }} />
+          <Sparkles size={14} style={{ color: 'var(--gpi-accent, #FF2F5A)' }} />
           <span style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {fileName}
           </span>
@@ -103,7 +106,7 @@ export function FileAiExplainerPopover({
             padding: 2,
             display: 'flex',
           }}
-          title="Cerrar"
+          title={t('explainer_close', locale)}
         >
           <X size={14} />
         </button>
@@ -112,8 +115,8 @@ export function FileAiExplainerPopover({
       {/* Body */}
       {loading && (
         <div style={{ padding: '16px 0', textAlign: 'center', color: 'var(--gpi-text-muted, #8b949e)' }}>
-          <Sparkles size={18} style={{ animation: 'spin 2s linear infinite', color: '#38bdf8', marginBottom: 6 }} />
-          <div>Analizando archivo con IA...</div>
+          <Sparkles size={18} style={{ animation: 'spin 2s linear infinite', color: 'var(--gpi-accent, #FF2F5A)', marginBottom: 6 }} />
+          <div>{t('explainer_analyzing', locale)}</div>
         </div>
       )}
 
@@ -129,13 +132,13 @@ export function FileAiExplainerPopover({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#ef4444', fontWeight: 600, marginBottom: 4 }}>
             <AlertTriangle size={14} />
             <span>
-              {error.toLowerCase().includes('cuota') || error.toLowerCase().includes('límite')
-                ? 'Límite Diario Alcanzado'
-                : 'Archivo no disponible'}
+              {error.toLowerCase().includes('cuota') || error.toLowerCase().includes('límite') || error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit')
+                ? t('explainer_daily_limit', locale)
+                : t('explainer_unavailable', locale)}
             </span>
           </div>
           <p style={{ margin: '0 0 8px 0', fontSize: 11, color: 'var(--gpi-text-muted, #8b949e)' }}>{error}</p>
-          {(error.toLowerCase().includes('cuota') || error.toLowerCase().includes('límite')) && (
+          {(error.toLowerCase().includes('cuota') || error.toLowerCase().includes('límite') || error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit')) && (
             <button
               type="button"
               onClick={onUpgradeToPro}
@@ -156,7 +159,7 @@ export function FileAiExplainerPopover({
               }}
             >
               <Crown size={12} />
-              <span>Actualizar a PRO (Ilimitado)</span>
+              <span>{t('explainer_upgrade_pro', locale)}</span>
             </button>
           )}
         </div>
@@ -171,7 +174,7 @@ export function FileAiExplainerPopover({
           {explanation.keyResponsibilities && explanation.keyResponsibilities.length > 0 && (
             <div style={{ marginBottom: 8 }}>
               <div style={{ fontSize: 10.5, textTransform: 'uppercase', color: 'var(--gpi-text-muted, #8b949e)', fontWeight: 600, marginBottom: 4 }}>
-                Responsabilidades:
+                {t('explainer_responsibilities', locale)}
               </div>
               <ul style={{ margin: 0, paddingLeft: 16 }}>
                 {explanation.keyResponsibilities.map((resp, idx) => (
@@ -197,8 +200,8 @@ export function FileAiExplainerPopover({
                 fontSize: 11,
               }}
             >
-              <Layers size={13} style={{ color: '#38bdf8' }} />
-              <span style={{ color: 'var(--gpi-text-muted, #8b949e)' }}>Rol:</span>
+              <Layers size={13} style={{ color: 'var(--gpi-accent, #FF2F5A)' }} />
+              <span style={{ color: 'var(--gpi-text-muted, #8b949e)' }}>{locale === 'es' ? 'Rol:' : 'Role:'}</span>
               <strong style={{ color: 'var(--gpi-text, #e6edf3)' }}>{explanation.architectureRole}</strong>
             </div>
           )}
@@ -217,10 +220,14 @@ export function FileAiExplainerPopover({
           >
             {isPro ? (
               <span style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 3, fontWeight: 600 }}>
-                <Crown size={11} /> PRO Ilimitado
+                <Crown size={11} /> {locale === 'es' ? 'PRO Ilimitado' : 'PRO Unlimited'}
               </span>
             ) : (
-              <span>{remaining} de 3 explicaciones gratuitas hoy</span>
+              <span>
+                {locale === 'es'
+                  ? `${remaining} de 3 explicaciones gratuitas hoy`
+                  : `${remaining} of 3 free explanations today`}
+              </span>
             )}
             <span style={{ opacity: 0.8 }}>Powered by AI</span>
           </div>
