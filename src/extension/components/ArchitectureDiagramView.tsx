@@ -2,17 +2,15 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import mermaid from 'mermaid'
 import {
   AlertCircle,
-  AlertTriangle,
   Check,
-  CheckCircle2,
   Code2,
   Copy,
   Layers,
   Lock,
   RefreshCw,
-  ShieldCheck,
   Sparkles,
   Wrench,
+  Zap,
 } from 'lucide-react'
 import type { RepositoryReport } from '../../features/repository/types'
 import {
@@ -32,6 +30,7 @@ import {
 import { t, type ActiveLocale } from '../i18n'
 import { classifySummaryError } from '../spanishSummary'
 import { sanitizeMermaidDiagram } from '../utils/mermaidSanitizer'
+import { generateNativeArchitectureDiagram } from '../utils/nativeArchitectureGenerator'
 
 type ArchitectureDiagramViewProps = {
   report: RepositoryReport
@@ -69,12 +68,13 @@ export function ArchitectureDiagramView({
   const renderSeed = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const svgContainerRef = useRef<HTMLDivElement | null>(null)
 
+  const [engineMode, setEngineMode] = useState<'native' | 'ai'>('native')
   const [analysis, setAnalysis] = useState<FilteredAnalysisResult | null>(report.aiAnalysis ?? null)
   const [session, setSession] = useState<AuthSession | null>(null)
   const [remoteDiagramsEnabled, setRemoteDiagramsEnabled] = useState<boolean>(
     diagramsEnabled ?? true
   )
-  const [loading, setLoading] = useState<boolean>(!report.aiAnalysis)
+  const [aiLoading, setAiLoading] = useState<boolean>(false)
   const [quotaExceeded, setQuotaExceeded] = useState(false)
   const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -88,6 +88,19 @@ export function ArchitectureDiagramView({
 
   const effectiveIsPro = isPro !== undefined ? isPro : Boolean(session?.isPro)
   const effectiveArchAccess = archAccess ?? 'pro'
+
+  // 1. Generate Native Diagram locally (0ms, client-side, 100% reliable)
+  const nativeDiagram = useMemo(
+    () => generateNativeArchitectureDiagram(report, locale),
+    [report, locale]
+  )
+
+  // 2. AI Diagram (from analysis result if available)
+  const rawAiDiagram = analysis?.architectureDiagram?.trim() || ''
+  const aiDiagram = useMemo(() => sanitizeMermaidDiagram(rawAiDiagram), [rawAiDiagram])
+
+  // Active diagram depending on engineMode
+  const activeDiagramCode = engineMode === 'ai' ? aiDiagram : nativeDiagram
 
   // Subscribe to live auth session updates across storage
   useEffect(() => {
@@ -103,6 +116,7 @@ export function ArchitectureDiagramView({
     }
   }, [diagramsEnabled])
 
+  // Background fetch for AI analysis (only if user requests AI or is Pro)
   useEffect(() => {
     let cancelled = false
     const owner = report.repository?.owner || report.target?.owner
@@ -113,7 +127,7 @@ export function ArchitectureDiagramView({
 
     if (!owner || !repo) {
       setAnalysis(null)
-      setLoading(false)
+      setAiLoading(false)
       return
     }
 
@@ -122,38 +136,20 @@ export function ArchitectureDiagramView({
       setForceNextFetch(false)
     }
 
-    // If report already has architectureDiagram and we're not forcing refresh, render directly
     if (report.aiAnalysis?.architectureDiagram && !shouldForce) {
       setAnalysis(report.aiAnalysis)
-      setLoading(false)
+      setAiLoading(false)
       setQuotaExceeded(false)
-      void Promise.all([
-        getAuthSession(),
-        typeof diagramsEnabled === 'boolean'
-          ? Promise.resolve(null)
-          : fetchRemoteConfig().catch(() => null),
-      ]).then(([currentSession, remoteConfig]) => {
-        if (cancelled) return
-        if (currentSession) setSession(currentSession)
-        if (remoteConfig) {
-          setRemoteDiagramsEnabled(remoteConfig.featureFlags.enableDiagrams)
-        }
-      })
       return
     }
 
-    // If user is truly free (not Pro) and module is configured as Pro-only, and we already have a summary:
-    // Do not waste requests since backend will strip the diagram anyway
-    if (report.aiAnalysis && !shouldForce && !effectiveIsPro && effectiveArchAccess === 'pro') {
-      setAnalysis(report.aiAnalysis)
-      setLoading(false)
-      setQuotaExceeded(false)
-      void getAuthSession().then((s) => !cancelled && s && setSession(s))
+    if (!shouldForce && !effectiveIsPro && effectiveArchAccess === 'pro') {
+      // Don't make unneeded AI calls for free users if backend gates AI diagram
+      setAiLoading(false)
       return
     }
 
-    // Otherwise (user is Pro, or module is free, or we need to fetch missing architecture diagram):
-    setLoading(true)
+    setAiLoading(true)
     setQuotaExceeded(false)
     setMaintenanceMessage(null)
     setErrorMessage(null)
@@ -177,7 +173,7 @@ export function ArchitectureDiagramView({
         if (remoteConfig) {
           setRemoteDiagramsEnabled(remoteConfig.featureFlags.enableDiagrams)
         }
-        setLoading(false)
+        setAiLoading(false)
         if (intel.architectureDiagram) {
           onAnalysisUpdated?.(intel)
         }
@@ -196,7 +192,7 @@ export function ArchitectureDiagramView({
         setQuotaExceeded(false)
         setMaintenanceMessage(state.maintenanceMode ? state.errorMessage : null)
         setErrorMessage(state.maintenanceMode ? null : state.errorMessage)
-        setLoading(false)
+        setAiLoading(false)
       })
 
     return () => {
@@ -213,11 +209,9 @@ export function ArchitectureDiagramView({
     onAnalysisUpdated,
   ])
 
-  const rawDiagramCode = analysis?.architectureDiagram?.trim() || ''
-  const diagramCode = useMemo(() => sanitizeMermaidDiagram(rawDiagramCode), [rawDiagramCode])
-
+  // Mermaid SVG renderer
   useEffect(() => {
-    if (!diagramCode || viewMode !== 'diagram') {
+    if (!activeDiagramCode || viewMode !== 'diagram') {
       setRenderFailed(false)
       return
     }
@@ -229,7 +223,7 @@ export function ArchitectureDiagramView({
       try {
         ensureMermaidInitialized()
         const diagramId = `gpi-mermaid-${renderSeed}-${Date.now()}`
-        const { svg } = await mermaid.render(diagramId, diagramCode)
+        const { svg } = await mermaid.render(diagramId, activeDiagramCode)
         if (cancelled || !svgContainerRef.current) return
 
         const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
@@ -243,7 +237,7 @@ export function ArchitectureDiagramView({
         svgContainerRef.current.replaceChildren(document.importNode(svgElement, true))
       } catch (renderErr) {
         console.warn('Mermaid render failed:', renderErr)
-        // Clean up any stray error element mermaid 11/12 might have injected into document.body
+        // Clean up any stray error element mermaid injected into document.body
         const stray = document.querySelectorAll('svg[id^="d"], svg[id^="mermaid-"]')
         stray.forEach((el) => {
           if (el.parentElement === document.body) {
@@ -260,12 +254,12 @@ export function ArchitectureDiagramView({
     return () => {
       cancelled = true
     }
-  }, [diagramCode, viewMode, renderSeed])
+  }, [activeDiagramCode, viewMode, renderSeed])
 
   const handleCopyCode = async () => {
-    if (!diagramCode) return
+    if (!activeDiagramCode) return
     try {
-      await navigator.clipboard.writeText(diagramCode)
+      await navigator.clipboard.writeText(activeDiagramCode)
       setCopiedMermaid(true)
       setTimeout(() => setCopiedMermaid(false), 2000)
     } catch {
@@ -317,79 +311,8 @@ export function ArchitectureDiagramView({
     }
   }
 
-  if (loading) {
-    return (
-      <div className="architecture-diagram-card">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
-          <RefreshCw size={14} className="animate-spin" style={{ color: 'var(--accent-cyan)' }} />
-          <span>
-            {isEs
-              ? 'Cargando arquitectura y auditoría técnica...'
-              : 'Loading AI architecture diagram & deep audit...'}
-          </span>
-        </div>
-      </div>
-    )
-  }
-
-  if (maintenanceMessage) {
-    return (
-      <div className="architecture-diagram-card">
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
-          <Wrench size={15} style={{ color: 'var(--accent-rose)', flexShrink: 0, marginTop: 2 }} />
-          <div>
-            <strong style={{ color: 'var(--text-primary)', display: 'block', marginBottom: 2 }}>
-              {t('maintenance_title', locale)}
-            </strong>
-            <span>{maintenanceMessage}</span>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (quotaExceeded) {
-    return null
-  }
-
-  if (errorMessage) {
-    return (
-      <div className="architecture-diagram-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
-          <AlertCircle size={15} style={{ color: 'var(--accent-amber)', flexShrink: 0 }} />
-          <span>{errorMessage}</span>
-        </div>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => setRetryTick((n) => n + 1)}
-          style={{ padding: '4px 8px', fontSize: 11, flexShrink: 0 }}
-        >
-          <RefreshCw size={11} />
-          <span>{t('retry_btn', locale)}</span>
-        </button>
-      </div>
-    )
-  }
-
-  // 1. Is diagrams module disabled globally or individually?
-  if (effectiveArchAccess === 'disabled' || remoteDiagramsEnabled === false) {
-    return (
-      <div className="architecture-diagram-card">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
-          <AlertCircle size={15} style={{ color: 'var(--accent-amber)', flexShrink: 0 }} />
-          <span>
-            {isEs
-              ? 'Los diagramas de arquitectura están temporalmente desactivados por configuración.'
-              : 'Architecture diagrams are temporarily disabled via remote configuration.'}
-          </span>
-        </div>
-      </div>
-    )
-  }
-
-  // 2. Is this module configured as Pro-only and the user is NOT Pro?
-  if (effectiveArchAccess === 'pro' && !effectiveIsPro) {
+  // If in AI mode and user is not Pro, show Pro lock card with quick switch back to Native
+  if (engineMode === 'ai' && effectiveArchAccess === 'pro' && !effectiveIsPro) {
     return (
       <div
         className="architecture-diagram-card"
@@ -403,9 +326,15 @@ export function ArchitectureDiagramView({
             <Lock size={14} style={{ color: 'var(--accent-cyan)' }} />
             <span>{t('pro_arch_locked_title', locale)}</span>
           </div>
-          <span className="colloquial-chip" style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-cyan)' }}>
-            PRO
-          </span>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setEngineMode('native')}
+            style={{ padding: '3px 8px', fontSize: 11 }}
+          >
+            <Zap size={11} style={{ marginRight: 4, color: 'var(--accent-cyan)' }} />
+            <span>{t('arch_mode_native', locale)}</span>
+          </button>
         </div>
 
         <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
@@ -449,30 +378,25 @@ export function ArchitectureDiagramView({
     )
   }
 
-  // 3. User is Pro (or module is Free), but diagramCode is empty:
-  if (!diagramCode) {
+  // If in AI mode and loading without cached AI diagram
+  if (engineMode === 'ai' && aiLoading && !aiDiagram) {
     return (
-      <div className="architecture-diagram-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
-          <AlertCircle size={15} style={{ color: 'var(--accent-amber)', flexShrink: 0 }} />
-          <span>
-            {isEs
-              ? 'No se pudo generar el diagrama de arquitectura para este repositorio.'
-              : 'Could not generate architecture diagram for this repository.'}
-          </span>
+      <div className="architecture-diagram-card">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+            <RefreshCw size={14} className="animate-spin" style={{ color: 'var(--accent-cyan)' }} />
+            <span>{isEs ? 'Generando análisis de arquitectura con IA...' : 'Generating AI architecture diagram...'}</span>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setEngineMode('native')}
+            style={{ padding: '3px 8px', fontSize: 11 }}
+          >
+            <Zap size={11} style={{ marginRight: 4, color: 'var(--accent-cyan)' }} />
+            <span>{t('arch_mode_native', locale)}</span>
+          </button>
         </div>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => {
-            setForceNextFetch(true)
-            setRetryTick((n) => n + 1)
-          }}
-          style={{ padding: '4px 8px', fontSize: 11, flexShrink: 0 }}
-        >
-          <RefreshCw size={11} />
-          <span>{t('retry_btn', locale)}</span>
-        </button>
       </div>
     )
   }
@@ -480,48 +404,112 @@ export function ArchitectureDiagramView({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div className="architecture-diagram-card">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Sparkles size={15} style={{ color: 'var(--brand-primary)' }} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-              {isEs ? 'Diagrama de Arquitectura (IA)' : 'AI Architecture Diagram'}
-            </span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {engineMode === 'native' ? (
+              <Zap size={16} style={{ color: 'var(--accent-cyan)' }} />
+            ) : (
+              <Sparkles size={16} style={{ color: 'var(--brand-primary)' }} />
+            )}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {engineMode === 'native' ? t('arch_title_native', locale) : t('arch_title_ai', locale)}
+                </span>
+                <span
+                  style={{
+                    fontSize: 9.5,
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: 10,
+                    background: engineMode === 'native' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(168, 85, 247, 0.15)',
+                    color: engineMode === 'native' ? 'var(--accent-cyan)' : 'var(--accent-violet)',
+                  }}
+                >
+                  {engineMode === 'native' ? 'NATIVO' : 'IA'}
+                </span>
+              </div>
+            </div>
           </div>
 
-          {diagramCode && (
-            <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {/* Mode Selector: Nativo vs IA */}
+            <div
+              style={{
+                display: 'flex',
+                background: 'rgba(0, 0, 0, 0.25)',
+                borderRadius: 'var(--radius-sm)',
+                padding: 2,
+                border: '1px solid var(--border-subtle)',
+              }}
+            >
               <button
                 type="button"
-                className={`btn-secondary ${viewMode === 'diagram' ? 'active' : ''}`}
-                onClick={() => setViewMode('diagram')}
-                style={{ padding: '4px 8px', fontSize: 11 }}
+                className={`btn-secondary ${engineMode === 'native' ? 'active' : ''}`}
+                onClick={() => setEngineMode('native')}
+                style={{
+                  padding: '3px 8px',
+                  fontSize: 10.5,
+                  fontWeight: engineMode === 'native' ? 700 : 500,
+                  border: 'none',
+                }}
               >
-                <Layers size={11} />
-                <span>{isEs ? 'Visual' : 'Visual'}</span>
+                <Zap size={11} style={{ marginRight: 3, color: engineMode === 'native' ? 'var(--accent-cyan)' : undefined }} />
+                <span>{t('arch_mode_native', locale)}</span>
               </button>
               <button
                 type="button"
-                className={`btn-secondary ${viewMode === 'code' ? 'active' : ''}`}
-                onClick={() => setViewMode('code')}
-                style={{ padding: '4px 8px', fontSize: 11 }}
+                className={`btn-secondary ${engineMode === 'ai' ? 'active' : ''}`}
+                onClick={() => setEngineMode('ai')}
+                style={{
+                  padding: '3px 8px',
+                  fontSize: 10.5,
+                  fontWeight: engineMode === 'ai' ? 700 : 500,
+                  border: 'none',
+                }}
               >
-                <Code2 size={11} />
-                <span>Mermaid</span>
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => void handleCopyCode()}
-                title={isEs ? 'Copiar código Mermaid' : 'Copy Mermaid code'}
-                style={{ padding: '4px 8px', fontSize: 11 }}
-              >
-                {copiedMermaid ? <Check size={11} style={{ color: 'var(--accent-emerald)' }} /> : <Copy size={11} />}
-                <span>{copiedMermaid ? (isEs ? 'Copiado' : 'Copied') : (isEs ? 'Copiar' : 'Copy')}</span>
+                <Sparkles size={11} style={{ marginRight: 3, color: engineMode === 'ai' ? 'var(--brand-primary)' : undefined }} />
+                <span>{t('arch_mode_ai', locale)}</span>
               </button>
             </div>
-          )}
+
+            {/* View Mode Buttons */}
+            {activeDiagramCode && (
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  type="button"
+                  className={`btn-secondary ${viewMode === 'diagram' ? 'active' : ''}`}
+                  onClick={() => setViewMode('diagram')}
+                  style={{ padding: '3px 8px', fontSize: 11 }}
+                >
+                  <Layers size={11} />
+                  <span>Visual</span>
+                </button>
+                <button
+                  type="button"
+                  className={`btn-secondary ${viewMode === 'code' ? 'active' : ''}`}
+                  onClick={() => setViewMode('code')}
+                  style={{ padding: '3px 8px', fontSize: 11 }}
+                >
+                  <Code2 size={11} />
+                  <span>Mermaid</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => void handleCopyCode()}
+                  title={isEs ? 'Copiar código Mermaid' : 'Copy Mermaid code'}
+                  style={{ padding: '3px 8px', fontSize: 11 }}
+                >
+                  {copiedMermaid ? <Check size={11} style={{ color: 'var(--accent-emerald)' }} /> : <Copy size={11} />}
+                  <span>{copiedMermaid ? (isEs ? 'Copiado' : 'Copied') : (isEs ? 'Copiar' : 'Copy')}</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
+        {/* Canvas / Code View */}
         {viewMode === 'diagram' && !renderFailed ? (
           <div className="diagram-canvas-box" style={{ padding: 10, overflowX: 'auto' }}>
             <div ref={svgContainerRef} className="mermaid-rendered-svg" style={{ width: '100%' }} />
@@ -531,8 +519,8 @@ export function ArchitectureDiagramView({
             {renderFailed && viewMode === 'diagram' && (
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
                 {isEs
-                  ? 'Mostrando fuente Mermaid del análisis Pro:'
-                  : 'Showing Pro Mermaid diagram source:'}
+                  ? 'Mostrando fuente Mermaid del diagrama:'
+                  : 'Showing Mermaid diagram source:'}
               </div>
             )}
             <pre
@@ -549,14 +537,17 @@ export function ArchitectureDiagramView({
                 border: '1px solid var(--border-subtle)',
               }}
             >
-              {diagramCode}
+              {activeDiagramCode}
             </pre>
           </div>
         )}
 
-        {diagramCode && (
+        {/* Footer Subtitle */}
+        {activeDiagramCode && (
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10.5, color: 'var(--text-muted)' }}>
-            <span>{isEs ? 'Generado por IA con Mermaid' : 'AI-generated Mermaid diagram'}</span>
+            <span>
+              {engineMode === 'native' ? t('arch_native_subtitle', locale) : t('arch_ai_subtitle', locale)}
+            </span>
             <span>{isEs ? 'Compatible con Notion y GitHub' : 'Compatible with Notion & GitHub'}</span>
           </div>
         )}

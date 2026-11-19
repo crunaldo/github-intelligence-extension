@@ -7,7 +7,7 @@ import { DEFAULT_EXTENSION_PREFERENCES } from '../storage'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-describe('SettingsView - Code Tree Settings', () => {
+describe('SettingsView - Collapsible Sections and Pro Plan', () => {
   let container: HTMLDivElement
 
   beforeEach(() => {
@@ -15,7 +15,28 @@ describe('SettingsView - Code Tree Settings', () => {
     document.body.appendChild(container)
   })
 
-  it('renders Code Tree settings card with all controls', async () => {
+  it('renders Pro Plan card directly as non-collapsible hero card', async () => {
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <SettingsView
+          preferences={DEFAULT_EXTENSION_PREFERENCES}
+          onSavePreferences={vi.fn()}
+          onClearCache={vi.fn()}
+          locale="es"
+        />
+      )
+    })
+
+    const proCard = container.querySelector('.pro-plan-hero-card')
+    expect(proCard).not.toBeNull()
+    expect(proCard?.textContent).toContain('Plan Pro & Autenticación')
+    expect(proCard?.textContent).toContain('Árbol de Código Avanzado')
+    expect(proCard?.textContent).toContain('Auditoría Técnica Profunda')
+    expect(proCard?.textContent).toContain('Mascota Asistente Octo')
+  })
+
+  it('has heavy sections collapsed by default and expands them on header click', async () => {
     const root = createRoot(container)
     await React.act(async () => {
       root.render(
@@ -30,15 +51,30 @@ describe('SettingsView - Code Tree Settings', () => {
 
     const codeTreeCard = container.querySelector('#code-tree-settings')
     expect(codeTreeCard).not.toBeNull()
-    expect(codeTreeCard?.textContent).toContain('Árbol de Código Lateral')
+    // Collapsed by default: inner options are not in DOM
+    expect(codeTreeCard?.textContent).not.toContain('Hover to open')
+
+    // Click header to expand
+    const header = codeTreeCard?.firstElementChild as HTMLElement
+    expect(header).not.toBeNull()
+
+    await React.act(async () => {
+      header.click()
+    })
+
+    // Now expanded
     expect(codeTreeCard?.textContent).toContain('Hover to open')
-    expect(codeTreeCard?.textContent).toContain('Open folders on click')
     expect(codeTreeCard?.textContent).toContain('Pin per window')
-    expect(codeTreeCard?.textContent).toContain('Izquierda')
-    expect(codeTreeCard?.textContent).toContain('Derecha')
+
+    // Click again to collapse
+    await React.act(async () => {
+      header.click()
+    })
+
+    expect(codeTreeCard?.textContent).not.toContain('Hover to open')
   })
 
-  it('calls onSavePreferences when changing hoverToOpen or pinPerWindow', async () => {
+  it('calls onSavePreferences when changing hoverToOpen or pinPerWindow in expanded Code Tree', async () => {
     const onSavePreferences = vi.fn().mockResolvedValue(undefined)
     const root = createRoot(container)
     await React.act(async () => {
@@ -52,10 +88,16 @@ describe('SettingsView - Code Tree Settings', () => {
       )
     })
 
+    // Expand code tree section
+    const header = container.querySelector('#code-tree-settings > div') as HTMLElement
+    await React.act(async () => {
+      header.click()
+    })
+
     const checkboxes = container.querySelectorAll<HTMLInputElement>('#code-tree-settings input[type="checkbox"]')
     expect(checkboxes.length).toBeGreaterThanOrEqual(4)
 
-    // Toggle hoverToOpen checkbox (4th checkbox in codeTree settings now that master toggle is 1st)
+    // Toggle hoverToOpen checkbox (4th checkbox now that master toggle is 1st)
     const hoverCheckbox = checkboxes[3]
     await React.act(async () => {
       hoverCheckbox.click()
@@ -68,7 +110,7 @@ describe('SettingsView - Code Tree Settings', () => {
     )
   })
 
-  it('allows disabling the code tree feature completely via master toggle', async () => {
+  it('allows disabling the code tree feature completely via master toggle in expanded card', async () => {
     const onSavePreferences = vi.fn().mockResolvedValue(undefined)
     const root = createRoot(container)
     await React.act(async () => {
@@ -80,6 +122,12 @@ describe('SettingsView - Code Tree Settings', () => {
           locale="es"
         />
       )
+    })
+
+    // Expand code tree section
+    const header = container.querySelector('#code-tree-settings > div') as HTMLElement
+    await React.act(async () => {
+      header.click()
     })
 
     const masterToggle = container.querySelector<HTMLInputElement>(
@@ -99,42 +147,7 @@ describe('SettingsView - Code Tree Settings', () => {
     )
   })
 
-  it('allows collapsing and expanding sections in settings', async () => {
-    const root = createRoot(container)
-    await React.act(async () => {
-      root.render(
-        <SettingsView
-          preferences={DEFAULT_EXTENSION_PREFERENCES}
-          onSavePreferences={vi.fn()}
-          onClearCache={vi.fn()}
-          locale="es"
-        />
-      )
-    })
-
-    const codeTreeHeader = container.querySelector('#code-tree-settings > div') as HTMLElement
-    expect(codeTreeHeader).not.toBeNull()
-
-    // Currently expanded: pin per window is visible
-    expect(container.querySelector('#code-tree-settings')?.textContent).toContain('Pin per window')
-
-    // Click header to collapse
-    await React.act(async () => {
-      codeTreeHeader.click()
-    })
-
-    // Now collapsed: inner content should be hidden
-    expect(container.querySelector('#code-tree-settings')?.textContent).not.toContain('Pin per window')
-
-    // Click header again to expand
-    await React.act(async () => {
-      codeTreeHeader.click()
-    })
-
-    expect(container.querySelector('#code-tree-settings')?.textContent).toContain('Pin per window')
-  })
-
-  it('renders Icon Theme buttons and switches theme on click', async () => {
+  it('renders Icon Theme buttons and switches theme on click after expanding Code Tree', async () => {
     const onSavePreferences = vi.fn().mockResolvedValue(undefined)
     const root = createRoot(container)
     await React.act(async () => {
@@ -146,6 +159,12 @@ describe('SettingsView - Code Tree Settings', () => {
           locale="es"
         />
       )
+    })
+
+    // Expand code tree section
+    const header = container.querySelector('#code-tree-settings > div') as HTMLElement
+    await React.act(async () => {
+      header.click()
     })
 
     const setiBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Seti UI'))
@@ -162,7 +181,7 @@ describe('SettingsView - Code Tree Settings', () => {
     )
   })
 
-  it('renders Token Profiles manager and allows adding a new token profile', async () => {
+  it('renders Token Profiles manager and allows adding a new token profile after expanding', async () => {
     const onSavePreferences = vi.fn().mockResolvedValue(undefined)
     const root = createRoot(container)
     await React.act(async () => {
@@ -174,6 +193,12 @@ describe('SettingsView - Code Tree Settings', () => {
           locale="es"
         />
       )
+    })
+
+    // Expand token profiles section
+    const header = container.querySelector('#token-profiles-settings > div') as HTMLElement
+    await React.act(async () => {
+      header.click()
     })
 
     const tokenProfilesCard = container.querySelector('#token-profiles-settings')
@@ -216,7 +241,7 @@ describe('SettingsView - Code Tree Settings', () => {
     )
   })
 
-  it('clears githubToken when active profile is deleted', async () => {
+  it('clears githubToken when active profile is deleted after expanding', async () => {
     const onSavePreferences = vi.fn().mockResolvedValue(undefined)
     const root = createRoot(container)
     const prefsWithProfile = {
@@ -237,6 +262,12 @@ describe('SettingsView - Code Tree Settings', () => {
           locale="es"
         />
       )
+    })
+
+    // Expand token profiles section
+    const header = container.querySelector('#token-profiles-settings > div') as HTMLElement
+    await React.act(async () => {
+      header.click()
     })
 
     const deleteBtn = container.querySelector('#token-profiles-settings button[title*="Eliminar"]') as HTMLButtonElement

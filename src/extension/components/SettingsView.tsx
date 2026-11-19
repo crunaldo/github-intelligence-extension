@@ -57,12 +57,13 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
   const [authNotice, setAuthNotice] = useState<string | null>(null)
   const [newProfileLabel, setNewProfileLabel] = useState('')
   const [newProfileToken, setNewProfileToken] = useState('')
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    proPlan: true,
-    token: true,
-    tokenProfiles: true,
-    codeTree: true,
-  })
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash === '#code-tree-settings') {
+      setOpenSections({ codeTree: true })
+    }
+  }, [])
 
   const toggleSection = (key: string) => {
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -181,6 +182,32 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
     }
   }
 
+  const handleRefreshProStatus = async () => {
+    setAuthNotice(null)
+    setAuthBusy(true)
+    try {
+      const refreshed = await refreshProStatus()
+      setAuthSession(refreshed)
+      if (refreshed?.isPro) {
+        setAuthNotice(
+          activeLocale === 'es'
+            ? '¡Suscripción Pro activa confirmada!'
+            : 'Active Pro subscription verified!'
+        )
+      } else {
+        setAuthNotice(
+          activeLocale === 'es'
+            ? 'Aún no se detecta suscripción Pro activa. Si acabas de pagar, reintenta en unos segundos.'
+            : 'No active Pro subscription detected yet. If you recently upgraded, retry in a moment.'
+        )
+      }
+    } catch (err) {
+      setAuthNotice(err instanceof Error && err.message ? err.message : t('ai_error_notice', activeLocale))
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
   const handleSaveToken = async () => {
     await onSavePreferences({ githubToken: token.trim() })
     setSavedSuccess(true)
@@ -294,113 +321,287 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
         </div>
       </div>
 
-      {/* 1.5 Pro Plan & GitHub Authentication Card (Collapsible) */}
-      <div className="insight-card" style={{ border: '1px solid var(--border-medium)', padding: 0, overflow: 'hidden' }}>
-        <div
-          onClick={() => toggleSection('proPlan')}
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '12px 14px',
-            cursor: 'pointer',
-            userSelect: 'none',
-            background: openSections.proPlan ? 'rgba(255, 255, 255, 0.02)' : 'transparent',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Sparkles size={16} style={{ color: 'var(--accent-cyan)' }} />
-            <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
-              {t('pro_plan_title', activeLocale)}
-            </span>
-            <span
-              className="colloquial-chip"
+      {/* 1.5 Pro Plan & Membership Hero Card (Non-collapsible, Premium Design) */}
+      <div
+        className="insight-card pro-plan-hero-card"
+        style={{
+          border: '1px solid rgba(99, 102, 241, 0.35)',
+          borderRadius: 'var(--radius-md, 10px)',
+          background:
+            'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(56, 189, 248, 0.06) 50%, rgba(168, 85, 247, 0.08) 100%)',
+          boxShadow: '0 4px 20px -2px rgba(99, 102, 241, 0.12)',
+          padding: '16px',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header with Icon, Title, and Pro Status Badge */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
               style={{
-                fontWeight: 700,
-                fontSize: 10,
-                color: authSession?.isPro ? 'var(--accent-emerald)' : 'var(--text-secondary)',
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: 'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 10px rgba(99, 102, 241, 0.4)',
+                flexShrink: 0,
               }}
             >
-              {authSession?.isPro ? t('pro_badge_active', activeLocale) : t('pro_badge_free', activeLocale)}
-            </span>
-          </div>
-          {openSections.proPlan ? (
-            <ChevronDown size={15} style={{ color: 'var(--text-muted)' }} />
-          ) : (
-            <ChevronRight size={15} style={{ color: 'var(--text-muted)' }} />
-          )}
-        </div>
-
-        {openSections.proPlan && (
-          <div style={{ padding: '0 14px 14px 14px', borderTop: '1px solid var(--border-subtle)' }}>
-            <p style={{ margin: '10px 0 12px', fontSize: 12, lineHeight: 1.45, color: 'var(--text-secondary)' }}>
-              {t('pro_plan_desc', activeLocale)}
-            </p>
-
-            {authSession && (
-              <div style={{ fontSize: 12, color: 'var(--text-primary)', marginBottom: 10 }}>
-                {t('pro_connected_as', activeLocale)}{' '}
-                <strong>@{authSession.user.userName || authSession.user.email || authSession.user.id}</strong>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {!authSession && (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => void handleGitHubSignIn()}
-                  disabled={authBusy}
-                >
-                  <span>{t('pro_sign_in_github', activeLocale)}</span>
-                </button>
-              )}
-
-              {!authSession?.isPro && (
-                <button
-                  type="button"
-                  className="btn-github-direct"
-                  onClick={() => void handleUpgradeToPro()}
-                  disabled={authBusy}
-                >
-                  <Sparkles size={12} />
-                  <span>{t('pro_upgrade_btn', activeLocale)}</span>
-                </button>
-              )}
-
-              {authSession && (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => void handleSignOut()}
-                  disabled={authBusy}
-                >
-                  <LogOut size={12} />
-                  <span>{t('pro_sign_out', activeLocale)}</span>
-                </button>
-              )}
+              <Sparkles size={18} style={{ color: '#ffffff' }} />
             </div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                {t('pro_plan_title', activeLocale)}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                {t('pro_plan_desc', activeLocale)}
+              </div>
+            </div>
+          </div>
 
-            {authNotice && (
+          <div>
+            {authSession?.isPro ? (
               <div
-                role="alert"
                 style={{
-                  marginTop: 10,
-                  padding: '8px 10px',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: 11.5,
-                  display: 'flex',
+                  display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 7,
-                  background: 'rgba(245, 158, 11, 0.1)',
-                  color: 'var(--accent-amber)',
-                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  gap: 6,
+                  padding: '4px 10px',
+                  borderRadius: 20,
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid rgba(16, 185, 129, 0.4)',
+                  color: 'var(--accent-emerald)',
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  letterSpacing: '0.04em',
+                  boxShadow: '0 0 10px rgba(16, 185, 129, 0.2)',
+                  whiteSpace: 'nowrap',
                 }}
               >
-                <AlertCircle size={14} style={{ flexShrink: 0 }} />
-                <span>{authNotice}</span>
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: 'var(--accent-emerald)',
+                    boxShadow: '0 0 6px var(--accent-emerald)',
+                  }}
+                />
+                <span>{t('pro_badge_active', activeLocale)}</span>
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '4px 10px',
+                  borderRadius: 20,
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  color: 'var(--accent-amber)',
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  letterSpacing: '0.04em',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <Zap size={11} style={{ color: 'var(--accent-amber)' }} />
+                <span>{t('pro_badge_free', activeLocale)}</span>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Feature Highlights Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, margin: '14px 0' }}>
+          <div
+            style={{
+              background: 'rgba(0, 0, 0, 0.2)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: 'var(--radius-sm, 6px)',
+              padding: '8px 10px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+              <FolderTree size={13} style={{ color: 'var(--accent-cyan)' }} />
+              <span>{t('pro_feat_tree', activeLocale)}</span>
+            </div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+              {t('pro_feat_tree_desc', activeLocale)}
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: 'rgba(0, 0, 0, 0.2)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: 'var(--radius-sm, 6px)',
+              padding: '8px 10px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+              <ShieldCheck size={13} style={{ color: 'var(--accent-emerald)' }} />
+              <span>{t('pro_feat_audit', activeLocale)}</span>
+            </div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+              {t('pro_feat_audit_desc', activeLocale)}
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: 'rgba(0, 0, 0, 0.2)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: 'var(--radius-sm, 6px)',
+              padding: '8px 10px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+              <Sparkles size={13} style={{ color: 'var(--brand-primary, #FF2F5A)' }} />
+              <span>{t('pro_feat_mascot', activeLocale)}</span>
+            </div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+              {t('pro_feat_mascot_desc', activeLocale)}
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: 'rgba(0, 0, 0, 0.2)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: 'var(--radius-sm, 6px)',
+              padding: '8px 10px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+              <KeyRound size={13} style={{ color: 'var(--accent-violet, #c084fc)' }} />
+              <span>{t('pro_feat_tokens', activeLocale)}</span>
+            </div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+              {t('pro_feat_tokens_desc', activeLocale)}
+            </div>
+          </div>
+        </div>
+
+        {/* User Identity & Action Bar */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            padding: '10px 12px',
+            background: 'rgba(0, 0, 0, 0.22)',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--border-subtle)',
+            flexWrap: 'wrap',
+          }}
+        >
+          {authSession ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Users size={14} style={{ color: 'var(--accent-cyan)' }} />
+              <div style={{ fontSize: 12 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>{t('pro_connected_as', activeLocale)} </span>
+                <strong style={{ color: 'var(--text-primary)' }}>
+                  @{authSession.user.userName || authSession.user.email || authSession.user.id}
+                </strong>
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              {activeLocale === 'es'
+                ? 'Conecta GitHub para vincular tu licencia Pro'
+                : 'Connect GitHub to link your Pro license'}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {!authSession && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => void handleGitHubSignIn()}
+                disabled={authBusy}
+                style={{ padding: '6px 12px', fontSize: 11.5, fontWeight: 600 }}
+              >
+                <span>{t('pro_sign_in_github', activeLocale)}</span>
+              </button>
+            )}
+
+            {!authSession?.isPro && (
+              <button
+                type="button"
+                className="btn-github-direct"
+                onClick={() => void handleUpgradeToPro()}
+                disabled={authBusy}
+                style={{
+                  background: 'linear-gradient(135deg, #0284c7 0%, #6366f1 100%)',
+                  border: 'none',
+                  color: '#ffffff',
+                  padding: '6px 14px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  boxShadow: '0 2px 10px rgba(99, 102, 241, 0.35)',
+                }}
+              >
+                <Sparkles size={12} />
+                <span>{t('pro_upgrade_btn', activeLocale)}</span>
+              </button>
+            )}
+
+            {authSession && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => void handleRefreshProStatus()}
+                disabled={authBusy}
+                title={t('pro_refresh_status', activeLocale)}
+                style={{ padding: '6px 10px', fontSize: 11.5 }}
+              >
+                <RefreshCw size={12} className={authBusy ? 'animate-spin' : ''} />
+                <span>{t('pro_refresh_status', activeLocale)}</span>
+              </button>
+            )}
+
+            {authSession && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => void handleSignOut()}
+                disabled={authBusy}
+                title={t('pro_sign_out', activeLocale)}
+                style={{ padding: '6px 10px', fontSize: 11.5 }}
+              >
+                <LogOut size={12} />
+                <span>{t('pro_sign_out', activeLocale)}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {authNotice && (
+          <div
+            role="alert"
+            style={{
+              marginTop: 10,
+              padding: '8px 10px',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 11.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              background: 'rgba(245, 158, 11, 0.1)',
+              color: 'var(--accent-amber)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+            }}
+          >
+            <AlertCircle size={14} style={{ flexShrink: 0 }} />
+            <span>{authNotice}</span>
           </div>
         )}
       </div>

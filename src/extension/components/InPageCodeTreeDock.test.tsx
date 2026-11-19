@@ -8,6 +8,14 @@ import { DEFAULT_CODE_TREE_PREFERENCES } from '../storage'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+vi.mock('../utils/treePathSync', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/treePathSync')>()
+  return {
+    ...actual,
+    fetchRepoGitTree: vi.fn().mockResolvedValue([]),
+  }
+})
+
 describe('InPageCodeTreeDock', () => {
   let container: HTMLDivElement
 
