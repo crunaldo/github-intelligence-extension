@@ -33,6 +33,13 @@ import {
   type PrFileEntry,
   type PrOrCommitResolution,
 } from '../utils/prCommitResolver'
+import {
+  extractActivePathFromUrl,
+  loadOpenFolders,
+  saveOpenFolders,
+  mergeActiveAncestors,
+  fetchRepoGitTree,
+} from '../utils/treePathSync'
 
 export interface InPageCodeTreeDockProps {
   owner: string
@@ -49,6 +56,7 @@ export interface InPageCodeTreeDockProps {
   onTriggerAnalysis?: () => void
   prOrCommitResolution?: PrOrCommitResolution | null
   targetUrl?: string
+  enableLazyTreeFetch?: boolean
 }
 
 interface TreeNode {
@@ -80,6 +88,7 @@ export function InPageCodeTreeDock({
   onTriggerAnalysis,
   prOrCommitResolution,
   targetUrl,
+  enableLazyTreeFetch = false,
 }: InPageCodeTreeDockProps) {
   const [isOpen, setIsOpen] = useState(() => {
     if (defaultOpen !== undefined) return defaultOpen
@@ -121,11 +130,121 @@ export function InPageCodeTreeDock({
   })
 
   const [searchQuery, setSearchQuery] = useState('')
-  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({
-    src: true,
-    app: true,
-    lib: true,
-  })
+  const [currentUrl, setCurrentUrl] = useState(() =>
+    targetUrl || (typeof window !== 'undefined' ? window.location.href : '')
+  )
+
+  useEffect(() => {
+    if (targetUrl) {
+      setCurrentUrl(targetUrl)
+    }
+  }, [targetUrl])
+
+  // Real-time URL change detection across SPA / Turbo navigations
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const updateUrl = () => {
+      const href = window.location.href
+      setCurrentUrl((prev) => (prev !== href ? href : prev))
+    }
+    window.addEventListener('popstate', updateUrl)
+    document.addEventListener('turbo:load', updateUrl)
+    document.addEventListener('turbo:render', updateUrl)
+    document.addEventListener('pjax:end', updateUrl)
+
+    const timer = setInterval(updateUrl, 300)
+    return () => {
+      window.removeEventListener('popstate', updateUrl)
+      document.removeEventListener('turbo:load', updateUrl)
+      document.removeEventListener('turbo:render', updateUrl)
+      document.removeEventListener('pjax:end', updateUrl)
+      clearInterval(timer)
+    }
+  }, [])
+
+  const activePathInfo = useMemo(() => {
+    return extractActivePathFromUrl(currentUrl, codeTreePreferences?.customEnterpriseDomains)
+  }, [currentUrl, codeTreePreferences?.customEnterpriseDomains])
+
+  const [activePath, setActivePath] = useState(() => activePathInfo.path)
+  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>(() =>
+    loadOpenFolders(owner, repo)
+  )
+
+  // Auto-expand ancestor directories of the active file and persist
+  useEffect(() => {
+    setActivePath(activePathInfo.path)
+    if (activePathInfo.path) {
+      setOpenFolders((prev) => {
+        const next = mergeActiveAncestors(prev, activePathInfo.path)
+        if (next !== prev) {
+          saveOpenFolders(owner, repo, next)
+          return next
+        }
+        return prev
+      })
+    }
+  }, [activePathInfo.path, owner, repo])
+
+  // Auto-scroll active file into view when activePath changes or dock is opened
+  useEffect(() => {
+    if (!isOpen || !activePath || typeof document === 'undefined') return
+    const timer = setTimeout(() => {
+      try {
+        const activeEl = document.querySelector('.gpi-tree-row.is-active-item')
+        if (activeEl) {
+          activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+        }
+      } catch {}
+    }, 120)
+    return () => clearTimeout(timer)
+  }, [isOpen, activePath])
+
+  // Lazy-fetch git tree from GitHub API if enableLazyTreeFetch is true and initialEntries is empty
+  const [lazyEntries, setLazyEntries] = useState<TreeEntry[]>([])
+  const [isLoadingTree, setIsLoadingTree] = useState(false)
+
+  useEffect(() => {
+    if (!enableLazyTreeFetch) return
+    if (initialEntries && initialEntries.length > 0) {
+      setLazyEntries(initialEntries)
+      return
+    }
+
+    let isMounted = true
+    setIsLoadingTree(true)
+
+    getStoredGitHubToken()
+      .then((token) => {
+        return fetchRepoGitTree(
+          owner,
+          repo,
+          ref,
+          token,
+          codeTreePreferences?.customEnterpriseDomains
+        )
+      })
+      .then((entries) => {
+        if (!isMounted) return
+        if (entries && entries.length > 0) {
+          setLazyEntries(entries)
+        }
+        setIsLoadingTree(false)
+      })
+      .catch(() => {
+        if (isMounted) setIsLoadingTree(false)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [owner, repo, ref, initialEntries, codeTreePreferences?.customEnterpriseDomains])
+
+  const effectiveEntries = useMemo(() => {
+    if (initialEntries && initialEntries.length > 0) return initialEntries
+    return lazyEntries
+  }, [initialEntries, lazyEntries])
+
   const [explainingFile, setExplainingFile] = useState<string | null>(null)
   const [popoverTop, setPopoverTop] = useState<number>(100)
   const [prResolution, setPrResolution] = useState<PrOrCommitResolution | null>(() => prOrCommitResolution || null)
@@ -313,7 +432,7 @@ export function InPageCodeTreeDock({
   const { treeRoot } = useMemo(() => {
     const root: Record<string, TreeNode> = {}
     const query = searchQuery.toLowerCase().trim()
-    const valid = (initialEntries || []).filter((e) => Boolean(e?.path))
+    const valid = (effectiveEntries || []).filter((e) => Boolean(e?.path))
 
     valid.forEach((entry) => {
       const isMatch = !query || entry.path.toLowerCase().includes(query)
@@ -340,15 +459,20 @@ export function InPageCodeTreeDock({
     })
 
     return { treeRoot: root }
-  }, [initialEntries, searchQuery])
+  }, [effectiveEntries, searchQuery])
 
   const toggleFolder = (path: string) => {
-    setOpenFolders((prev) => ({ ...prev, [path]: !prev[path] }))
+    setOpenFolders((prev) => {
+      const next = { ...prev, [path]: !prev[path] }
+      saveOpenFolders(owner, repo, next)
+      return next
+    })
   }
 
   const toggleAll = (expand: boolean) => {
     if (!expand) {
       setOpenFolders({})
+      saveOpenFolders(owner, repo, {})
       return
     }
     const all: Record<string, boolean> = {}
@@ -362,18 +486,40 @@ export function InPageCodeTreeDock({
     }
     collect(treeRoot)
     setOpenFolders(all)
+    saveOpenFolders(owner, repo, all)
   }
 
-  // Handle SPA navigation without closing or reloading dock
-  const handleFileClick = (e: React.MouseEvent<HTMLAnchorElement>, fileUrl: string) => {
+  // Handle SPA navigation without closing or collapsing dock
+  const handleFileClick = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    nodePath: string,
+    fileUrl: string
+  ) => {
     e.preventDefault()
     e.stopPropagation()
 
-    // Always keep dock open across file navigation
+    // 1. Immediately highlight this file in real-time
+    setActivePath(nodePath)
+
+    // 2. Ensure all ancestors remain expanded and save to persistent storage
+    setOpenFolders((prev) => {
+      const next = mergeActiveAncestors(prev, nodePath)
+      saveOpenFolders(owner, repo, next)
+      return next
+    })
+
+    // 3. Always keep dock open across file navigation
     updateIsOpen(true)
 
-    // Trigger synthetic link click on document.body so GitHub Turbo intercepts it cleanly
-    if (typeof document !== 'undefined') {
+    // 4. Trigger synthetic link click or Turbo.visit so GitHub navigates cleanly
+    if (typeof window !== 'undefined') {
+      const w = window as any
+      if (w.Turbo && typeof w.Turbo.visit === 'function') {
+        try {
+          w.Turbo.visit(fileUrl)
+          return
+        } catch {}
+      }
       const link = document.createElement('a')
       link.href = fileUrl
       link.setAttribute('data-turbo', 'true')
@@ -407,10 +553,11 @@ export function InPageCodeTreeDock({
       const fileUrl = `https://github.com/${owner}/${repo}/blob/${ref}/${node.path}`
 
       if (isDir) {
+        const isDirActive = activePath === node.path
         return (
           <div key={node.path}>
             <div
-              className="gpi-tree-row"
+              className={`gpi-tree-row ${isDirActive ? 'is-active-item' : ''}`}
               style={{ paddingLeft: depth * 14 + 10 }}
               onClick={() => {
                 if (codeTreePreferences?.openFoldersOnClick !== false) {
@@ -440,11 +587,12 @@ export function InPageCodeTreeDock({
       // File Row
       const badge = classifyFile(node.path, vulnerableManifests)
       const isExplainingThis = explainingFile === node.path
+      const isActiveFile = activePath === node.path
 
       return (
         <div
           key={node.path}
-          className="gpi-tree-row"
+          className={`gpi-tree-row ${isActiveFile ? 'is-active-item' : ''}`}
           style={{ paddingLeft: depth * 14 + 24 }}
           title={node.path}
         >
@@ -452,7 +600,7 @@ export function InPageCodeTreeDock({
             href={fileUrl}
             className="gpi-tree-left"
             style={{ textDecoration: 'none', color: 'inherit', flex: 1, minWidth: 0 }}
-            onClick={(e) => handleFileClick(e, fileUrl)}
+            onClick={(e) => handleFileClick(e, node.path, fileUrl)}
           >
             {getFileIcon(node.name, codeTreePreferences.iconTheme || 'vscode')}
             <span className="gpi-tree-label">{node.name}</span>
@@ -807,7 +955,7 @@ export function InPageCodeTreeDock({
             )}
 
             {/* Search */}
-            {(isAnalyzed || (prResolution && prResolution.files.length > 0)) && (
+            {(isAnalyzed || Object.keys(treeRoot).length > 0 || (prResolution && prResolution.files.length > 0)) && (
               <div className="gpi-search-container">
                 <Search size={12} className="gpi-search-icon" />
                 <input
@@ -837,10 +985,11 @@ export function InPageCodeTreeDock({
                   }
                   return filtered.map((file) => {
                     const fileUrl = `#${file.diffAnchor}`
+                    const isActivePrFile = activePath === file.filename
                     return (
                       <div
                         key={file.filename}
-                        className="gpi-tree-row"
+                        className={`gpi-tree-row ${isActivePrFile ? 'is-active-item' : ''}`}
                         style={{ paddingLeft: 14, paddingRight: 8 }}
                         title={file.filename}
                       >
@@ -850,6 +999,7 @@ export function InPageCodeTreeDock({
                           style={{ textDecoration: 'none', color: 'inherit', flex: 1, minWidth: 0 }}
                           onClick={(e) => {
                             e.preventDefault()
+                            setActivePath(file.filename)
                             const targetEl =
                               document.getElementById(file.diffAnchor) ||
                               document.querySelector(`[data-tagsearch-path="${file.filename}"]`) ||
@@ -883,6 +1033,39 @@ export function InPageCodeTreeDock({
                     )
                   })
                 })()
+              ) : Object.keys(treeRoot).length > 0 ? (
+                <>
+                  {!isAnalyzed && onTriggerAnalysis && (
+                    <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--gpi-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(234, 179, 8, 0.08)' }}>
+                      <span style={{ fontSize: 11, color: 'var(--gpi-text-muted)' }}>Árbol cargado en vivo</span>
+                      <button
+                        type="button"
+                        onClick={onTriggerAnalysis}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#eab308',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                        title="Analizar dependencias y seguridad con IA"
+                      >
+                        <Zap size={11} />
+                        Analizar con IA
+                      </button>
+                    </div>
+                  )}
+                  {renderNodes(treeRoot)}
+                </>
+              ) : isLoadingTree ? (
+                <div style={{ padding: 24, textAlign: 'center', color: 'var(--gpi-text-muted)', fontSize: 12 }}>
+                  <div className="gpi-tab-pulse-dot" style={{ margin: '0 auto 8px auto', background: 'var(--gpi-accent)' }} />
+                  Cargando archivos del repositorio...
+                </div>
               ) : !isAnalyzed ? (
                 <div className="gpi-cta-box">
                   <Zap size={24} style={{ color: '#eab308', margin: '0 auto 8px auto', display: 'block' }} />
@@ -907,8 +1090,6 @@ export function InPageCodeTreeDock({
                     <span>Analizar repositorio (1 clic)</span>
                   </button>
                 </div>
-              ) : Object.keys(treeRoot).length > 0 ? (
-                renderNodes(treeRoot)
               ) : (
                 <div style={{ padding: 20, textAlign: 'center', color: 'var(--gpi-text-muted)', fontSize: 12 }}>
                   {searchQuery ? 'No se encontraron archivos' : 'Sin archivos disponibles'}

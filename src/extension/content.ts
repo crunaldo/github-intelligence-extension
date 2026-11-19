@@ -153,6 +153,7 @@ function updateDock(repo: ParsedRepoInfo) {
         vulnerableManifests,
         codeTreePreferences: codeTreePrefs,
         targetUrl: window.location.href,
+        enableLazyTreeFetch: true,
         onOpenSidepanel: () => {
           chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' }).catch(() => {})
         },
@@ -220,10 +221,8 @@ function handleNavigation() {
       ? `${prTarget.type}:${prTarget.id}${isFilesTab ? ':files' : ''}`
       : (repo.ref || '')
     const nextKey = `${repo.fullName.toLowerCase()}@${targetSuffix}`
-    if (currentRepoKey !== nextKey) {
-      currentRepoKey = nextKey
-      updateDock(repo)
-    }
+    currentRepoKey = nextKey
+    updateDock(repo)
   } else {
     unmountDock()
   }

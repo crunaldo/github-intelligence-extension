@@ -361,6 +361,25 @@ export const DOCK_CSS = `
   background: var(--gpi-row-hover);
 }
 
+.gpi-tree-row.is-active-item {
+  background: rgba(56, 189, 248, 0.18);
+  color: var(--gpi-accent);
+  font-weight: 600;
+  border-left: 3px solid var(--gpi-accent);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+:host([data-theme="light"]) .gpi-tree-row.is-active-item {
+  background: rgba(9, 105, 218, 0.12);
+  color: #0969da;
+  border-left-color: #0969da;
+}
+
+.gpi-tree-row.is-active-item .gpi-tree-label {
+  font-weight: 600;
+}
+
 .gpi-tree-left {
   display: flex;
   align-items: center;

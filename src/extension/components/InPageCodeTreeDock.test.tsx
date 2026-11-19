@@ -418,4 +418,86 @@ describe('InPageCodeTreeDock', () => {
     expect(container.textContent).toContain('src/New.ts')
     expect(container.textContent).not.toContain('src/Old.ts')
   })
+
+  it('synchronizes with GitHub URL in real-time, auto-expands ancestors and marks active file', async () => {
+    const mockEntries: TreeEntry[] = [
+      { path: 'src/index.ts', type: 'blob', size: 100, sha: '1', url: '' },
+      { path: 'src/components/ui/Button.tsx', type: 'blob', size: 200, sha: '2', url: '' },
+      { path: 'docs/readme.md', type: 'blob', size: 300, sha: '3', url: '' },
+    ]
+
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          isAnalyzed={true}
+          initialEntries={mockEntries}
+          defaultOpen={true}
+          targetUrl="https://github.com/facebook/react/blob/main/src/components/ui/Button.tsx"
+        />
+      )
+    })
+
+    // Button.tsx should be visible because src, src/components, and src/components/ui were auto-expanded
+    expect(container.textContent).toContain('Button.tsx')
+
+    const activeItem = container.querySelector('.gpi-tree-row.is-active-item')
+    expect(activeItem).not.toBeNull()
+    expect(activeItem?.textContent).toContain('Button.tsx')
+  })
+
+  it('preserves open folders on click and saves state to storage', async () => {
+    const mockEntries: TreeEntry[] = [
+      { path: 'src/index.ts', type: 'blob', size: 100, sha: '1', url: '' },
+      { path: 'src/utils/math.ts', type: 'blob', size: 200, sha: '2', url: '' },
+    ]
+
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          isAnalyzed={true}
+          initialEntries={mockEntries}
+          defaultOpen={true}
+          targetUrl="https://github.com/facebook/react"
+        />
+      )
+    })
+
+    // 1. Expand src/utils folder
+    const utilsFolder = Array.from(container.querySelectorAll('.gpi-tree-row')).find((el) =>
+      el.textContent?.includes('utils')
+    )
+    expect(utilsFolder).not.toBeNull()
+    await React.act(async () => {
+      utilsFolder?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // 2. Now math.ts is visible in the tree - click on math.ts link
+    const mathRow = Array.from(container.querySelectorAll('.gpi-tree-row')).find((el) =>
+      el.textContent?.includes('math.ts')
+    )
+    const mathLink = mathRow?.querySelector('a')
+    expect(mathLink).not.toBeNull()
+
+    await React.act(async () => {
+      mathLink?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    })
+
+    // The math.ts row should now be marked as active item
+    const activeRow = container.querySelector('.gpi-tree-row.is-active-item')
+    expect(activeRow).not.toBeNull()
+    expect(activeRow?.textContent).toContain('math.ts')
+
+    // Saved in sessionStorage
+    const stored = sessionStorage.getItem('gpi_tree_folders_facebook_react')
+    expect(stored).not.toBeNull()
+    const parsed = JSON.parse(stored || '{}')
+    expect(parsed.src).toBe(true)
+    expect(parsed['src/utils']).toBe(true)
+  })
 })
