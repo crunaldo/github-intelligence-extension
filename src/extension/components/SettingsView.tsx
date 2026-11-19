@@ -15,8 +15,10 @@ import {
   Globe,
   Sparkles,
   LogOut,
+  FolderTree,
 } from 'lucide-react'
 import type { ExtensionPreferences } from '../storage'
+import { DEFAULT_CODE_TREE_PREFERENCES } from '../storage'
 import { resolveActiveLanguage, detectSystemLanguage, t, type AppLanguage, type ActiveLocale } from '../i18n'
 import {
   getAuthSession,
@@ -429,11 +431,200 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
               border: `1px solid ${tokenTestResult.ok ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
             }}
           >
-            {tokenTestResult.ok ? <ShieldCheck size={16} /> : <AlertCircle size={16} />}
+            <ShieldCheck size={16} />
             <span>{tokenTestResult.message}</span>
           </div>
         )}
       </div>
+
+      {/* 2.5 Code Tree Lateral Dock Settings Card */}
+      {(() => {
+        const codeTree = preferences.codeTree || DEFAULT_CODE_TREE_PREFERENCES
+        return (
+          <div
+            id="code-tree-settings"
+            className="insight-card"
+            style={{
+              border: '1px solid var(--border-medium)',
+              scrollMarginTop: 16,
+              transition: 'box-shadow 0.3s ease, border-color 0.3s ease',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <FolderTree size={16} style={{ color: 'var(--accent-cyan)' }} />
+              <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
+                {t('code_tree_settings_title', activeLocale)}
+              </span>
+            </div>
+            <p style={{ margin: '0 0 14px', fontSize: 12, lineHeight: 1.45, color: 'var(--text-secondary)' }}>
+              {t('code_tree_settings_desc', activeLocale)}
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Pin per window */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)' }}>
+                    {t('code_tree_pin_per_window', activeLocale)}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    {t('code_tree_pin_per_window_desc', activeLocale)}
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={codeTree.pinPerWindow}
+                  onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, pinPerWindow: e.target.checked } })}
+                  style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--accent-cyan)' }}
+                />
+              </div>
+
+              {/* Open folders on click */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)' }}>
+                    {t('code_tree_open_folders_click', activeLocale)}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    {t('code_tree_open_folders_click_desc', activeLocale)}
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={codeTree.openFoldersOnClick}
+                  onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, openFoldersOnClick: e.target.checked } })}
+                  style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--accent-cyan)' }}
+                />
+              </div>
+
+              {/* Hover to open */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)' }}>
+                    {t('code_tree_hover_to_open', activeLocale)}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    {t('code_tree_hover_to_open_desc', activeLocale)}
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={codeTree.hoverToOpen}
+                  onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, hoverToOpen: e.target.checked } })}
+                  style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--accent-cyan)' }}
+                />
+              </div>
+
+              <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
+
+              {/* Tab Position (Left vs Right) */}
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)', marginBottom: 6 }}>
+                  {t('code_tree_position', activeLocale)}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {(['left', 'right'] as const).map((pos) => {
+                    const isSelected = codeTree.tabPosition === pos
+                    return (
+                      <button
+                        key={pos}
+                        type="button"
+                        className={`btn-secondary ${isSelected ? 'active' : ''}`}
+                        onClick={() => void onSavePreferences({ codeTree: { ...codeTree, tabPosition: pos } })}
+                        style={{
+                          justifyContent: 'center',
+                          padding: '7px 10px',
+                          borderRadius: 'var(--radius-sm)',
+                          borderColor: isSelected ? 'var(--accent-cyan)' : undefined,
+                          background: isSelected ? 'var(--accent-cyan-subtle)' : undefined,
+                          color: isSelected ? 'var(--accent-cyan)' : 'var(--text-primary)',
+                          fontWeight: isSelected ? 700 : 500,
+                        }}
+                      >
+                        <span>{pos === 'left' ? t('code_tree_position_left', activeLocale) : t('code_tree_position_right', activeLocale)}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Vertical position slider */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)' }}>
+                    {t('code_tree_vertical_pos', activeLocale)}
+                  </div>
+                  <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--accent-cyan)', fontWeight: 700 }}>
+                    {codeTree.tabVerticalPos}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={10}
+                  max={80}
+                  step={2}
+                  value={codeTree.tabVerticalPos}
+                  onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, tabVerticalPos: Number(e.target.value) } })}
+                  style={{ width: '100%', accentColor: 'var(--accent-cyan)', cursor: 'pointer' }}
+                />
+              </div>
+
+              <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
+
+              {/* Shortcut input */}
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)' }}>
+                  {t('code_tree_shortcut', activeLocale)}
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2, marginBottom: 6 }}>
+                  {t('code_tree_shortcut_desc', activeLocale)}
+                </div>
+                <input
+                  type="text"
+                  placeholder={t('code_tree_shortcut_placeholder', activeLocale)}
+                  value={codeTree.shortcut}
+                  onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, shortcut: e.target.value } })}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-input)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 12,
+                  }}
+                />
+              </div>
+
+              {/* Hide when URL matches input */}
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text-primary)' }}>
+                  {t('code_tree_hide_urls', activeLocale)}
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 2, marginBottom: 6 }}>
+                  {t('code_tree_hide_urls_desc', activeLocale)}
+                </div>
+                <input
+                  type="text"
+                  placeholder={t('code_tree_hide_urls_placeholder', activeLocale)}
+                  value={codeTree.hideWhenUrlMatches}
+                  onChange={(e) => void onSavePreferences({ codeTree: { ...codeTree, hideWhenUrlMatches: e.target.value } })}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-input)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontSize: 12,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Auto-Sync Setting */}
       <div className="insight-card">

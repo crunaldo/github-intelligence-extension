@@ -410,13 +410,54 @@ export function SidepanelApp() {
 
     void checkActiveTab()
 
-    // Listen for TRIGGER_ANALYSIS messages from background or floating pill
-    const onMessage = (msg: { type: string; target?: GitHubTarget }) => {
-      if (msg?.type === 'TRIGGER_ANALYSIS' && msg.target?.originalUrl) {
+    // Check if there was a pending navigation request (e.g. from in-page code tree dock settings button)
+    if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+      void chrome.storage.session.get('gpi_pending_nav').then((res) => {
+        const pending = res?.gpi_pending_nav as { tab?: SidepanelNav; target?: string; timestamp?: number } | undefined
+        if (pending?.tab && pending.timestamp && Date.now() - pending.timestamp < 10000) {
+          chrome.storage.session.remove('gpi_pending_nav').catch(() => {})
+          setNav(pending.tab)
+          if (pending.target === 'codeTree') {
+            setTimeout(() => {
+              const el = document.getElementById('code-tree-settings')
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                el.style.borderColor = 'var(--accent-cyan)'
+                el.style.boxShadow = '0 0 16px rgba(56, 189, 248, 0.4)'
+                setTimeout(() => {
+                  el.style.borderColor = ''
+                  el.style.boxShadow = ''
+                }, 2200)
+              }
+            }, 300)
+          }
+        }
+      }).catch(() => {})
+    }
+
+    // Listen for TRIGGER_ANALYSIS and NAVIGATE_SIDEPANEL_TAB messages from background or dock
+    const onMessage = (msg: { type: string; target?: GitHubTarget | string; tab?: string }) => {
+      if (msg?.type === 'TRIGGER_ANALYSIS' && typeof msg.target === 'object' && msg.target?.originalUrl) {
         setUrlInput(msg.target.originalUrl)
         setActiveTabRepo(msg.target)
         setNav('analyze')
         void performAnalysis(msg.target.originalUrl, false)
+      } else if (msg?.type === 'NAVIGATE_SIDEPANEL_TAB' && msg.tab) {
+        setNav(msg.tab as SidepanelNav)
+        if (msg.target === 'codeTree') {
+          setTimeout(() => {
+            const el = document.getElementById('code-tree-settings')
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              el.style.borderColor = 'var(--accent-cyan)'
+              el.style.boxShadow = '0 0 16px rgba(56, 189, 248, 0.4)'
+              setTimeout(() => {
+                el.style.borderColor = ''
+                el.style.boxShadow = ''
+              }, 2200)
+            }
+          }, 250)
+        }
       }
     }
 

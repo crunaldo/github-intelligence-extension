@@ -2,12 +2,33 @@ import type { RecentAnalysis, RepositoryReport } from '../features/repository/ty
 import { setConfiguredGitHubToken } from '../features/repository/github'
 import type { AppLanguage } from './i18n'
 
+export type CodeTreePreferences = {
+  hoverToOpen: boolean
+  openFoldersOnClick: boolean
+  pinPerWindow: boolean
+  tabPosition: 'left' | 'right'
+  tabVerticalPos: number // percentage e.g. 20
+  hideWhenUrlMatches: string // comma-separated keywords e.g. "issues, pulls, releases"
+  shortcut: string
+}
+
+export const DEFAULT_CODE_TREE_PREFERENCES: CodeTreePreferences = {
+  hoverToOpen: false,
+  openFoldersOnClick: true,
+  pinPerWindow: true,
+  tabPosition: 'left',
+  tabVerticalPos: 20,
+  hideWhenUrlMatches: '',
+  shortcut: 'Alt+W',
+}
+
 export type ExtensionPreferences = {
   githubToken: string
   autoSync: boolean
   theme: 'dark' | 'light' | 'system'
   autoAnalyzeOnPopup: boolean
   language: AppLanguage
+  codeTree: CodeTreePreferences
 }
 
 export const DEFAULT_EXTENSION_PREFERENCES: ExtensionPreferences = {
@@ -16,6 +37,7 @@ export const DEFAULT_EXTENSION_PREFERENCES: ExtensionPreferences = {
   theme: 'light',
   autoAnalyzeOnPopup: true,
   language: 'auto',
+  codeTree: DEFAULT_CODE_TREE_PREFERENCES,
 }
 
 export type FavoriteItem = {
@@ -54,7 +76,15 @@ export async function getStoredPreferences(): Promise<ExtensionPreferences> {
   const storage = getChromeStorageLocal()
   if (storage) {
     const result = await storage.get(STORAGE_KEYS.PREFERENCES)
-    const prefs = { ...DEFAULT_EXTENSION_PREFERENCES, ...((result[STORAGE_KEYS.PREFERENCES] as Record<string, unknown>) || {}) }
+    const stored = (result[STORAGE_KEYS.PREFERENCES] as Record<string, unknown>) || {}
+    const prefs: ExtensionPreferences = {
+      ...DEFAULT_EXTENSION_PREFERENCES,
+      ...stored,
+      codeTree: {
+        ...DEFAULT_CODE_TREE_PREFERENCES,
+        ...((stored.codeTree as Record<string, unknown>) || {}),
+      },
+    }
     if (prefs.githubToken) {
       setConfiguredGitHubToken(prefs.githubToken)
     }
@@ -63,7 +93,15 @@ export async function getStoredPreferences(): Promise<ExtensionPreferences> {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.PREFERENCES)
     if (!raw) return DEFAULT_EXTENSION_PREFERENCES
-    const prefs = { ...DEFAULT_EXTENSION_PREFERENCES, ...JSON.parse(raw) }
+    const stored = JSON.parse(raw) || {}
+    const prefs: ExtensionPreferences = {
+      ...DEFAULT_EXTENSION_PREFERENCES,
+      ...stored,
+      codeTree: {
+        ...DEFAULT_CODE_TREE_PREFERENCES,
+        ...((stored.codeTree as Record<string, unknown>) || {}),
+      },
+    }
     if (prefs.githubToken) {
       setConfiguredGitHubToken(prefs.githubToken)
     }
@@ -84,7 +122,14 @@ export async function getStoredGitHubToken(): Promise<string> {
 
 export async function saveStoredPreferences(prefs: Partial<ExtensionPreferences>): Promise<ExtensionPreferences> {
   const current = await getStoredPreferences()
-  const updated = { ...current, ...prefs }
+  const updated: ExtensionPreferences = {
+    ...current,
+    ...prefs,
+    codeTree: {
+      ...current.codeTree,
+      ...(prefs.codeTree || {}),
+    },
+  }
   if (updated.githubToken !== undefined) {
     setConfiguredGitHubToken(updated.githubToken)
   }

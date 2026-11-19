@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { injectCodeTreeHost } from './content/dockHost'
 import { InPageCodeTreeDock } from './components/InPageCodeTreeDock'
 import type { TreeEntry, RepositoryReport } from '../features/repository/types'
+import type { CodeTreePreferences } from './storage'
+import { DEFAULT_CODE_TREE_PREFERENCES } from './storage'
 
 const RESERVED_NAMES = new Set([
   'about',
@@ -94,7 +96,11 @@ function updateDock(repo: ParsedRepoInfo) {
     dockRoot = createRoot(mountPoint)
   }
 
-  const renderDock = (report?: RepositoryReport, isPro = false) => {
+  const renderDock = (
+    report?: RepositoryReport,
+    isPro = false,
+    codeTreePrefs: CodeTreePreferences = DEFAULT_CODE_TREE_PREFERENCES
+  ) => {
     const treeEntries: TreeEntry[] = report?.tree && report.tree.length > 0 ? report.tree : report?.importantFiles || []
     const isAnalyzed = Boolean(report && treeEntries.length > 0)
 
@@ -119,8 +125,12 @@ function updateDock(repo: ParsedRepoInfo) {
         isAnalyzed: isAnalyzed,
         isPro: isPro,
         vulnerableManifests,
+        codeTreePreferences: codeTreePrefs,
         onOpenSidepanel: () => {
           chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' }).catch(() => {})
+        },
+        onOpenSettings: () => {
+          chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL_SETTINGS', target: 'codeTree' }).catch(() => {})
         },
         onTriggerAnalysis: () => {
           chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' }).catch(() => {})
@@ -131,12 +141,17 @@ function updateDock(repo: ParsedRepoInfo) {
 
   // Load from chrome.storage.local
   if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-    chrome.storage.local.get(['gpi_reports', 'gpi_auth_session'], (res) => {
+    chrome.storage.local.get(['gpi_reports', 'gpi_auth_session', 'gpi_preferences'], (res) => {
       const reports = (res?.gpi_reports as Record<string, RepositoryReport>) || {}
       const report = (reports[repo.fullName.toLowerCase()] || reports[repo.fullName]) as RepositoryReport | undefined
       const authSession = res?.gpi_auth_session as { isPro?: boolean } | undefined
       const isPro = Boolean(authSession?.isPro)
-      renderDock(report, isPro)
+      const prefs = res?.gpi_preferences as { codeTree?: CodeTreePreferences } | undefined
+      const codeTreePrefs: CodeTreePreferences = {
+        ...DEFAULT_CODE_TREE_PREFERENCES,
+        ...(prefs?.codeTree || {}),
+      }
+      renderDock(report, isPro, codeTreePrefs)
     })
   } else {
     renderDock()
@@ -209,7 +224,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   // Listen to chrome.storage.local changes (e.g. analysis finishes in Sidepanel/Popup or login/pro change)
   if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName === 'local' && (changes.gpi_reports || changes.gpi_auth_session)) {
+      if (areaName === 'local' && (changes.gpi_reports || changes.gpi_auth_session || changes.gpi_preferences)) {
         const repo = parseGitHubRepo(window.location.href)
         if (repo) {
           updateDock(repo)

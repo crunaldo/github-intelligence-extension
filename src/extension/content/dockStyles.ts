@@ -70,28 +70,94 @@ export const DOCK_CSS = `
 
 .gpi-toggle-tab {
   position: absolute;
-  top: 140px;
-  right: -36px;
-  width: 36px;
-  height: 40px;
-  background: var(--gpi-tab-bg);
-  border: 1px solid var(--gpi-border);
+  right: -46px;
+  width: 46px;
+  height: 56px;
+  background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
   border-left: none;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 12px 12px 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 2px;
   cursor: pointer;
-  color: var(--gpi-tab-text);
-  box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.15);
-  transition: background 0.15s ease, transform 0.15s ease;
+  color: #ffffff;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.6), 2px 4px 12px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, background 0.2s ease;
   pointer-events: auto;
   z-index: 100;
 }
 
+:host([data-theme="light"]) .gpi-toggle-tab {
+  background: linear-gradient(135deg, #0969da 0%, #0284c7 100%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 4px 16px rgba(9, 105, 218, 0.45);
+}
+
 .gpi-toggle-tab:hover {
-  background: var(--gpi-row-hover);
-  transform: scale(1.05);
+  transform: translateX(4px) scale(1.06);
+  box-shadow: 0 0 24px rgba(56, 189, 248, 0.85), 4px 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.gpi-tab-label {
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.gpi-tab-pulse-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 6px #ffffff;
+  animation: pulse-dot 1.8s infinite;
+}
+
+@keyframes pulse-dot {
+  0% { transform: scale(0.85); opacity: 0.6; }
+  50% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(0.85); opacity: 0.6; }
+}
+
+/* Right-side dock variant */
+.gpi-dock-container.position-right {
+  left: auto;
+  right: 0;
+}
+
+.gpi-dock-container.position-right .gpi-dock-drawer {
+  left: auto;
+  right: 0;
+  border-right: none;
+  border-left: 1px solid var(--gpi-border);
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.25);
+}
+
+.gpi-dock-container.position-right .gpi-dock-drawer.closed {
+  transform: translateX(100%);
+}
+
+.gpi-dock-container.position-right .gpi-toggle-tab {
+  right: auto;
+  left: -46px;
+  border-right: none;
+  border-left: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-radius: 12px 0 0 12px;
+}
+
+.gpi-dock-container.position-right .gpi-toggle-tab:hover {
+  transform: translateX(-4px) scale(1.06);
+}
+
+.gpi-dock-container.position-right .gpi-resize-handle {
+  right: auto;
+  left: -4px;
 }
 
 .gpi-resize-handle {

@@ -14,12 +14,14 @@ import {
   Sparkles,
   ExternalLink,
   Zap,
-  SidebarClose,
-  SidebarOpen,
+  FolderTree,
+  Settings,
 } from 'lucide-react'
 import type { TreeEntry } from '../../features/repository/types'
 import { classifyFile } from '../utils/fileClassifier'
 import { FileAiExplainerPopover } from './FileAiExplainerPopover'
+import type { CodeTreePreferences } from '../storage'
+import { DEFAULT_CODE_TREE_PREFERENCES } from '../storage'
 
 export interface InPageCodeTreeDockProps {
   owner: string
@@ -30,7 +32,9 @@ export interface InPageCodeTreeDockProps {
   defaultOpen?: boolean
   isPro?: boolean
   vulnerableManifests?: string[]
+  codeTreePreferences?: CodeTreePreferences
   onOpenSidepanel?: () => void
+  onOpenSettings?: () => void
   onTriggerAnalysis?: () => void
 }
 
@@ -67,7 +71,9 @@ export function InPageCodeTreeDock({
   defaultOpen = false,
   isPro = false,
   vulnerableManifests = [],
+  codeTreePreferences = DEFAULT_CODE_TREE_PREFERENCES,
   onOpenSidepanel,
+  onOpenSettings,
   onTriggerAnalysis,
 }: InPageCodeTreeDockProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
@@ -107,23 +113,36 @@ export function InPageCodeTreeDock({
     })
   }
 
-  // Keyboard shortcut: Alt+W / Option+W
+  // Keyboard shortcut support (default: Alt+W or custom)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey && (e.key === 'w' || e.key === 'W')) {
+      const shortcutStr = (codeTreePreferences?.shortcut || 'Alt+W').toUpperCase()
+      const altRequired = shortcutStr.includes('ALT')
+      const ctrlRequired = shortcutStr.includes('CTRL')
+      const shiftRequired = shortcutStr.includes('SHIFT')
+      const targetKey = shortcutStr.replace(/ALT|CTRL|SHIFT|\+/g, '').trim()
+
+      const matchAlt = altRequired ? e.altKey : !e.altKey
+      const matchCtrl = ctrlRequired ? (e.ctrlKey || e.metaKey) : (!e.ctrlKey && !e.metaKey)
+      const matchShift = shiftRequired ? e.shiftKey : !e.shiftKey
+      const matchKey = e.key.toUpperCase() === targetKey
+
+      if (matchAlt && matchCtrl && matchShift && matchKey) {
         e.preventDefault()
         toggleDock()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+  }, [codeTreePreferences?.shortcut])
 
   // Mouse drag resize handler
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizingRef.current) return
-      const newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, e.clientX))
+      const isRight = codeTreePreferences?.tabPosition === 'right'
+      const clientX = isRight ? window.innerWidth - e.clientX : e.clientX
+      const newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, clientX))
       setWidth(newWidth)
     }
 
@@ -143,21 +162,27 @@ export function InPageCodeTreeDock({
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [width])
+  }, [width, codeTreePreferences?.tabPosition])
+
+  // Hide when current URL matches blacklisted keywords
+  const hidePatterns = useMemo(() => {
+    return (codeTreePreferences?.hideWhenUrlMatches || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  }, [codeTreePreferences?.hideWhenUrlMatches])
+
+  const currentHref = typeof window !== 'undefined' ? window.location.href.toLowerCase() : ''
+  const isHiddenByUrl = hidePatterns.some((pattern) => currentHref.includes(pattern))
 
   // Build tree from flat list
-  const { treeRoot, totalCount, matchCount } = useMemo(() => {
+  const { treeRoot } = useMemo(() => {
     const root: Record<string, TreeNode> = {}
-    let total = 0
-    let matched = 0
-
     const query = searchQuery.toLowerCase().trim()
     const valid = (initialEntries || []).filter((e) => Boolean(e?.path))
-    total = valid.length
 
     valid.forEach((entry) => {
       const isMatch = !query || entry.path.toLowerCase().includes(query)
-      if (isMatch) matched++
       if (query && !isMatch) return
 
       const parts = entry.path.split('/')
@@ -180,7 +205,7 @@ export function InPageCodeTreeDock({
       })
     })
 
-    return { treeRoot: root, totalCount: total, matchCount: matched }
+    return { treeRoot: root }
   }, [initialEntries, searchQuery])
 
   const toggleFolder = (path: string) => {
@@ -205,6 +230,34 @@ export function InPageCodeTreeDock({
     setOpenFolders(all)
   }
 
+  // Handle SPA navigation without closing or reloading dock
+  const handleFileClick = (e: React.MouseEvent<HTMLAnchorElement>, fileUrl: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    // Keep dock open across file navigation
+    if (codeTreePreferences?.pinPerWindow !== false) {
+      setIsOpen(true)
+    }
+
+    // Trigger synthetic link click on document.body so GitHub Turbo intercepts it cleanly
+    if (typeof document !== 'undefined') {
+      const link = document.createElement('a')
+      link.href = fileUrl
+      link.style.display = 'none'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    }
+  }
+
+  if (isHiddenByUrl) {
+    return null
+  }
+
+  const isRight = codeTreePreferences?.tabPosition === 'right'
+  const verticalPos = codeTreePreferences?.tabVerticalPos ?? 20
+
   const renderNodes = (nodes: Record<string, TreeNode>, depth = 0) => {
     const sorted = Object.values(nodes).sort((a, b) => {
       const aIsDir = a.type === 'tree' || Object.keys(a.children).length > 0
@@ -225,7 +278,11 @@ export function InPageCodeTreeDock({
             <div
               className="gpi-tree-row"
               style={{ paddingLeft: depth * 14 + 10 }}
-              onClick={() => toggleFolder(node.path)}
+              onClick={() => {
+                if (codeTreePreferences?.openFoldersOnClick !== false) {
+                  toggleFolder(node.path)
+                }
+              }}
               title={node.path}
             >
               <div className="gpi-tree-left">
@@ -261,6 +318,7 @@ export function InPageCodeTreeDock({
             href={fileUrl}
             className="gpi-tree-left"
             style={{ textDecoration: 'none', color: 'inherit', flex: 1, minWidth: 0 }}
+            onClick={(e) => handleFileClick(e, fileUrl)}
           >
             {getFileIcon(node.name)}
             <span className="gpi-tree-label">{node.name}</span>
@@ -297,14 +355,31 @@ export function InPageCodeTreeDock({
   }
 
   return (
-    <div className="gpi-dock-container">
-      {/* Pinned Toggle Tab Handle */}
+    <div className={`gpi-dock-container ${isRight ? 'position-right' : ''}`}>
+      {/* Prominent Glowing Toggle Tab Handle */}
       <div
         className="gpi-toggle-tab"
+        style={{ top: `${verticalPos}vh` }}
         onClick={() => toggleDock()}
-        title={isOpen ? 'Ocultar árbol de código (Alt+W)' : 'Mostrar árbol de código (Alt+W)'}
+        onMouseEnter={() => {
+          if (codeTreePreferences?.hoverToOpen && !isOpen) {
+            toggleDock(true)
+          }
+        }}
+        onMouseOver={() => {
+          if (codeTreePreferences?.hoverToOpen && !isOpen) {
+            toggleDock(true)
+          }
+        }}
+        title={
+          isOpen
+            ? `Ocultar árbol de código (${codeTreePreferences?.shortcut || 'Alt+W'})`
+            : `Mostrar árbol de código (${codeTreePreferences?.shortcut || 'Alt+W'})`
+        }
       >
-        {isOpen ? <SidebarClose size={16} /> : <SidebarOpen size={16} />}
+        <FolderTree size={17} />
+        <span className="gpi-tab-label">Tree</span>
+        <span className="gpi-tab-pulse-dot" />
       </div>
 
       {/* Drawer */}
@@ -347,6 +422,20 @@ export function InPageCodeTreeDock({
             <button
               type="button"
               className="gpi-btn-icon"
+              onClick={() => {
+                if (onOpenSettings) {
+                  onOpenSettings()
+                } else {
+                  chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL_SETTINGS', target: 'codeTree' }).catch(() => {})
+                }
+              }}
+              title="Ajustes del Árbol de Código"
+            >
+              <Settings size={13} />
+            </button>
+            <button
+              type="button"
+              className="gpi-btn-icon"
               onClick={() => toggleAll(!Object.values(openFolders).some(Boolean))}
               title="Expandir/Colapsar todo"
             >
@@ -356,7 +445,7 @@ export function InPageCodeTreeDock({
               type="button"
               className="gpi-btn-icon"
               onClick={() => toggleDock(false)}
-              title="Cerrar (Alt+W)"
+              title={`Cerrar (${codeTreePreferences?.shortcut || 'Alt+W'})`}
             >
               <X size={14} />
             </button>
@@ -413,12 +502,13 @@ export function InPageCodeTreeDock({
         </div>
       </div>
 
-      {/* AI Explanation Popover - Fixed position outside scroll body to prevent clipping */}
+      {/* AI Explanation Popover - Fixed position outside scroll body */}
       {explainingFile && isOpen && (
         <div
           style={{
             position: 'fixed',
-            left: `${width + 10}px`,
+            left: isRight ? 'auto' : `${width + 10}px`,
+            right: isRight ? `${width + 10}px` : 'auto',
             top: `${Math.min(typeof window !== 'undefined' ? window.innerHeight - 340 : 200, Math.max(80, popoverTop))}px`,
             zIndex: 2147483647,
             pointerEvents: 'auto',

@@ -96,4 +96,153 @@ describe('InPageCodeTreeDock', () => {
 
     expect(container.textContent).toContain('Button.tsx')
   })
+
+  it('triggers onOpenSettings when settings icon button is clicked in header', async () => {
+    const onOpenSettings = vi.fn()
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          isAnalyzed={true}
+          defaultOpen={true}
+          onOpenSettings={onOpenSettings}
+        />
+      )
+    })
+
+    const settingsBtn = container.querySelector('button[title*="Ajustes"]')
+    expect(settingsBtn).not.toBeNull()
+
+    await React.act(async () => {
+      settingsBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onOpenSettings).toHaveBeenCalled()
+  })
+
+  it('opens on hover when hoverToOpen preference is enabled', async () => {
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          codeTreePreferences={{
+            hoverToOpen: true,
+            openFoldersOnClick: true,
+            pinPerWindow: true,
+            tabPosition: 'left',
+            tabVerticalPos: 35,
+            hideWhenUrlMatches: '',
+            shortcut: 'Alt+W',
+          }}
+        />
+      )
+    })
+
+    const toggleBtn = container.querySelector('.gpi-toggle-tab')
+    const drawer = container.querySelector('.gpi-dock-drawer')
+    expect(drawer?.className).toContain('closed')
+
+    // Mouse enter / hover on toggle tab
+    await React.act(async () => {
+      toggleBtn?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    })
+
+    expect(drawer?.className).toContain('open')
+  })
+
+  it('renders right-positioned dock when tabPosition is right', async () => {
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          codeTreePreferences={{
+            hoverToOpen: false,
+            openFoldersOnClick: true,
+            pinPerWindow: true,
+            tabPosition: 'right',
+            tabVerticalPos: 40,
+            hideWhenUrlMatches: '',
+            shortcut: 'Alt+W',
+          }}
+        />
+      )
+    })
+
+    const dockContainer = container.querySelector('.gpi-dock-container')
+    expect(dockContainer?.className).toContain('position-right')
+  })
+
+  it('hides dock when hideWhenUrlMatches matches window.location.href', async () => {
+    const originalHref = window.location.href
+    try {
+      window.history.pushState({}, '', '/facebook/react/issues/123')
+      const root = createRoot(container)
+      await React.act(async () => {
+        root.render(
+          <InPageCodeTreeDock
+            owner="facebook"
+            repo="react"
+            codeTreePreferences={{
+              hoverToOpen: false,
+              openFoldersOnClick: true,
+              pinPerWindow: true,
+              tabPosition: 'left',
+              tabVerticalPos: 20,
+              hideWhenUrlMatches: 'issues, pulls',
+              shortcut: 'Alt+W',
+            }}
+          />
+        )
+      })
+
+      const toggleBtn = container.querySelector('.gpi-toggle-tab')
+      expect(toggleBtn).toBeNull()
+    } finally {
+      window.history.pushState({}, '', originalHref)
+    }
+  })
+
+  it('keeps dock open when clicking a file row (pinPerWindow)', async () => {
+    const mockEntries: TreeEntry[] = [
+      { path: 'src/index.ts', type: 'blob', size: 100, sha: '1', url: '' },
+    ]
+
+    const root = createRoot(container)
+    await React.act(async () => {
+      root.render(
+        <InPageCodeTreeDock
+          owner="facebook"
+          repo="react"
+          isAnalyzed={true}
+          initialEntries={mockEntries}
+          defaultOpen={true}
+          codeTreePreferences={{
+            hoverToOpen: false,
+            openFoldersOnClick: true,
+            pinPerWindow: true,
+            tabPosition: 'left',
+            tabVerticalPos: 20,
+            hideWhenUrlMatches: '',
+            shortcut: 'Alt+W',
+          }}
+        />
+      )
+    })
+
+    const fileLink = container.querySelector('a.gpi-tree-left') as HTMLAnchorElement
+    expect(fileLink).not.toBeNull()
+
+    await React.act(async () => {
+      fileLink.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    })
+
+    const drawer = container.querySelector('.gpi-dock-drawer')
+    expect(drawer?.className).toContain('open')
+  })
 })

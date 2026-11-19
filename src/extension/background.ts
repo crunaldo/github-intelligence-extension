@@ -103,6 +103,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
 
+  if (message?.type === 'OPEN_SIDEPANEL_SETTINGS') {
+    const windowId = sender.tab?.windowId || message.windowId
+    if (windowId && chrome.sidePanel?.open) {
+      ;(async () => {
+        try {
+          await chrome.sidePanel.open({ windowId })
+          if (chrome.storage?.session) {
+            try {
+              await chrome.storage.session.set({
+                gpi_pending_nav: {
+                  tab: 'settings',
+                  target: message.target || 'codeTree',
+                  timestamp: Date.now(),
+                },
+              })
+            } catch {
+              // Ignore session storage failure
+            }
+          }
+          setTimeout(() => {
+            chrome.runtime.sendMessage({
+              type: 'NAVIGATE_SIDEPANEL_TAB',
+              tab: 'settings',
+              target: message.target || 'codeTree',
+            }).catch(() => {})
+          }, 150)
+          sendResponse({ ok: true })
+        } catch (err) {
+          sendResponse({ ok: false, error: String(err) })
+        }
+      })()
+      return true
+    }
+    sendResponse({ ok: false, error: 'Side panel API not supported or no windowId' })
+    return true
+  }
+
   if (message?.type === 'GITHUB_PAGE_CHANGED') {
     const repo = message.repo || null
     ;(async () => {

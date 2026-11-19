@@ -181,6 +181,26 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     btn_clean: 'Limpiar',
     btn_cleaned: 'Limpiado',
 
+    // Code Tree Lateral Dock Settings
+    code_tree_settings_title: 'Árbol de Código Lateral (Dock en GitHub)',
+    code_tree_settings_desc: 'Configura la barra lateral desplegable y explorador de archivos embebido en GitHub.',
+    code_tree_hover_to_open: 'Abrir al pasar el cursor (Hover to open)',
+    code_tree_hover_to_open_desc: 'Despliega el panel del árbol automáticamente al posar el puntero sobre la pestaña lateral.',
+    code_tree_open_folders_click: 'Abrir carpetas con un solo clic (Open folders on click)',
+    code_tree_open_folders_click_desc: 'Expande o contrae carpetas inmediatamente al hacer clic en su fila.',
+    code_tree_pin_per_window: 'Mantener siempre visible (Pin per window)',
+    code_tree_pin_per_window_desc: 'Mantiene el explorador abierto mientras haces clic en archivos y navegas por el repositorio sin cerrarse.',
+    code_tree_position: 'Ubicación de la pestaña en pantalla',
+    code_tree_position_left: 'Izquierda',
+    code_tree_position_right: 'Derecha',
+    code_tree_vertical_pos: 'Posición vertical (% de altura)',
+    code_tree_hide_urls: 'Ocultar cuando la URL coincida con (Hide when URL matches)',
+    code_tree_hide_urls_desc: 'Palabras clave o patrones separados por comas donde no mostrar la pestaña (ej. issues, pulls, actions, settings).',
+    code_tree_hide_urls_placeholder: 'ej. issues, pulls, releases, actions',
+    code_tree_shortcut: 'Atajo de teclado (Shortcut)',
+    code_tree_shortcut_desc: 'Combinación de teclas para abrir/cerrar el árbol lateral.',
+    code_tree_shortcut_placeholder: 'ej. Alt+W',
+
     // Pro Plan & Auth
     pro_plan_title: 'Plan Pro & Autenticación',
     pro_plan_desc: 'Conecta tu cuenta de GitHub para desbloquear diagramas de arquitectura, auditoría profunda y hasta 250 consultas diarias con IA.',
@@ -325,6 +345,26 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     storage_desc: 'Clear cached repository reports and reset analysis history.',
     btn_clean: 'Clear',
     btn_cleaned: 'Cleared',
+
+    // Code Tree Lateral Dock Settings
+    code_tree_settings_title: 'Side Code Tree (GitHub In-Page Dock)',
+    code_tree_settings_desc: 'Configure the sliding file tree explorer embedded directly inside GitHub repository pages.',
+    code_tree_hover_to_open: 'Hover to open',
+    code_tree_hover_to_open_desc: 'Automatically expand the code tree drawer when hovering over the lateral toggle tab.',
+    code_tree_open_folders_click: 'Open folders on click',
+    code_tree_open_folders_click_desc: 'Expand or collapse directories immediately upon clicking their row.',
+    code_tree_pin_per_window: 'Pin per window (Stay open as active explorer)',
+    code_tree_pin_per_window_desc: 'Keep the dock persistently open while clicking files and exploring code without auto-collapsing.',
+    code_tree_position: 'Tab screen position',
+    code_tree_position_left: 'Left',
+    code_tree_position_right: 'Right',
+    code_tree_vertical_pos: 'Vertical position (% of screen height)',
+    code_tree_hide_urls: 'Hide when URL matches',
+    code_tree_hide_urls_desc: 'Comma-separated keywords or URL paths where the dock tab should be hidden (e.g. issues, pulls, actions).',
+    code_tree_hide_urls_placeholder: 'e.g. issues, pulls, releases, actions',
+    code_tree_shortcut: 'Keyboard shortcut',
+    code_tree_shortcut_desc: 'Key combination to toggle the code tree drawer open or closed.',
+    code_tree_shortcut_placeholder: 'e.g. Alt+W',
 
     // Pro Plan & Auth
     pro_plan_title: 'Pro Plan & Authentication',
