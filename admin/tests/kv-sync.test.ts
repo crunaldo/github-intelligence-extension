@@ -267,12 +267,30 @@ describe('purgeRepoCacheFromKVAndDB', () => {
     )
 
     expect(res.success).toBe(true)
-    expect(callOrder).toEqual(['kv_delete', 'supabase_delete'])
+    expect(callOrder).toEqual(['kv_delete', 'kv_delete', 'kv_delete', 'supabase_delete'])
     expect(mockSupabase.from).toHaveBeenCalledWith('repo_analyses')
     expect(eqFirst).toHaveBeenCalledWith('repo_full_name', 'Facebook/React')
     expect(eqSecond).toHaveBeenCalledWith('commit_sha', 'abc123def')
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api.cloudflare.com/client/v4/accounts/acct-1/storage/kv/namespaces/ns-1/values/cache%3Arepo%3Afacebook%3Areact%3Aabc123def',
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer tok-1'
+        })
+      })
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.cloudflare.com/client/v4/accounts/acct-1/storage/kv/namespaces/ns-1/values/cache%3Arepo%3Afacebook%3Areact',
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer tok-1'
+        })
+      })
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.cloudflare.com/client/v4/accounts/acct-1/storage/kv/namespaces/ns-1/values/cache%3Arepo-latest%3Afacebook%3Areact',
       expect.objectContaining({
         method: 'DELETE',
         headers: expect.objectContaining({
@@ -634,6 +652,28 @@ describe('supabase-client error propagation & network resilience', () => {
     const configsRes = await fetchRemoteConfigsMap(client)
     expect(configsRes.error).toContain('JWT expired')
     expect(configsRes.data).toEqual({})
+  })
+
+  it('deduplicates historical repo_analyses by repo_full_name keeping the most recent', async () => {
+    const rawRows = [
+      { id: '1', repo_full_name: 'facebook/react', commit_sha: 'sha-new', created_at: '2026-11-19T10:00:00Z' },
+      { id: '2', repo_full_name: 'Facebook/React', commit_sha: 'sha-old', created_at: '2026-11-18T10:00:00Z' },
+      { id: '3', repo_full_name: 'vuejs/core', commit_sha: 'sha-vue', created_at: '2026-11-17T10:00:00Z' }
+    ]
+    const mockClient = {
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          order: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue({ data: rawRows, error: null })
+          })
+        })
+      })
+    }
+    const result = await fetchRepoAnalyses(mockClient as any)
+    expect(result.error).toBeNull()
+    expect(result.data).toHaveLength(2)
+    expect(result.data[0]?.id).toBe('1')
+    expect(result.data[1]?.id).toBe('3')
   })
 
   it('resolves static env vars and surfaces missing config, OAuth callback errors, and PKCE ?code= exchange', async () => {

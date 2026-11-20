@@ -4,11 +4,15 @@ export type { KVNamespace } from '../ai/types'
 
 const REPO_CACHE_TTL_SECONDS = 2592000
 
-function buildRepoCacheKey(owner: string, repo: string, commitSha: string): string {
+export function buildRepoCacheKey(owner: string, repo: string, commitSha: string): string {
   return `cache:repo:${owner.toLowerCase()}:${repo.toLowerCase()}:${commitSha}`
 }
 
-function buildLatestCommitKey(owner: string, repo: string): string {
+export function buildCanonicalRepoCacheKey(owner: string, repo: string): string {
+  return `cache:repo:${owner.toLowerCase()}:${repo.toLowerCase()}`
+}
+
+export function buildLatestCommitKey(owner: string, repo: string): string {
   return `cache:repo-latest:${owner.toLowerCase()}:${repo.toLowerCase()}`
 }
 
@@ -48,6 +52,8 @@ function isValidAnalysisResult(value: unknown): value is AnalysisResult {
 
 /**
  * Reads a cached repository analysis from KV by normalized owner/repo and commit SHA.
+ * First checks the exact commit key. If missed, falls back to the canonical repository-level
+ * cache or latest commit pointer to prevent redundant AI invocations.
  * Returns null on cache miss, corrupt JSON, or schema mismatch.
  */
 export async function getCachedAnalysis(
@@ -56,24 +62,63 @@ export async function getCachedAnalysis(
   commitSha: string,
   kv: KVNamespace
 ): Promise<AnalysisResult | null> {
-  const raw = await kv.get(buildRepoCacheKey(owner, repo, commitSha))
-  if (!raw) {
-    return null
+  const commitKey = buildRepoCacheKey(owner, repo, commitSha)
+
+  // 1. Exact commit SHA match
+  const raw = await kv.get(commitKey)
+  if (raw) {
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      if (isValidAnalysisResult(parsed)) {
+        return parsed
+      }
+    } catch {
+      // Corrupt JSON fallback
+    }
   }
 
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (!isValidAnalysisResult(parsed)) {
-      return null
+  // 2. Canonical repository-level cache (matches any branch, commit, or HEAD for this repo)
+  const canonicalKey = buildCanonicalRepoCacheKey(owner, repo)
+  const canonicalRaw = await kv.get(canonicalKey)
+  if (canonicalRaw) {
+    try {
+      const parsed: unknown = JSON.parse(canonicalRaw)
+      if (isValidAnalysisResult(parsed)) {
+        // Alias this commit key for instant O(1) retrieval next time
+        await kv.put(commitKey, canonicalRaw, { expirationTtl: REPO_CACHE_TTL_SECONDS }).catch(() => {})
+        return parsed
+      }
+    } catch {
+      // Fall through
     }
-    return parsed
-  } catch {
-    return null
   }
+
+  // 3. Fallback to latest analyzed commit pointer
+  const latestSha = await getLatestCachedCommitSha(owner, repo, kv)
+  if (latestSha && latestSha !== commitSha) {
+    const latestRaw = await kv.get(buildRepoCacheKey(owner, repo, latestSha))
+    if (latestRaw) {
+      try {
+        const parsed: unknown = JSON.parse(latestRaw)
+        if (isValidAnalysisResult(parsed)) {
+          await Promise.all([
+            kv.put(commitKey, latestRaw, { expirationTtl: REPO_CACHE_TTL_SECONDS }).catch(() => {}),
+            kv.put(canonicalKey, latestRaw, { expirationTtl: REPO_CACHE_TTL_SECONDS }).catch(() => {})
+          ])
+          return parsed
+        }
+      } catch {
+        // Fall through
+      }
+    }
+  }
+
+  return null
 }
 
 /**
  * Writes a repository analysis result to KV with a 30-day TTL (2,592,000 seconds).
+ * Updates both the specific commit key, the canonical repo key, and the latest commit pointer.
  */
 export async function setCachedAnalysis(
   owner: string,
@@ -82,13 +127,23 @@ export async function setCachedAnalysis(
   data: AnalysisResult,
   kv: KVNamespace
 ): Promise<void> {
-  await kv.put(buildRepoCacheKey(owner, repo, commitSha), JSON.stringify(data), {
-    expirationTtl: REPO_CACHE_TTL_SECONDS
-  })
+  const commitKey = buildRepoCacheKey(owner, repo, commitSha)
+  const canonicalKey = buildCanonicalRepoCacheKey(owner, repo)
+  const serialized = JSON.stringify(data)
+
+  await Promise.all([
+    kv.put(commitKey, serialized, {
+      expirationTtl: REPO_CACHE_TTL_SECONDS
+    }),
+    kv.put(canonicalKey, serialized, {
+      expirationTtl: REPO_CACHE_TTL_SECONDS
+    }),
+    setLatestCachedCommitSha(owner, repo, commitSha, kv)
+  ])
 }
 
 /**
- * Deletes a cached repository analysis entry from KV.
+ * Deletes a cached repository analysis entry from KV (clears commit, canonical, and latest keys).
  */
 export async function invalidateCachedAnalysis(
   owner: string,
@@ -96,7 +151,11 @@ export async function invalidateCachedAnalysis(
   commitSha: string,
   kv: KVNamespace
 ): Promise<void> {
-  await kv.delete(buildRepoCacheKey(owner, repo, commitSha))
+  await Promise.all([
+    kv.delete(buildRepoCacheKey(owner, repo, commitSha)),
+    kv.delete(buildCanonicalRepoCacheKey(owner, repo)),
+    kv.delete(buildLatestCommitKey(owner, repo))
+  ])
 }
 
 /**

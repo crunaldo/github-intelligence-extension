@@ -541,9 +541,38 @@ function persistRepoAnalysis(
   if (!isSupabaseConfigured(env)) return
   scheduleBackgroundTask(ctx, async () => {
     const supabase = createRestSupabaseClient(env)
-    await supabase.from('repo_analyses').upsert(
+    const repoFullName = `${owner.toLowerCase()}/${repo.toLowerCase()}`
+
+    // Check if this repository already has an entry in repo_analyses to prevent duplication
+    const table = supabase.from('repo_analyses')
+    if (typeof table.select === 'function') {
+      const selectFilter = table.select('id').eq('repo_full_name', repoFullName) as SupabaseSelectFilter
+      const existing =
+        typeof selectFilter?.limit === 'function'
+          ? await selectFilter.limit(1)
+          : await selectFilter
+
+      if (Array.isArray(existing?.data) && existing.data.length > 0) {
+        const existingId = existing.data[0]?.id
+        if (typeof existingId === 'string' && typeof table.update === 'function') {
+          // Update the existing row in place so that each repository has only 1 canonical entry in cache
+          await table
+            .update({
+              commit_sha: commitSha,
+              summary_json: analysis.summary,
+              architecture_diagram: analysis.architectureDiagram,
+              provider_used: analysis.providerUsed,
+              tokens_consumed: analysis.tokensConsumed
+            })
+            .eq('id', existingId)
+          return
+        }
+      }
+    }
+
+    await table.upsert(
       {
-        repo_full_name: `${owner.toLowerCase()}/${repo.toLowerCase()}`,
+        repo_full_name: repoFullName,
         commit_sha: commitSha,
         summary_json: analysis.summary,
         architecture_diagram: analysis.architectureDiagram,
@@ -618,7 +647,18 @@ async function tryReadRepoAnalysisFromSupabase(
       typeof (secondFilter as SupabaseSelectFilter).limit === 'function'
         ? (secondFilter as SupabaseSelectFilter).limit!(1)
         : secondFilter
-    const res = await finalQuery
+    let res = await finalQuery
+    if (!res || res.error || !Array.isArray(res.data) || res.data.length === 0) {
+      // Fallback: search by repo_full_name only (any previously analyzed commit for this repository)
+      const repoQuery = table
+        .select('summary_json,architecture_diagram,provider_used,tokens_consumed')
+        .eq('repo_full_name', `${owner.toLowerCase()}/${repo.toLowerCase()}`)
+      const fallbackQuery =
+        typeof (repoQuery as SupabaseSelectFilter).limit === 'function'
+          ? (repoQuery as SupabaseSelectFilter).limit!(1)
+          : repoQuery
+      res = await fallbackQuery
+    }
     if (!res || res.error || !Array.isArray(res.data) || res.data.length === 0) {
       return null
     }
@@ -729,39 +769,43 @@ async function handleAnalyze(
     }
   }
 
-  const cached = await getCachedAnalysis(owner, repo, commitSha, env.KV)
-  if (cached) {
-    await setLatestCachedCommitSha(owner, repo, commitSha, env.KV)
-    recordQueryLog(env, ctx, request, {
-      userId,
-      owner,
-      repo,
-      isPro,
-      cacheHit: true,
-      provider: null,
-      actionType: 'analysis',
-      startedAt
-    })
-    return jsonResponse(buildAnalyzeResponsePayload(cached, isPro, config), 200)
-  }
+  const forceRefresh = Boolean(body.forceRefresh || body.force_refresh)
 
-  const dbCached = await tryReadRepoAnalysisFromSupabase(owner, repo, commitSha, env)
-  if (dbCached) {
-    await Promise.all([
-      setCachedAnalysis(owner, repo, commitSha, dbCached, env.KV),
-      setLatestCachedCommitSha(owner, repo, commitSha, env.KV)
-    ])
-    recordQueryLog(env, ctx, request, {
-      userId,
-      owner,
-      repo,
-      isPro,
-      cacheHit: true,
-      provider: null,
-      actionType: 'analysis',
-      startedAt
-    })
-    return jsonResponse(buildAnalyzeResponsePayload(dbCached, isPro, config), 200)
+  if (!forceRefresh) {
+    const cached = await getCachedAnalysis(owner, repo, commitSha, env.KV)
+    if (cached) {
+      await setLatestCachedCommitSha(owner, repo, commitSha, env.KV)
+      recordQueryLog(env, ctx, request, {
+        userId,
+        owner,
+        repo,
+        isPro,
+        cacheHit: true,
+        provider: null,
+        actionType: 'analysis',
+        startedAt
+      })
+      return jsonResponse(buildAnalyzeResponsePayload(cached, isPro, config), 200)
+    }
+
+    const dbCached = await tryReadRepoAnalysisFromSupabase(owner, repo, commitSha, env)
+    if (dbCached) {
+      await Promise.all([
+        setCachedAnalysis(owner, repo, commitSha, dbCached, env.KV),
+        setLatestCachedCommitSha(owner, repo, commitSha, env.KV)
+      ])
+      recordQueryLog(env, ctx, request, {
+        userId,
+        owner,
+        repo,
+        isPro,
+        cacheHit: true,
+        provider: null,
+        actionType: 'analysis',
+        startedAt
+      })
+      return jsonResponse(buildAnalyzeResponsePayload(dbCached, isPro, config), 200)
+    }
   }
 
   const { readme, manifests } = await ingestRepositoryContext(owner, repo, commitSha)

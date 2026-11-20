@@ -586,6 +586,18 @@ describe('Extension Backend Client & Auth', () => {
     // 2. forceRefresh bypasses cache
     await fetchRepoIntelligence('vitejs', 'vite', 'sha-vite-1', { forceRefresh: true })
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    const [, forceRefreshInit] = fetchMock.mock.calls[1] as [string, RequestInit]
+    expect(JSON.parse(String(forceRefreshInit.body))).toEqual({
+      owner: 'vitejs',
+      repo: 'vite',
+      commitSha: 'sha-vite-1',
+      forceRefresh: true,
+    })
+
+    // 2b. Querying same repo under different commit ('HEAD') reuses local cache without extra fetch
+    const differentCommitRes = await fetchRepoIntelligence('vitejs', 'vite', 'HEAD')
+    expect(differentCommitRes.summary.headline).toBe('Vite')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
 
     // 3. Tier change (anonymous -> Pro user) isolates cache key and fetches Pro payload
     await saveAuthSession({

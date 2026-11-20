@@ -126,6 +126,40 @@ export function buildRepoCacheKey(repoFullName: string, commitSha: string): stri
   return `cache:repo:${owner.toLowerCase()}:${repo.toLowerCase()}:${trimmedSha}`
 }
 
+export function buildCanonicalRepoCacheKey(repoFullName: string): string | null {
+  const trimmedRepo = repoFullName.trim()
+  if (!trimmedRepo) {
+    return null
+  }
+  const parts = trimmedRepo.split('/')
+  if (parts.length !== 2) {
+    return null
+  }
+  const owner = parts[0]?.trim() ?? ''
+  const repo = parts[1]?.trim() ?? ''
+  if (!owner || !repo) {
+    return null
+  }
+  return `cache:repo:${owner.toLowerCase()}:${repo.toLowerCase()}`
+}
+
+export function buildLatestCommitKey(repoFullName: string): string | null {
+  const trimmedRepo = repoFullName.trim()
+  if (!trimmedRepo) {
+    return null
+  }
+  const parts = trimmedRepo.split('/')
+  if (parts.length !== 2) {
+    return null
+  }
+  const owner = parts[0]?.trim() ?? ''
+  const repo = parts[1]?.trim() ?? ''
+  if (!owner || !repo) {
+    return null
+  }
+  return `cache:repo-latest:${owner.toLowerCase()}:${repo.toLowerCase()}`
+}
+
 async function readFetchErrorDetail(res: Response): Promise<string> {
   try {
     const text = typeof res.text === 'function' ? await res.text() : ''
@@ -228,6 +262,14 @@ export async function purgeRepoCacheFromKVAndDB(
   try {
     if (kvBinding) {
       await kvBinding.delete(cacheKey)
+      const canonicalKey = buildCanonicalRepoCacheKey(repoFullName)
+      if (canonicalKey) {
+        await kvBinding.delete(canonicalKey).catch(() => {})
+      }
+      const latestKey = buildLatestCommitKey(repoFullName)
+      if (latestKey) {
+        await kvBinding.delete(latestKey).catch(() => {})
+      }
     } else if (credentials) {
       const res = await fetch(
         buildKVValueUrl(credentials.accountId, credentials.namespaceId, cacheKey),
@@ -241,6 +283,21 @@ export async function purgeRepoCacheFromKVAndDB(
 
       if (!res.ok && res.status !== 404) {
         return { success: false, error: await readFetchErrorDetail(res) }
+      }
+
+      const canonicalKey = buildCanonicalRepoCacheKey(repoFullName)
+      const latestKey = buildLatestCommitKey(repoFullName)
+      const extraKeys = [canonicalKey, latestKey].filter((k): k is string => Boolean(k))
+      for (const extraKey of extraKeys) {
+        await fetch(
+          buildKVValueUrl(credentials.accountId, credentials.namespaceId, extraKey),
+          {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${credentials.apiToken}`
+            }
+          }
+        ).catch(() => {})
       }
     }
 

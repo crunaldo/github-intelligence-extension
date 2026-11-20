@@ -680,8 +680,17 @@ export async function fetchRepoAnalyses(
       error: error.message || 'Failed to load repo_analyses'
     }
   }
+  const rawRows = Array.isArray(data) ? (data as unknown as RepoAnalysisRow[]) : []
+  const seen = new Set<string>()
+  const deduplicated: RepoAnalysisRow[] = []
+  for (const row of rawRows) {
+    const key = (row.repo_full_name || '').toLowerCase().trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    deduplicated.push(row)
+  }
   return {
-    data: Array.isArray(data) ? (data as unknown as RepoAnalysisRow[]) : [],
+    data: deduplicated,
     error: null
   }
 }

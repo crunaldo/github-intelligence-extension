@@ -112,7 +112,46 @@ describe('Hierarchical Repo Cache', () => {
     await invalidateCachedAnalysis('OctoCat', 'Hello-World', 'sha123', kv)
 
     expect(kv.delete).toHaveBeenCalledWith('cache:repo:octocat:hello-world:sha123')
+    expect(kv.delete).toHaveBeenCalledWith('cache:repo:octocat:hello-world')
+    expect(kv.delete).toHaveBeenCalledWith('cache:repo-latest:octocat:hello-world')
     const after = await getCachedAnalysis('octocat', 'hello-world', 'sha123', kv)
     expect(after).toBeNull()
+  })
+
+  it('falls back to canonical repo-level cache when commit SHA differs, preventing duplicate AI calls', async () => {
+    const kv = createMockKv()
+    const sample = createSampleResult()
+
+    // Cache an analysis under commit 'commit-aaa'
+    await setCachedAnalysis('facebook', 'react', 'commit-aaa', sample, kv)
+
+    // Verify canonical key was populated
+    expect(kv.put).toHaveBeenCalledWith(
+      'cache:repo:facebook:react',
+      JSON.stringify(sample),
+      { expirationTtl: 2592000 }
+    )
+
+    // Query under a completely different commit 'commit-bbb' (e.g. HEAD, main, or new commit)
+    const result = await getCachedAnalysis('facebook', 'react', 'commit-bbb', kv)
+
+    expect(result).toEqual(sample)
+    // Verify it automatically aliased 'commit-bbb' in KV for instant O(1) hits next time
+    expect(kv.put).toHaveBeenCalledWith(
+      'cache:repo:facebook:react:commit-bbb',
+      JSON.stringify(sample),
+      { expirationTtl: 2592000 }
+    )
+  })
+
+  it('falls back to latest commit pointer when exact commit and canonical key miss', async () => {
+    const sample = createSampleResult()
+    const kv = createMockKv({
+      'cache:repo-latest:facebook:react': 'commit-latest-123',
+      'cache:repo:facebook:react:commit-latest-123': JSON.stringify(sample)
+    })
+
+    const result = await getCachedAnalysis('facebook', 'react', 'commit-different-456', kv)
+    expect(result).toEqual(sample)
   })
 })

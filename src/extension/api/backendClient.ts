@@ -241,7 +241,10 @@ function isCacheEntryFresh(entry: CachedIntelligenceEntry | undefined, commitSha
 
 async function readLocalIntelligenceCacheEntry(
   cacheKey: string,
-  commitSha: string
+  commitSha: string,
+  owner?: string,
+  repo?: string,
+  tier?: string
 ): Promise<FilteredAnalysisResult | null> {
   const storage = getChromeStorageLocal()
   if (storage) {
@@ -254,6 +257,15 @@ async function readLocalIntelligenceCacheEntry(
       if (isCacheEntryFresh(entry, commitSha)) {
         return entry!.data
       }
+      if (owner && repo && tier && map) {
+        const prefix = `${owner.toLowerCase()}/${repo.toLowerCase()}@`
+        const suffix = `:${tier}`
+        for (const [k, v] of Object.entries(map)) {
+          if (k.startsWith(prefix) && k.endsWith(suffix) && isCacheEntryFresh(v, 'HEAD')) {
+            return v.data
+          }
+        }
+      }
       return null
     } catch {
       return null
@@ -261,7 +273,19 @@ async function readLocalIntelligenceCacheEntry(
   }
 
   const memEntry = memoryIntelligenceCache.get(cacheKey)
-  return isCacheEntryFresh(memEntry, commitSha) ? memEntry!.data : null
+  if (isCacheEntryFresh(memEntry, commitSha)) {
+    return memEntry!.data
+  }
+  if (owner && repo && tier) {
+    const prefix = `${owner.toLowerCase()}/${repo.toLowerCase()}@`
+    const suffix = `:${tier}`
+    for (const [k, v] of memoryIntelligenceCache.entries()) {
+      if (k.startsWith(prefix) && k.endsWith(suffix) && isCacheEntryFresh(v, 'HEAD')) {
+        return v.data
+      }
+    }
+  }
+  return null
 }
 
 async function writeLocalIntelligenceCacheEntry(
@@ -435,10 +459,13 @@ export async function fetchRepoIntelligence(
 ): Promise<FilteredAnalysisResult> {
   const safeCommitSha = sanitizeCommitRef(commitSha)
   const session = await getAuthSession()
+  const tier = session?.user?.id
+    ? `${session.isPro ? 'pro' : 'free'}:${session.user.id}`
+    : 'anon'
   const cacheKey = buildIntelligenceCacheKey(owner, repo, safeCommitSha, session)
 
   if (!options?.forceRefresh) {
-    const cached = await readLocalIntelligenceCacheEntry(cacheKey, safeCommitSha)
+    const cached = await readLocalIntelligenceCacheEntry(cacheKey, safeCommitSha, owner, repo, tier)
     if (cached) {
       // If current user is Pro, but cached data lacks architectureDiagram (e.g. cached prior to Pro upgrade), bypass cache
       const isProUser = Boolean(session?.isPro)
@@ -466,10 +493,19 @@ export async function fetchRepoIntelligence(
       headers.Authorization = `Bearer ${session.accessToken}`
     }
 
+    const bodyPayload: Record<string, unknown> = {
+      owner,
+      repo,
+      commitSha: safeCommitSha,
+    }
+    if (options?.forceRefresh) {
+      bodyPayload.forceRefresh = true
+    }
+
     const res = await fetch(`${getBackendBaseUrl()}/v1/analyze`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ owner, repo, commitSha: safeCommitSha }),
+      body: JSON.stringify(bodyPayload),
     })
 
     if (!res.ok) {

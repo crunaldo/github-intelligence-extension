@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { handleLemonSqueezyWebhook } from '../src/webhooks/lemonsqueezy'
 import worker, { type WorkerEnv } from '../src/worker'
 import { AIProvidersExhaustedError, type AnalysisResult, type KVNamespace } from '../src/ai/types'
+import { setCachedAnalysis } from '../src/cache/repo-cache'
 
 async function signPayload(payload: string, secret: string): Promise<string> {
   const encoder = new TextEncoder()
@@ -1274,5 +1275,67 @@ describe('Cloudflare Worker Entrypoint', () => {
     const body = (await res.json()) as AnalysisResult
     expect(body.summary).toEqual(fullResult.summary)
     expect(body.architectureDiagram).toBe(fullResult.architectureDiagram)
+  })
+
+  it('reuses cached analysis across different commitSha without invoking AI and prevents duplicate rows', async () => {
+    const fullResult = makeSampleAnalysis('gemini')
+    const kv = createMockKv()
+    const analyzeRepo = vi.fn().mockResolvedValue(fullResult)
+
+    const patchCalls: Array<{ url: string; body: string }> = []
+    const postCalls: Array<{ url: string; body: string }> = []
+
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/rest/v1/repo_analyses')) {
+        if (init?.method === 'PATCH') {
+          patchCalls.push({ url, body: String(init.body) })
+          return new Response(null, { status: 204 })
+        }
+        if (init?.method === 'POST') {
+          postCalls.push({ url, body: String(init.body) })
+          return new Response(null, { status: 201 })
+        }
+        // GET check for existing id
+        return new Response(
+          JSON.stringify([{ id: 'existing-row-id-123' }]),
+          { status: 200 }
+        )
+      }
+      if (url.includes('/rest/v1/query_logs')) {
+        return new Response(null, { status: 201 })
+      }
+      return new Response('Not Found', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const env: WorkerEnv = {
+      KV: kv,
+      SUPABASE_URL: 'https://proj.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'srv-key',
+      verifyProUser: vi.fn().mockResolvedValue({ isPro: true, userId: 'pro-user-dedup' }),
+      analyzeRepo
+    }
+
+    // Pre-populate cache with initial commit
+    await setCachedAnalysis('OctoCat', 'CacheDedup', 'sha-initial', fullResult, kv)
+
+    // Call /v1/analyze with a different commit (e.g. 'HEAD')
+    const req1 = new Request('https://api.example.com/v1/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer pro-jwt'
+      },
+      body: JSON.stringify({ owner: 'OctoCat', repo: 'CacheDedup', commitSha: 'HEAD' })
+    })
+
+    const res1 = await worker.fetch(req1, env)
+    expect(res1.status).toBe(200)
+    // AI router must NOT be called because canonical repo cache hit!
+    expect(analyzeRepo).not.toHaveBeenCalled()
+
+    const body1 = (await res1.json()) as AnalysisResult
+    expect(body1.summary.headline).toBe(fullResult.summary.headline)
   })
 })
