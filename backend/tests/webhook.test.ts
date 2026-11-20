@@ -1042,7 +1042,7 @@ describe('Cloudflare Worker Entrypoint', () => {
 
     const repoUpsertCall = fetchMock.mock.calls.find(
       ([u, init]) =>
-        String(u).includes('/rest/v1/repo_analyses?on_conflict=repo_full_name%2Ccommit_sha') &&
+        String(u).includes('/rest/v1/repo_analyses?on_conflict=repo_full_name') &&
         init?.method === 'POST'
     )
     expect(repoUpsertCall).toBeDefined()

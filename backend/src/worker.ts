@@ -579,7 +579,7 @@ function persistRepoAnalysis(
         provider_used: analysis.providerUsed,
         tokens_consumed: analysis.tokensConsumed
       },
-      { onConflict: 'repo_full_name,commit_sha' }
+      { onConflict: 'repo_full_name' }
     )
   })
 }
