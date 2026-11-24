@@ -31,7 +31,9 @@ const ALLOWED_CONFIG_KEYS = new Set<string>([
   'provider_priority',
   'provider_api_keys',
   'analysis_modules',
-  'advanced_system_settings'
+  'advanced_system_settings',
+  'default_new_user_tier',
+  'default_user_role'
 ])
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -158,6 +160,14 @@ function validateRemoteConfigEntry(key: string, value: unknown): string | null {
     case 'advanced_system_settings': {
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return 'advanced_system_settings must be a JSON object'
+      }
+      return null
+    }
+
+    case 'default_new_user_tier':
+    case 'default_user_role': {
+      if (value !== 'free' && value !== 'pro') {
+        return `${key} must be either 'free' or 'pro'`
       }
       return null
     }

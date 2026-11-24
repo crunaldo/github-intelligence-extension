@@ -9,10 +9,10 @@ describe('ApiErrorCard - parseAndTranslateError', () => {
     const result = parseAndTranslateError(userRateLimitError, 'es')
     expect(result).not.toBeNull()
     expect(result?.isRateLimit).toBe(true)
-    expect(result?.title).toBe('Token de GitHub Requerido para Continuar')
+    expect(result?.title).toBe('Conecta tu cuenta de GitHub para Continuar')
     expect(result?.description).toContain('árboles de código, manifiestos y metadatos')
-    expect(result?.recommendation).toContain('GitHub Personal Access Token')
-    expect(result?.actionLabel).toBe('Ir a Ajustes para añadir Token')
+    expect(result?.recommendation).toContain('Ajustes')
+    expect(result?.actionLabel).toBe('Conectar cuenta de GitHub')
 
     const combined = `${result?.title} ${result?.description} ${result?.recommendation}`
     expect(combined).not.toMatch(/\b60\b/)
@@ -24,10 +24,10 @@ describe('ApiErrorCard - parseAndTranslateError', () => {
     const result = parseAndTranslateError(userRateLimitError, 'en')
     expect(result).not.toBeNull()
     expect(result?.isRateLimit).toBe(true)
-    expect(result?.title).toBe('GitHub Token Required to Continue')
+    expect(result?.title).toBe('Connect your GitHub Account to Continue')
     expect(result?.description).toContain('code trees, manifests, and metadata')
-    expect(result?.recommendation).toContain('GitHub Personal Access Token')
-    expect(result?.actionLabel).toBe('Go to Settings to add Token')
+    expect(result?.recommendation).toContain('Settings')
+    expect(result?.actionLabel).toBe('Connect GitHub account')
 
     const combined = `${result?.title} ${result?.description} ${result?.recommendation}`
     expect(combined).not.toMatch(/\b60\b/)
@@ -39,16 +39,16 @@ describe('ApiErrorCard - parseAndTranslateError', () => {
     const result = parseAndTranslateError('Bad credentials', 'es')
     expect(result).not.toBeNull()
     expect(result?.isBadCredentials).toBe(true)
-    expect(result?.title).toBe('Token de GitHub no Válido o Expirado')
-    expect(result?.actionLabel).toBe('Ir a Ajustes para actualizar Token')
+    expect(result?.title).toBe('Sesión de GitHub Expirada o no Válida')
+    expect(result?.actionLabel).toBe('Ir a Ajustes para reconectar')
   })
 
-  it('detects and translates not found error with public_repo operational guidance', () => {
+  it('detects and translates not found error with operational guidance', () => {
     const result = parseAndTranslateError('Not Found', 'es')
     expect(result).not.toBeNull()
     expect(result?.isNotFound).toBe(true)
     expect(result?.title).toBe('Repositorio no Encontrado o Inaccesible')
-    expect(result?.recommendation).toContain('public_repo')
-    expect(result?.actionLabel).toBe('Configurar Token en Ajustes')
+    expect(result?.recommendation).toContain('Ajustes')
+    expect(result?.actionLabel).toBe('Revisar Ajustes')
   })
 })

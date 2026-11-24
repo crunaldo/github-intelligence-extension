@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { Activity, X } from 'lucide-react'
 import type { RepositoryReport } from '../../features/repository/types'
 import { calculateRepoHealth, type HealthScoreBreakdown } from '../../features/repository/health'
@@ -32,7 +33,7 @@ export function RepoHealthCard({ report, locale = 'es', compact = false }: RepoH
           <span style={{ color: 'var(--text-secondary)' }}>· {health.label}</span>
         </button>
 
-        {showModal && (
+        {showModal && typeof document !== 'undefined' && createPortal(
           <div className="ext-settings-modal-overlay" onClick={() => setShowModal(false)}>
             <div
               className="ext-settings-modal-card"
@@ -53,7 +54,8 @@ export function RepoHealthCard({ report, locale = 'es', compact = false }: RepoH
                 <RepoHealthDetailsContent health={health} isEs={isEs} />
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </>
     )

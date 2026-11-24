@@ -17,7 +17,9 @@ import {
 import { AdminShell, KpiCard, SectionCard, StatusBanner } from '../../lib/admin-shell'
 import {
   DEFAULT_ADVANCED_SETTINGS,
-  type AdvancedSystemSettings
+  DEFAULT_NEW_USER_TIER,
+  type AdvancedSystemSettings,
+  type DefaultUserTier
 } from '../../lib/admin-types'
 import {
   type AdminSession,
@@ -77,6 +79,7 @@ function SettingsContent({
   const [settings, setSettings] = useState<AdvancedSystemSettings>({
     ...DEFAULT_ADVANCED_SETTINGS
   })
+  const [defaultTier, setDefaultTier] = useState<DefaultUserTier>(DEFAULT_NEW_USER_TIER)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -100,6 +103,13 @@ function SettingsContent({
 
     const parsed = parseSettings(configsRes.data.advanced_system_settings)
     setSettings(parsed)
+
+    const rawTier =
+      configsRes.data['default_new_user_tier'] || configsRes.data['default_user_role']
+    if (rawTier === 'pro' || rawTier === 'free') {
+      setDefaultTier(rawTier)
+    }
+
     setLoading(false)
   }, [client])
 
@@ -112,21 +122,21 @@ function SettingsContent({
     setSaving(true)
     setStatus(null)
 
-    const res = await dispatchServerConfigSync(
-      'advanced_system_settings',
-      settings,
-      session.accessToken
-    )
+    const [settingsRes, tierRes] = await Promise.all([
+      dispatchServerConfigSync('advanced_system_settings', settings, session.accessToken),
+      dispatchServerConfigSync('default_new_user_tier', defaultTier, session.accessToken)
+    ])
     setSaving(false)
 
-    if (!res.success) {
-      setStatus({ type: 'error', message: res.error ?? 'Error al guardar configuraciones' })
+    if (!settingsRes.success || !tierRes.success) {
+      const errorMsg = [settingsRes.error, tierRes.error].filter(Boolean).join(' | ')
+      setStatus({ type: 'error', message: errorMsg || 'Error al guardar configuraciones' })
       return
     }
 
     setStatus({
       type: 'success',
-      message: '¡Configuraciones avanzadas guardadas y sincronizadas con Cloudflare KV!'
+      message: '¡Configuraciones avanzadas y rol de nuevos usuarios guardados y sincronizados!'
     })
   }
 
@@ -318,6 +328,31 @@ function SettingsContent({
                 </option>
                 <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Sub-segundo)</option>
               </select>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* New Users Default Policy */}
+        <SectionCard
+          title="Membresía Inicial para Nuevos Registros"
+          description="Define qué rol o nivel reciben automáticamente los nuevos usuarios"
+        >
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">
+                Rol / Plan por Defecto
+              </label>
+              <select
+                value={defaultTier}
+                onChange={(e) => setDefaultTier(e.target.value as DefaultUserTier)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              >
+                <option value="free">Free (Plan Gratuito - Por defecto)</option>
+                <option value="pro">Pro (Plan Profesional - Acceso Completo)</option>
+              </select>
+              <p className="mt-2 text-xs text-slate-400">
+                Sincronizado con la política global en Cloudflare KV y Supabase. Si eliges <strong>Pro</strong>, las nuevas cuentas se activarán con privilegios Pro automáticamente.
+              </p>
             </div>
           </div>
         </SectionCard>

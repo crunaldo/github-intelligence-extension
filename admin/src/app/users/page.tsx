@@ -1,13 +1,20 @@
 'use client'
 
 import React, { useCallback, useEffect, useState } from 'react'
-import { CreditCard, Crown, RefreshCw, Search, Shield, UserCheck } from 'lucide-react'
+import { CreditCard, Crown, RefreshCw, Save, Search, Shield, UserCheck, UserPlus } from 'lucide-react'
 import { AdminShell, SectionCard, StatusBanner } from '../../lib/admin-shell'
-import type { ProfileRow, SubscriptionRow } from '../../lib/admin-types'
+import {
+  DEFAULT_NEW_USER_TIER,
+  type DefaultUserTier,
+  type ProfileRow,
+  type SubscriptionRow
+} from '../../lib/admin-types'
 import {
   type AdminSession,
   type AdminSupabaseClient,
+  dispatchServerConfigSync,
   fetchProfiles,
+  fetchRemoteConfigsMap,
   fetchSubscriptions
 } from '../../lib/supabase-client'
 
@@ -18,7 +25,7 @@ const STATUS_BADGE: Record<string, string> = {
   expired: 'bg-slate-700/40 text-slate-300 border-slate-600'
 }
 
-function UsersManagementContent({ client }: { client: AdminSupabaseClient; session: AdminSession }) {
+function UsersManagementContent({ client, session }: { client: AdminSupabaseClient; session: AdminSession }) {
   const [search, setSearch] = useState('')
   const [profiles, setProfiles] = useState<ProfileRow[]>([])
   const [subscriptions, setSubscriptions] = useState<SubscriptionRow[]>([])
@@ -26,20 +33,33 @@ function UsersManagementContent({ client }: { client: AdminSupabaseClient; sessi
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [defaultTier, setDefaultTier] = useState<DefaultUserTier>(DEFAULT_NEW_USER_TIER)
+  const [savedDefaultTier, setSavedDefaultTier] = useState<DefaultUserTier>(DEFAULT_NEW_USER_TIER)
+  const [savingTier, setSavingTier] = useState(false)
 
   const loadData = useCallback(
     async (queryText = search, userFilter = selectedUserId) => {
       setLoading(true)
-      const [profilesRes, subsRes] = await Promise.all([
+      const [profilesRes, subsRes, configsRes] = await Promise.all([
         fetchProfiles(client, queryText),
-        fetchSubscriptions(client, userFilter ?? undefined)
+        fetchSubscriptions(client, userFilter ?? undefined),
+        fetchRemoteConfigsMap(client)
       ])
-      const errors = [profilesRes.error, subsRes.error].filter(Boolean)
+      const errors = [profilesRes.error, subsRes.error, configsRes.error].filter(Boolean)
       if (errors.length > 0) {
         setStatus({ type: 'error', message: `Failed to load user records: ${errors.join(' | ')}` })
       }
       setProfiles(profilesRes.data)
       setSubscriptions(subsRes.data)
+
+      if (configsRes.data) {
+        const rawTier =
+          configsRes.data['default_new_user_tier'] || configsRes.data['default_user_role']
+        const parsedTier: DefaultUserTier = rawTier === 'pro' ? 'pro' : 'free'
+        setDefaultTier(parsedTier)
+        setSavedDefaultTier(parsedTier)
+      }
+
       setLoading(false)
     },
     [client, search, selectedUserId]
@@ -49,6 +69,34 @@ function UsersManagementContent({ client }: { client: AdminSupabaseClient; sessi
     void loadData('', null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client])
+
+  async function handleSaveDefaultTier() {
+    setSavingTier(true)
+    setStatus(null)
+
+    const res = await dispatchServerConfigSync(
+      'default_new_user_tier',
+      defaultTier,
+      session?.accessToken
+    )
+    setSavingTier(false)
+
+    if (!res.success) {
+      setStatus({
+        type: 'error',
+        message: res.error ?? 'Error al guardar la política de rol por defecto para nuevos usuarios'
+      })
+      return
+    }
+
+    setSavedDefaultTier(defaultTier)
+    setStatus({
+      type: 'success',
+      message: `¡Política guardada! Todos los nuevos usuarios se registrarán automáticamente con rol/plan: ${
+        defaultTier === 'pro' ? 'Pro' : 'Free'
+      }.`
+    })
+  }
 
   async function handleSearchSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -92,6 +140,91 @@ function UsersManagementContent({ client }: { client: AdminSupabaseClient; sessi
   return (
     <div className="space-y-6">
       <StatusBanner status={status} onDismiss={() => setStatus(null)} />
+
+      {/* New User Default Role / Tier Policy */}
+      <SectionCard
+        title="Rol / Nivel por Defecto para Nuevos Usuarios"
+        description="Configura qué plan o membresía recibirán automáticamente todas las cuentas nuevas al registrarse por primera vez."
+        actions={
+          <button
+            type="button"
+            onClick={() => void handleSaveDefaultTier()}
+            disabled={savingTier || defaultTier === savedDefaultTier}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3.5 py-1.5 text-xs font-semibold text-white transition shadow-sm"
+          >
+            <Save className="w-3.5 h-3.5" />
+            {savingTier ? 'Guardando...' : 'Guardar Política'}
+          </button>
+        }
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div
+            onClick={() => setDefaultTier('free')}
+            className={`cursor-pointer rounded-xl border p-4 transition ${
+              defaultTier === 'free'
+                ? 'border-indigo-500 bg-indigo-500/10 shadow-sm'
+                : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-slate-400" />
+                <span className="font-semibold text-white text-sm">Free (Plan Gratuito)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400 border border-slate-700">
+                  Por defecto
+                </span>
+                {savedDefaultTier === 'free' && (
+                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-300 border border-emerald-500/30">
+                    Activo
+                  </span>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Los nuevos usuarios inician con límites diarios estándar (15 consultas/día) y acceso a los módulos gratuitos. Es la opción recomendada.
+            </p>
+          </div>
+
+          <div
+            onClick={() => setDefaultTier('pro')}
+            className={`cursor-pointer rounded-xl border p-4 transition ${
+              defaultTier === 'pro'
+                ? 'border-amber-500 bg-amber-500/10 shadow-sm'
+                : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Crown className="w-4 h-4 text-amber-400" />
+                <span className="font-semibold text-white text-sm">Pro (Membresía Completa)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] text-amber-300 border border-amber-500/30">
+                  Promoción
+                </span>
+                {savedDefaultTier === 'pro' && (
+                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-300 border border-emerald-500/30">
+                    Activo
+                  </span>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Cualquier nuevo usuario registrado recibe automáticamente estatus Pro activo (<code className="text-amber-300">is_pro = true</code>), con 250 consultas/día y todos los módulos habilitados.
+            </p>
+          </div>
+        </div>
+
+        {defaultTier !== savedDefaultTier && (
+          <div className="mt-3 flex items-center justify-between rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-200">
+            <span>
+              Tienes cambios sin guardar. Haz clic en <strong>Guardar Política</strong> para aplicar a Cloudflare KV y Supabase.
+            </span>
+          </div>
+        )}
+      </SectionCard>
 
       <SectionCard
         title="User Directory & Pro Entitlements"

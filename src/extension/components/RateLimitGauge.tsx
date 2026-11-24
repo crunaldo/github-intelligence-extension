@@ -10,19 +10,19 @@ export function RateLimitGauge({ hasToken, locale = 'es' }: RateLimitGaugeProps)
   const isEs = locale === 'es'
   const label = hasToken
     ? isEs
-      ? 'Token activo'
-      : 'Token ready'
+      ? 'Conectado'
+      : 'Connected'
     : isEs
-      ? 'Token requerido'
-      : 'Token needed'
+      ? 'Modo invitado'
+      : 'Guest mode'
 
   const tooltip = hasToken
     ? isEs
-      ? 'GitHub Personal Access Token conectado localmente para inspección profunda de repositorios.'
-      : 'GitHub Personal Access Token connected locally for deep repository inspection.'
+      ? 'Cuenta de GitHub conectada y activa para inspección de repositorios.'
+      : 'GitHub account connected and active for repository inspection.'
     : isEs
-      ? 'Configura tu GitHub Personal Access Token en Ajustes para inspeccionar árboles y dependencias.'
-      : 'Configure your GitHub Personal Access Token in Settings to inspect repository trees and dependencies.'
+      ? 'Modo invitado activo. Conecta tu cuenta oficial de GitHub para continuar sin límites de prueba.'
+      : 'Guest mode active. Connect your official GitHub account to continue beyond trial limits.'
 
   return (
     <div className="rate-limit-pill" title={tooltip}>

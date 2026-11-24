@@ -1,3 +1,9 @@
+import {
+  setConfiguredGitHubToken,
+  getConfiguredGitHubToken,
+} from '../../features/repository/github'
+import { getStoredPreferences, saveStoredPreferences } from '../storage'
+
 export interface AuthUser {
   id: string
   email?: string
@@ -11,6 +17,8 @@ export interface AuthSession {
   expiresAt?: number
   user: AuthUser
   isPro?: boolean
+  providerToken?: string
+  providerRefreshToken?: string
 }
 
 const AUTH_SESSION_STORAGE_KEY = 'gpi_auth_session'
@@ -113,6 +121,8 @@ function extractAuthParamsFromUrl(redirectUrl: string): {
   accessToken?: string
   refreshToken?: string
   expiresIn?: number
+  providerToken?: string
+  providerRefreshToken?: string
 } {
   try {
     const parsed = new URL(redirectUrl)
@@ -122,6 +132,10 @@ function extractAuthParamsFromUrl(redirectUrl: string): {
       hashParams.get('access_token') || parsed.searchParams.get('access_token') || undefined
     const refreshToken =
       hashParams.get('refresh_token') || parsed.searchParams.get('refresh_token') || undefined
+    const providerToken =
+      hashParams.get('provider_token') || parsed.searchParams.get('provider_token') || undefined
+    const providerRefreshToken =
+      hashParams.get('provider_refresh_token') || parsed.searchParams.get('provider_refresh_token') || undefined
     const expiresInRaw =
       hashParams.get('expires_in') || parsed.searchParams.get('expires_in')
     const expiresIn = expiresInRaw ? Number.parseInt(expiresInRaw, 10) : NaN
@@ -131,6 +145,8 @@ function extractAuthParamsFromUrl(redirectUrl: string): {
       accessToken,
       refreshToken,
       expiresIn: Number.isFinite(expiresIn) ? expiresIn : undefined,
+      providerToken,
+      providerRefreshToken,
     }
   } catch {
     return {}
@@ -272,6 +288,8 @@ async function refreshSessionToken(session: AuthSession): Promise<AuthSession | 
           : undefined,
       user: refreshedUser,
       isPro: proStatus ?? session.isPro ?? false,
+      providerToken: session.providerToken,
+      providerRefreshToken: session.providerRefreshToken,
     }
 
     await saveAuthSession(refreshedSession)
@@ -290,6 +308,10 @@ export async function getAuthSession(): Promise<AuthSession | null> {
   const session = await readStoredSessionRaw()
   if (!session) return null
 
+  if (session.providerToken && !getConfiguredGitHubToken()) {
+    setConfiguredGitHubToken(session.providerToken)
+  }
+
   if (isSessionExpired(session)) {
     return refreshSessionToken(session)
   }
@@ -304,11 +326,20 @@ export async function saveAuthSession(session: AuthSession): Promise<void> {
   const storage = getChromeStorageLocal()
   if (storage) {
     await storage.set({ [AUTH_SESSION_STORAGE_KEY]: session })
-    return
+  } else if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
+    localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session))
   }
 
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session))
+  if (session.providerToken) {
+    setConfiguredGitHubToken(session.providerToken)
+    try {
+      const prefs = await getStoredPreferences()
+      if (!prefs.githubToken || prefs.githubToken.startsWith('gho_')) {
+        await saveStoredPreferences({ githubToken: session.providerToken })
+      }
+    } catch (err) {
+      console.error('saveAuthSession pref sync error:', err)
+    }
   }
 }
 
@@ -316,14 +347,24 @@ export async function saveAuthSession(session: AuthSession): Promise<void> {
  * Clears the persisted Supabase authentication session from local extension storage.
  */
 export async function signOut(): Promise<void> {
+  const session = await readStoredSessionRaw()
   const storage = getChromeStorageLocal()
   if (storage) {
     await storage.remove(AUTH_SESSION_STORAGE_KEY)
-    return
+  } else if (typeof localStorage !== 'undefined' && typeof localStorage.removeItem === 'function') {
+    localStorage.removeItem(AUTH_SESSION_STORAGE_KEY)
   }
 
-  if (typeof localStorage !== 'undefined') {
-    localStorage.removeItem(AUTH_SESSION_STORAGE_KEY)
+  if (session?.providerToken) {
+    try {
+      const prefs = await getStoredPreferences()
+      if (prefs.githubToken === session.providerToken) {
+        await saveStoredPreferences({ githubToken: '' })
+      }
+    } catch {
+      // Ignore
+    }
+    setConfiguredGitHubToken(null)
   }
 }
 
@@ -412,6 +453,8 @@ async function exchangePkceCode(
       refresh_token?: string
       expires_in?: number
       user?: RawSupabaseUser
+      provider_token?: string
+      provider_refresh_token?: string
     }
 
     if (!data?.access_token) return null
@@ -431,6 +474,8 @@ async function exchangePkceCode(
           : undefined,
       user,
       isPro: proStatus ?? false,
+      providerToken: data.provider_token,
+      providerRefreshToken: data.provider_refresh_token,
     }
   } catch {
     return null
@@ -461,6 +506,7 @@ export async function signInWithGitHub(): Promise<AuthSession | null> {
 
   const authUrl = new URL(`${supabaseUrl}/auth/v1/authorize`)
   authUrl.searchParams.set('provider', 'github')
+  authUrl.searchParams.set('scopes', 'read:user')
   authUrl.searchParams.set('code_challenge', codeChallenge)
   authUrl.searchParams.set('code_challenge_method', codeChallengeMethod)
 
@@ -516,6 +562,8 @@ export async function signInWithGitHub(): Promise<AuthSession | null> {
               : undefined,
           user,
           isPro: proStatus ?? false,
+          providerToken: params.providerToken,
+          providerRefreshToken: params.providerRefreshToken,
         }
         await saveAuthSession(fullSession)
         return fullSession

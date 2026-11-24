@@ -42,14 +42,14 @@ export function parseAndTranslateError(
       isRateLimit: true,
       isBadCredentials: false,
       isNotFound: false,
-      title: isEs ? 'Token de GitHub Requerido para Continuar' : 'GitHub Token Required to Continue',
+      title: isEs ? 'Conecta tu cuenta de GitHub para Continuar' : 'Connect your GitHub Account to Continue',
       description: isEs
-        ? 'GitHub requiere un token personal de acceso para inspeccionar de forma continua árboles de código, manifiestos y metadatos del repositorio.'
-        : 'GitHub requires a personal access token to inspect repository code trees, manifests, and metadata uninterrupted.',
+        ? 'Has alcanzado el límite de consultas sin autenticar de GitHub para inspeccionar de forma continua árboles de código, manifiestos y metadatos.'
+        : 'You reached the GitHub unauthenticated request limit to inspect repository code trees, manifests, and metadata.',
       recommendation: isEs
-        ? 'Añade tu GitHub Personal Access Token gratuito (solo lectura) en los ajustes; se guarda 100% en local y habilita el análisis sin interrupciones.'
-        : 'Add your free read-only GitHub Personal Access Token in settings; it is stored 100% locally and enables uninterrupted repository analysis.',
-      actionLabel: isEs ? 'Ir a Ajustes para añadir Token' : 'Go to Settings to add Token',
+        ? 'Inicia sesión con tu cuenta oficial de GitHub en 1 clic desde Ajustes; se conecta de forma segura y habilita el análisis continuo sin interrupciones.'
+        : 'Sign in with your official GitHub account with 1 click from Settings; it connects securely and enables uninterrupted repository analysis.',
+      actionLabel: isEs ? 'Conectar cuenta de GitHub' : 'Connect GitHub account',
       rawMessage,
     }
   }
@@ -60,14 +60,14 @@ export function parseAndTranslateError(
       isRateLimit: false,
       isBadCredentials: true,
       isNotFound: false,
-      title: isEs ? 'Token de GitHub no Válido o Expirado' : 'Invalid or Expired GitHub Token',
+      title: isEs ? 'Sesión de GitHub Expirada o no Válida' : 'Invalid or Expired GitHub Session',
       description: isEs
-        ? 'GitHub no pudo validar tu token guardado. Puede haber sido revocado o haber caducado.'
-        : 'GitHub could not validate your saved token. It may have expired or been revoked.',
+        ? 'GitHub no pudo validar tu sesión o token guardado. Puede haber sido revocado o haber caducado.'
+        : 'GitHub could not validate your saved session or token. It may have expired or been revoked.',
       recommendation: isEs
-        ? 'Abre los ajustes para ingresar un token vigente con permisos de lectura pública (public_repo).'
-        : 'Open settings to provide a valid token with public_repo read permissions.',
-      actionLabel: isEs ? 'Ir a Ajustes para actualizar Token' : 'Go to Settings to update Token',
+        ? 'Abre los ajustes para volver a iniciar sesión con GitHub o actualizar tus credenciales de acceso.'
+        : 'Open settings to sign in again with GitHub or update your access credentials.',
+      actionLabel: isEs ? 'Ir a Ajustes para reconectar' : 'Go to Settings to reconnect',
       rawMessage,
     }
   }
@@ -83,9 +83,9 @@ export function parseAndTranslateError(
         ? 'GitHub no pudo localizar este repositorio público. Puede no existir, haber cambiado de nombre o no estar disponible.'
         : 'GitHub could not locate this public repository. It may not exist, was renamed, or is unavailable.',
       recommendation: isEs
-        ? 'Verifica la URL o configura tu GitHub Token con alcance "public_repo" en los Ajustes para habilitar la inspección de metadatos y árboles.'
-        : 'Verify the repository URL or configure your GitHub Token with "public_repo" scope in Settings to enable tree and metadata inspection.',
-      actionLabel: isEs ? 'Configurar Token en Ajustes' : 'Configure Token in Settings',
+        ? 'Verifica la URL o conecta tu cuenta de GitHub en Ajustes para verificar acceso a metadatos y árboles.'
+        : 'Verify the repository URL or connect your GitHub account in Settings to verify tree and metadata access.',
+      actionLabel: isEs ? 'Revisar Ajustes' : 'Review Settings',
       rawMessage,
     }
   }
@@ -265,28 +265,6 @@ export function ApiErrorCard({
             <RefreshCw size={12} />
             <span>{isEs ? 'Reintentar' : 'Retry'}</span>
           </button>
-        )}
-
-        {parsed.isRateLimit && (
-          <a
-            href="https://github.com/settings/tokens/new?scopes=public_repo&description=GitHub%20Project%20Intelligence%20Assistant"
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              fontSize: 10.5,
-              color: 'var(--text-muted)',
-              textDecoration: 'none',
-              marginLeft: 'auto',
-            }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--text-primary)')}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--text-muted)')}
-          >
-            <span>{isEs ? 'Crear token en GitHub (gratis)' : 'Create free token in GitHub'}</span>
-            <ExternalLink size={10} />
-          </a>
         )}
       </div>
     </div>

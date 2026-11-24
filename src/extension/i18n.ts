@@ -71,9 +71,9 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     analyzing_desc: 'Consultando árbol de código, dependencias, manifiestos y arquitectura.',
 
     // Banners & Token Requirement
-    rate_limit_alert_title: 'Token de GitHub requerido:',
-    rate_limit_alert_desc: 'Agrega tu Token personal de GitHub para habilitar el análisis profundo de carpetas y dependencias.',
-    rate_limit_alert_btn: 'Ajustes',
+    rate_limit_alert_title: 'Conecta tu cuenta de GitHub:',
+    rate_limit_alert_desc: 'Inicia sesión con GitHub en 1 clic para continuar inspeccionando repositorios sin límites de prueba.',
+    rate_limit_alert_btn: 'Conectar',
     detected_in_tab: 'Detectado en pestaña actual:',
     reload_analysis: 'Recargar análisis',
     search_placeholder: 'Analizar repo: ej. facebook/react o URL completa...',
@@ -151,10 +151,10 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
 
     // Settings View
     settings_title: 'Configuración de Token & API',
-    github_token_title: 'GitHub Personal Access Token (API)',
-    btn_create_token: 'Crear Token en GitHub',
-    token_benefit_title: 'Requisito indispensable de funcionamiento',
-    token_benefit_desc: 'Tu GitHub Personal Access Token (solo lectura) se guarda 100% de forma local en tu navegador y es un requisito indispensable para inspeccionar la estructura de carpetas, árboles de dependencias, manifiestos y habilitar las funciones Pro.',
+    github_token_title: 'Token Manual / GitHub Enterprise (Avanzado & Opcional)',
+    btn_create_token: 'Generar Token en GitHub',
+    token_benefit_title: 'Configuración de acceso opcional',
+    token_benefit_desc: 'Al iniciar sesión con GitHub arriba, tu acceso ya queda configurado automáticamente. Esta sección es opcional y solo requerida si utilizas GitHub Enterprise Server o deseas usar un token personal específico con alcances avanzados.',
     instructions_title: 'Instructivo rápido (Paso a paso en 1 minuto):',
     instruction_1: 'Haz clic en el botón superior "Crear Token en GitHub".',
     instruction_2: 'Inicia sesión en GitHub si te lo solicita. La página se abrirá con el nombre y permisos recomendados ya configurados.',
@@ -268,7 +268,8 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
 
     // Pro Plan & Auth
     pro_plan_title: 'Plan Pro & Autenticación',
-    pro_plan_desc: 'Conecta tu cuenta de GitHub para desbloquear diagramas de arquitectura, auditoría profunda y hasta 250 consultas diarias con IA.',
+    pro_plan_desc: 'Conecta tu cuenta de GitHub y mejora al Plan Pro para desbloquear diagramas de arquitectura, auditoría profunda y hasta 250 consultas diarias con IA.',
+    pro_plan_upgrade_desc: 'Actualiza al Plan Pro para desbloquear diagramas de arquitectura interactivos, auditoría profunda y hasta 250 consultas diarias con IA.',
     pro_sign_in_github: 'Conectar con GitHub',
     pro_upgrade_btn: 'Mejorar a Pro ($4.99)',
     pro_sign_out: 'Cerrar sesión',
@@ -286,6 +287,20 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     pro_diagrams_disabled_notice: 'Los diagramas de arquitectura están temporalmente deshabilitados por el administrador.',
     auth_cancelled_notice: 'El inicio de sesión con GitHub fue cancelado o no se completó.',
     upgrade_cancelled_notice: 'Completa el inicio de sesión con GitHub para abrir el checkout Pro.',
+
+    // Guest Soft Gate (5th query trial gate)
+    guest_gate_badge: 'MODO INVITADO COMPLETADO',
+    guest_gate_title: 'Conecta tu cuenta de GitHub para continuar',
+    guest_gate_desc: 'Has alcanzado el límite de consultas en modo invitado. Conecta tu cuenta oficial de GitHub en 1 clic para seguir analizando repositorios, sincronizar tus favoritos y consultar al Asistente IA.',
+    guest_gate_feat_rate_limit_title: 'Análisis continuo y sin interrupciones',
+    guest_gate_feat_rate_limit_desc: 'Inspección fluida y profunda de árboles de archivos, dependencias, frameworks y métricas.',
+    guest_gate_feat_ai_title: 'Asistente IA & Resúmenes Semánticos',
+    guest_gate_feat_ai_desc: 'Análisis inteligente de código, dependencias, frameworks y arquitectura.',
+    guest_gate_feat_privacy_title: '100% Seguro y Oficial',
+    guest_gate_feat_privacy_desc: 'Autenticación directa de GitHub OAuth. Sin contraseñas ni tokens manuales que copiar.',
+    guest_gate_btn: 'Iniciar sesión con GitHub (1 clic)',
+    guest_gate_secure_note: 'Sin tokens manuales · Acceso inmediato y seguro',
+    guest_counter_badge: 'Modo invitado: {count}/4 análisis',
 
     // Architecture diagram & Pro redesign
     arch_mode_native: 'Nativo',
@@ -329,9 +344,9 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     analyzing_desc: 'Querying code tree, dependencies, manifests, and architecture.',
 
     // Banners & Token Requirement
-    rate_limit_alert_title: 'GitHub Token required:',
-    rate_limit_alert_desc: 'Add your personal GitHub Token to enable deep folder structure and dependency inspection.',
-    rate_limit_alert_btn: 'Settings',
+    rate_limit_alert_title: 'Connect your GitHub account:',
+    rate_limit_alert_desc: 'Sign in with GitHub in 1 click to keep inspecting repositories beyond trial limits.',
+    rate_limit_alert_btn: 'Connect',
     detected_in_tab: 'Detected in active tab:',
     reload_analysis: 'Reload analysis',
     search_placeholder: 'Analyze repo: e.g. facebook/react or full URL...',
@@ -409,10 +424,10 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
 
     // Settings View
     settings_title: 'Token & API Settings',
-    github_token_title: 'GitHub Personal Access Token (API)',
-    btn_create_token: 'Create Token on GitHub',
-    token_benefit_title: 'Essential operational requirement',
-    token_benefit_desc: 'Your read-only GitHub Personal Access Token is stored 100% locally in your browser and is an essential operational requirement to inspect repository file trees, dependency manifests, and unlock Pro features.',
+    github_token_title: 'Manual Token / GitHub Enterprise (Advanced & Optional)',
+    btn_create_token: 'Generate Token on GitHub',
+    token_benefit_title: 'Optional access configuration',
+    token_benefit_desc: 'When you sign in with GitHub above, your access is configured automatically. This section is optional and only needed if you use GitHub Enterprise Server or wish to provide a specific manual token.',
     instructions_title: 'Quick 1-minute step-by-step guide:',
     instruction_1: 'Click the button above "Create Token on GitHub".',
     instruction_2: 'Sign in to GitHub if requested. The form is pre-filled with recommended settings.',
@@ -526,7 +541,8 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
 
     // Pro Plan & Auth
     pro_plan_title: 'Pro Plan & Authentication',
-    pro_plan_desc: 'Connect your GitHub account to unlock interactive architecture diagrams, deep audits, and up to 250 daily AI queries.',
+    pro_plan_desc: 'Connect your GitHub account and upgrade to Pro to unlock interactive architecture diagrams, deep audits, and up to 250 daily AI queries.',
+    pro_plan_upgrade_desc: 'Upgrade to Pro to unlock interactive architecture diagrams, deep audits, and up to 250 daily AI queries.',
     pro_sign_in_github: 'Sign in with GitHub',
     pro_upgrade_btn: 'Upgrade to Pro ($4.99)',
     pro_sign_out: 'Sign out',
@@ -544,6 +560,20 @@ export const TRANSLATIONS: Record<ActiveLocale, Record<string, string>> = {
     pro_diagrams_disabled_notice: 'Architecture diagrams are temporarily disabled by the administrator.',
     auth_cancelled_notice: 'GitHub sign-in was cancelled or did not complete.',
     upgrade_cancelled_notice: 'Complete GitHub sign-in to proceed to Pro checkout.',
+
+    // Guest Soft Gate (5th query trial gate)
+    guest_gate_badge: 'GUEST TRIAL COMPLETED',
+    guest_gate_title: 'Connect your GitHub account to continue',
+    guest_gate_desc: 'You have reached the query limit in guest mode. Connect your official GitHub account with 1 click to keep analyzing repositories, sync your favorites, and access the AI Assistant.',
+    guest_gate_feat_rate_limit_title: 'Uninterrupted and continuous analysis',
+    guest_gate_feat_rate_limit_desc: 'Smooth, deep inspection of file trees, dependencies, frameworks, and metrics.',
+    guest_gate_feat_ai_title: 'AI Assistant & Semantic Summaries',
+    guest_gate_feat_ai_desc: 'Smart analysis of code, dependencies, frameworks, and architecture.',
+    guest_gate_feat_privacy_title: '100% Secure & Official',
+    guest_gate_feat_privacy_desc: 'Direct GitHub OAuth. No extra passwords or manual tokens to copy.',
+    guest_gate_btn: 'Sign in with GitHub (1 click)',
+    guest_gate_secure_note: 'No manual tokens · Instant and secure access',
+    guest_counter_badge: 'Guest mode: {count}/4 analyses',
 
     // Architecture diagram & Pro redesign
     arch_mode_native: 'Native',

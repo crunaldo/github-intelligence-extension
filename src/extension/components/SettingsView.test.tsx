@@ -107,6 +107,9 @@ describe('SettingsView - Collapsible Sections and Pro Plan', () => {
     expect(proCard?.textContent).not.toContain('$4.99')
     // Upgrade button without price in label
     expect(proCard?.textContent).toContain('Mejorar a Pro')
+    // Shows upgrade invitation instead of asking connected user to connect GitHub
+    expect(proCard?.textContent).toContain('Actualiza al Plan Pro')
+    expect(proCard?.textContent).not.toContain('Conecta tu cuenta de GitHub')
   })
 
   it('has heavy sections collapsed by default and expands them on header click', async () => {

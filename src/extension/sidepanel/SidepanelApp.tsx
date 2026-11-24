@@ -79,7 +79,13 @@ import { InteractiveBeamLoader } from '../components/InteractiveBeamLoader'
 import { SegmentedPill } from '../components/SegmentedPill'
 import { DirectoryTree } from '../components/DirectoryTree'
 import { QuotaExceededCard } from '../components/QuotaExceededCard'
+import { GitHubLoginGateCard } from '../components/GitHubLoginGateCard'
 import { DeepTechnicalAuditCard } from '../components/DeepTechnicalAuditCard'
+import {
+  getGuestAnalysisCount,
+  incrementGuestAnalysisCount,
+  isGuestGateRequired,
+} from '../utils/guestUsage'
 
 type SidepanelNav = 'analyze' | 'reports' | 'compare' | 'favorites' | 'settings'
 type ReportSection = 'overview' | 'architecture' | 'files' | 'dependencies' | 'releases' | 'sources'
@@ -95,6 +101,8 @@ export function SidepanelApp() {
   const [favorites, setFavorites] = useState<FavoriteItem[]>([])
   const [loading, setLoading] = useState<boolean>(false)
   const [quotaExceeded, setQuotaExceeded] = useState<boolean>(false)
+  const [guestCount, setGuestCount] = useState<number>(0)
+  const [showGuestGate, setShowGuestGate] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [activeTabRepo, setActiveTabRepo] = useState<GitHubTarget | null>(null)
   const [reportSection, setReportSection] = useState<ReportSection>('overview')
@@ -112,10 +120,14 @@ export function SidepanelApp() {
     void getAuthSession().then(setSession).catch(() => {})
     void refreshProStatus().then((s) => s && setSession(s)).catch(() => {})
     void fetchRemoteConfig().then(setRemoteConfig).catch(() => {})
+    void getGuestAnalysisCount().then(setGuestCount).catch(() => {})
 
     // Subscribe to live auth session updates across storage
     const unsubscribeAuth = subscribeToAuthSession((updated) => {
       setSession(updated)
+      if (updated?.user?.id) {
+        setShowGuestGate(false)
+      }
     })
 
     // Auto-sync on window focus or visibility change
@@ -214,11 +226,18 @@ export function SidepanelApp() {
       setReport(null)
       setLoading(true)
       setQuotaExceeded(false)
+      setShowGuestGate(false)
+
+      // Fetch fresh auth session to avoid stale closure / async state lag
+      const currentSession = await getAuthSession().catch(() => session)
+      if (currentSession && currentSession.user?.id !== session?.user?.id) {
+        setSession(currentSession)
+      }
 
       if (!force) {
         const cached = await getCachedReport(target.originalUrl)
         if (cached) {
-          const isProUser = Boolean(session?.isPro)
+          const isProUser = Boolean(currentSession?.isPro)
           const needsArch = isProUser || archAccess === 'free'
           const hasArch = Boolean(cached.aiAnalysis?.architectureDiagram)
 
@@ -238,6 +257,20 @@ export function SidepanelApp() {
             return
           }
         }
+      }
+
+      // Pre-check if guest trial limit was reached (4 free trial analyses)
+      const isAuth = Boolean(currentSession?.user?.id)
+      const gateRequired = await isGuestGateRequired(isAuth)
+      if (gateRequired) {
+        if (inFlightUrlRef.current !== target.originalUrl) return
+        setReport(null)
+        setShowGuestGate(true)
+        setLoading(false)
+        setError(null)
+        setNav('analyze')
+        inFlightUrlRef.current = null
+        return
       }
 
       // Pre-check if daily free quota was already exceeded today
@@ -305,6 +338,10 @@ export function SidepanelApp() {
         }
         setReport((prev) => prev || res)
         setQuotaExceeded(false)
+        if (!currentSession?.user?.id) {
+          const nextCount = await incrementGuestAnalysisCount()
+          setGuestCount(nextCount)
+        }
         try {
           await saveCachedReport(res)
           await addStoredRecent(res)
@@ -317,7 +354,23 @@ export function SidepanelApp() {
       } catch (err) {
         if ((err as Error).name === 'AbortError') return
         if (inFlightUrlRef.current === target.originalUrl) {
-          setError(err instanceof Error ? err.message : 'Error al analizar el repositorio.')
+          const errorMsg = err instanceof Error ? err.message : String(err || '')
+          const lower = errorMsg.toLowerCase()
+          const isRateLimit =
+            lower.includes('rate limit exceeded') ||
+            lower.includes('rate limit') ||
+            lower.includes('higher rate limit') ||
+            lower.includes('secondary rate limit')
+
+          // If unauthenticated and hit GitHub's anonymous IP rate limit, seamlessly route to the official GitHub login gate
+          if (!currentSession?.user?.id && isRateLimit) {
+            setShowGuestGate(true)
+            setError(null)
+            setReport(null)
+            setNav('analyze')
+          } else {
+            setError(errorMsg || 'Error al analizar el repositorio.')
+          }
         }
       } finally {
         if (inFlightUrlRef.current === target.originalUrl) {
@@ -583,13 +636,33 @@ export function SidepanelApp() {
         <ExtHeaderBrand tag="Side Panel" />
 
         <div className="ext-header-actions">
+          {!session?.user?.id && (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                padding: '2px 7px',
+                borderRadius: 999,
+                background: 'rgba(56, 189, 248, 0.12)',
+                color: 'var(--brand-primary, #38bdf8)',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+              title={activeLocale === 'es' ? 'Consultas de prueba restantes como invitado' : 'Free guest trial queries remaining'}
+            >
+              <span>{t('guest_counter_badge', activeLocale).replace('{count}', String(guestCount))}</span>
+            </span>
+          )}
+
           <div
             onClick={() => setNav('settings')}
             style={{ cursor: 'pointer' }}
-            title={activeLocale === 'es' ? 'Estado de GitHub Token (clic para configurar)' : 'GitHub Token status (click to configure)'}
+            title={activeLocale === 'es' ? 'Estado de conexión con GitHub' : 'GitHub connection status'}
           >
             <RateLimitGauge
-              hasToken={Boolean(preferences.githubToken)}
+              hasToken={Boolean(preferences.githubToken || session?.user?.id)}
               locale={activeLocale}
             />
           </div>
@@ -756,7 +829,20 @@ export function SidepanelApp() {
               />
             )}
 
-            {quotaExceeded && !loading && (
+            {showGuestGate && !loading && (
+              <GitHubLoginGateCard
+                locale={activeLocale}
+                repoName={activeTabRepo ? `${activeTabRepo.owner}/${activeTabRepo.repository}` : (urlInput || undefined)}
+                onLoggedIn={(newSession) => {
+                  setSession(newSession)
+                  setShowGuestGate(false)
+                  void performAnalysis(activeTabRepo?.originalUrl || urlInput, true)
+                }}
+                onDismiss={() => setNav('settings')}
+              />
+            )}
+
+            {quotaExceeded && !loading && !showGuestGate && (
               <QuotaExceededCard
                 locale={activeLocale}
                 repoName={activeTabRepo ? `${activeTabRepo.owner}/${activeTabRepo.repository}` : (urlInput || undefined)}
@@ -767,7 +853,7 @@ export function SidepanelApp() {
               />
             )}
 
-            {!loading && !report && !quotaExceeded && (
+            {!loading && !report && !quotaExceeded && !showGuestGate && (
               <div className="ext-empty-state">
                 <AnalysisMascot moodOverride="neutral" size={76} />
                 <div className="empty-title" style={{ marginTop: 8 }}>{t('no_repo_selected', activeLocale)}</div>
@@ -777,7 +863,7 @@ export function SidepanelApp() {
               </div>
             )}
 
-            {!loading && report && !quotaExceeded && (
+            {!loading && report && !quotaExceeded && !showGuestGate && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {/* 1. MÓDULO HERO PRINCIPAL DE MARCA CON MASCOTA REACTIVA */}
                 <RepoHeroCard

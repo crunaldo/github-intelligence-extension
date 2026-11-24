@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ShieldCheck, ShieldAlert, AlertTriangle, X, Check, ExternalLink, HelpCircle, FileText } from 'lucide-react'
 import type { RepositoryReport } from '../../features/repository/types'
 import { analyzeRepositoryLicense, type LicenseAnalysis } from '../../features/repository/license'
@@ -50,7 +51,7 @@ export function LicenseBadge({ report, locale = 'es' }: LicenseBadgeProps) {
         </span>
       </button>
 
-      {showModal && (
+      {showModal && typeof document !== 'undefined' && createPortal(
         <div className="ext-settings-modal-overlay" onClick={() => setShowModal(false)}>
           <div
             className="ext-settings-modal-card"
@@ -187,7 +188,8 @@ export function LicenseBadge({ report, locale = 'es' }: LicenseBadgeProps) {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )

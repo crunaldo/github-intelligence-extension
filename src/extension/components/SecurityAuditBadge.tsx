@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ShieldCheck,
   AlertTriangle,
@@ -80,7 +81,7 @@ export function SecurityAuditBadge({ report, locale = 'es' }: SecurityAuditBadge
       </button>
 
       {/* Security Details Modal */}
-      {showModal && (
+      {showModal && typeof document !== 'undefined' && createPortal(
         <div className="ext-settings-modal-overlay" onClick={() => setShowModal(false)}>
           <div
             className="ext-settings-modal-card"
@@ -211,7 +212,8 @@ export function SecurityAuditBadge({ report, locale = 'es' }: SecurityAuditBadge
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )

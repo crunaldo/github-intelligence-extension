@@ -190,6 +190,10 @@ export const DEFAULT_ANALYSIS_MODULES_MAP: AnalysisModulesMap = {
 
 // --- Advanced System Settings ---
 
+export type DefaultUserTier = 'free' | 'pro'
+
+export const DEFAULT_NEW_USER_TIER: DefaultUserTier = 'free'
+
 export interface AdvancedSystemSettings {
   ipDailyCeiling: number
   headCacheTtlHours: number

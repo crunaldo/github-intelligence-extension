@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Sparkles,
   ExternalLink,
@@ -70,6 +71,12 @@ import { RepoHeroCard } from '../components/RepoHeroCard'
 import { AnalysisMascot } from '../components/AnalysisMascot'
 import { InteractiveBeamLoader } from '../components/InteractiveBeamLoader'
 import { QuotaExceededCard } from '../components/QuotaExceededCard'
+import { GitHubLoginGateCard } from '../components/GitHubLoginGateCard'
+import {
+  getGuestAnalysisCount,
+  incrementGuestAnalysisCount,
+  isGuestGateRequired,
+} from '../utils/guestUsage'
 
 const QUICK_SUGGESTIONS = [
   { name: 'facebook/react', url: 'https://github.com/facebook/react', tag: 'UI Library' },
@@ -88,6 +95,8 @@ export function PopupApp() {
   const [report, setReport] = useState<RepositoryReport | null>(null)
   const [loading, setLoading] = useState<boolean>(false)
   const [quotaExceeded, setQuotaExceeded] = useState<boolean>(false)
+  const [guestCount, setGuestCount] = useState<number>(0)
+  const [showGuestGate, setShowGuestGate] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [copiedMd, setCopiedMd] = useState<boolean>(false)
   const [isFavorite, setIsFavorite] = useState<boolean>(false)
@@ -110,9 +119,13 @@ export function PopupApp() {
     void getAuthSession().then(setSession).catch(() => {})
     void refreshProStatus().then((s) => s && setSession(s)).catch(() => {})
     void fetchRemoteConfig().then(setRemoteConfig).catch(() => {})
+    void getGuestAnalysisCount().then(setGuestCount).catch(() => {})
 
     const unsubscribeAuth = subscribeToAuthSession((updated) => {
       setSession(updated)
+      if (updated?.user?.id) {
+        setShowGuestGate(false)
+      }
     })
 
     const handleSync = () => {
@@ -175,12 +188,19 @@ export function PopupApp() {
     setReport(null)
     setLoading(true)
     setQuotaExceeded(false)
+    setShowGuestGate(false)
+
+    // Fetch fresh auth session to avoid stale closure / async state lag
+    const currentSession = await getAuthSession().catch(() => session)
+    if (currentSession && currentSession.user?.id !== session?.user?.id) {
+      setSession(currentSession)
+    }
 
     // Check cache first if not forced
     if (!force) {
       const cached = await getCachedReport(target.originalUrl)
       if (cached) {
-        const isProUser = Boolean(session?.isPro)
+        const isProUser = Boolean(currentSession?.isPro)
         const needsArch = isProUser || archAccess === 'free'
         const hasArch = Boolean(cached.aiAnalysis?.architectureDiagram)
 
@@ -198,6 +218,19 @@ export function PopupApp() {
           return
         }
       }
+    }
+
+    // Pre-check if guest trial limit was reached (4 free trial analyses)
+    const isAuth = Boolean(currentSession?.user?.id)
+    const gateRequired = await isGuestGateRequired(isAuth)
+    if (gateRequired) {
+      if (inFlightUrlRef.current !== target.originalUrl) return
+      setReport(null)
+      setShowGuestGate(true)
+      setLoading(false)
+      setError(null)
+      inFlightUrlRef.current = null
+      return
     }
 
     // Pre-check if daily free quota was already exceeded today
@@ -262,6 +295,10 @@ export function PopupApp() {
       }
       setReport((prev) => prev || res)
       setQuotaExceeded(false)
+      if (!currentSession?.user?.id) {
+        const nextCount = await incrementGuestAnalysisCount()
+        setGuestCount(nextCount)
+      }
       try {
         await saveCachedReport(res)
         await addStoredRecent(res)
@@ -271,7 +308,22 @@ export function PopupApp() {
     } catch (err) {
       if ((err as Error).name === 'AbortError') return
       if (inFlightUrlRef.current === target.originalUrl) {
-        setError(err instanceof Error ? err.message : 'Error al analizar el repositorio.')
+        const errorMsg = err instanceof Error ? err.message : String(err || '')
+        const lower = errorMsg.toLowerCase()
+        const isRateLimit =
+          lower.includes('rate limit exceeded') ||
+          lower.includes('rate limit') ||
+          lower.includes('higher rate limit') ||
+          lower.includes('secondary rate limit')
+
+        // If unauthenticated and hit GitHub's anonymous IP rate limit, seamlessly route to the official GitHub login gate
+        if (!currentSession?.user?.id && isRateLimit) {
+          setShowGuestGate(true)
+          setError(null)
+          setReport(null)
+        } else {
+          setError(errorMsg || 'Error al analizar el repositorio.')
+        }
       }
     } finally {
       if (inFlightUrlRef.current === target.originalUrl) {
@@ -468,13 +520,33 @@ export function PopupApp() {
         <ExtHeaderBrand tag="v1.0" />
 
         <div className="ext-header-actions">
+          {!session?.user?.id && (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                padding: '2px 7px',
+                borderRadius: 999,
+                background: 'rgba(56, 189, 248, 0.12)',
+                color: 'var(--brand-primary, #38bdf8)',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+              title={activeLocale === 'es' ? 'Consultas de prueba restantes como invitado' : 'Free guest trial queries remaining'}
+            >
+              <span>{t('guest_counter_badge', activeLocale).replace('{count}', String(guestCount))}</span>
+            </span>
+          )}
+
           <div
             onClick={() => setShowSettingsModal(true)}
             style={{ cursor: 'pointer' }}
-            title={activeLocale === 'es' ? 'Estado de GitHub Token (clic para configurar)' : 'GitHub Token status (click to configure)'}
+            title={activeLocale === 'es' ? 'Estado de conexión con GitHub' : 'GitHub connection status'}
           >
             <RateLimitGauge
-              hasToken={Boolean(preferences.githubToken)}
+              hasToken={Boolean(preferences.githubToken || session?.user?.id)}
               locale={activeLocale}
             />
           </div>
@@ -552,25 +624,7 @@ export function PopupApp() {
         </div>
       )}
 
-      {/* API Token Alert Banner if no token configured */}
-      {!preferences.githubToken && (
-        <div className="ext-api-alert-banner">
-          <div className="ext-api-alert-content">
-            <AlertCircle size={14} className="ext-api-alert-icon" />
-            <div className="ext-api-alert-text">
-              <strong>{t('rate_limit_alert_title', activeLocale)}</strong> {t('rate_limit_alert_desc', activeLocale)}
-            </div>
-          </div>
-          <button
-            type="button"
-            className="ext-api-alert-btn"
-            onClick={() => setShowSettingsModal(true)}
-          >
-            <KeyRound size={11} />
-            <span>{t('rate_limit_alert_btn', activeLocale)}</span>
-          </button>
-        </div>
-      )}
+
 
       {/* 1. Nuevo repositorio detectado al cambiar de pestaña */}
       {activeTabRepo && report && `${activeTabRepo.owner}/${activeTabRepo.repository}`.toLowerCase() !== (report.repository?.fullName || '').toLowerCase() && dismissedDetectedRepo !== activeTabRepo.originalUrl ? (
@@ -656,7 +710,7 @@ export function PopupApp() {
       )}
 
       {/* Settings Modal Overlay */}
-      {showSettingsModal && (
+      {showSettingsModal && typeof document !== 'undefined' && createPortal(
         <div className="ext-settings-modal-overlay">
           <div className="ext-settings-modal-card">
             <div className="ext-settings-modal-header">
@@ -692,7 +746,8 @@ export function PopupApp() {
               />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Body Area */}
@@ -704,7 +759,20 @@ export function PopupApp() {
           />
         )}
 
-        {quotaExceeded && !loading && (
+        {showGuestGate && !loading && (
+          <GitHubLoginGateCard
+            locale={activeLocale}
+            repoName={activeTabRepo ? `${activeTabRepo.owner}/${activeTabRepo.repository}` : (searchUrl || undefined)}
+            onLoggedIn={(newSession) => {
+              setSession(newSession)
+              setShowGuestGate(false)
+              void performAnalysis(activeTabRepo?.originalUrl || searchUrl, true)
+            }}
+            onDismiss={() => setShowSettingsModal(true)}
+          />
+        )}
+
+        {quotaExceeded && !loading && !showGuestGate && (
           <QuotaExceededCard
             locale={activeLocale}
             repoName={activeTabRepo ? `${activeTabRepo.owner}/${activeTabRepo.repository}` : (searchUrl || undefined)}
@@ -715,7 +783,7 @@ export function PopupApp() {
           />
         )}
 
-        {error && !quotaExceeded && (
+        {error && !quotaExceeded && !showGuestGate && (
           <ApiErrorCard
             error={error}
             locale={activeLocale}
@@ -729,7 +797,7 @@ export function PopupApp() {
           />
         )}
 
-        {!loading && !report && !error && !activeTabRepo && !quotaExceeded && (
+        {!loading && !report && !error && !activeTabRepo && !quotaExceeded && !showGuestGate && (
           <div className="ext-empty-state">
             <AnalysisMascot moodOverride="neutral" size={72} />
             <div className="empty-title" style={{ marginTop: 8 }}>{t('not_in_github', activeLocale)}</div>
@@ -756,7 +824,7 @@ export function PopupApp() {
           </div>
         )}
 
-        {!loading && report && !quotaExceeded && (
+        {!loading && report && !quotaExceeded && !showGuestGate && (
           <>
             {/* 1. MÓDULO HERO PRINCIPAL DE MARCA CON MASCOTA REACTIVA */}
             <RepoHeroCard report={report} locale={activeLocale} />

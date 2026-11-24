@@ -53,7 +53,7 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
   const [testingToken, setTestingToken] = useState(false)
   const [tokenTestResult, setTokenTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [clearedNotice, setClearedNotice] = useState(false)
-  const [showInstructions, setShowInstructions] = useState(true)
+  const [showInstructions, setShowInstructions] = useState(false)
   const [authSession, setAuthSession] = useState<AuthSession | null>(null)
   const [authBusy, setAuthBusy] = useState(false)
   const [authNotice, setAuthNotice] = useState<string | null>(null)
@@ -301,7 +301,9 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
               <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.4 }}>
                 {authSession?.isPro
                   ? t('pro_active_license_msg', activeLocale)
-                  : t('pro_plan_desc', activeLocale)}
+                  : authSession
+                    ? t('pro_plan_upgrade_desc', activeLocale)
+                    : t('pro_plan_desc', activeLocale)}
               </div>
             </div>
           </div>
@@ -533,33 +535,49 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
             <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
               {t('github_token_title', activeLocale)}
             </span>
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                padding: '2px 6px',
-                borderRadius: 10,
-                background: token.trim() ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                color: token.trim() ? 'var(--accent-emerald)' : 'var(--accent-amber)',
-              }}
-            >
-              {token.trim() ? (activeLocale === 'es' ? 'Configurado' : 'Configured') : (activeLocale === 'es' ? 'Sin token' : 'No token')}
-            </span>
+            {authSession?.user?.id ? (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: '2px 7px',
+                  borderRadius: 10,
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  color: 'var(--accent-emerald)',
+                }}
+              >
+                {activeLocale === 'es' ? 'Cuenta conectada (OAuth oficial)' : 'Connected Account (Official OAuth)'}
+              </span>
+            ) : token.trim() && !token.trim().startsWith('gho_') ? (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: '2px 7px',
+                  borderRadius: 10,
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  color: 'var(--accent-emerald)',
+                }}
+              >
+                {activeLocale === 'es' ? 'Token manual activo' : 'Manual token active'}
+              </span>
+            ) : (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: '2px 7px',
+                  borderRadius: 10,
+                  background: 'rgba(56, 189, 248, 0.12)',
+                  color: 'var(--brand-primary)',
+                }}
+              >
+                {activeLocale === 'es' ? 'Opcional' : 'Optional'}
+              </span>
+            )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <a
-              href={GITHUB_NEW_TOKEN_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="btn-github-direct"
-              onClick={(e) => e.stopPropagation()}
-              title="GitHub Personal Access Token page"
-              style={{ padding: '3px 8px', fontSize: 11 }}
-            >
-              <span>{t('btn_create_token', activeLocale)}</span>
-              <ExternalLink size={11} />
-            </a>
             {openSections.token ? (
               <ChevronDown size={15} style={{ color: 'var(--text-muted)' }} />
             ) : (
@@ -570,8 +588,55 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
 
         {openSections.token && (
           <div style={{ padding: '0 14px 14px 14px', borderTop: '1px solid var(--border-subtle)' }}>
+            {/* Informative Callout */}
+            {authSession?.user?.id ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: '9px 12px',
+                  borderRadius: 'var(--radius-sm, 6px)',
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  fontSize: 11.5,
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                <ShieldCheck size={16} style={{ color: 'var(--accent-emerald)', flexShrink: 0 }} />
+                <span>
+                  {activeLocale === 'es'
+                    ? 'Tu cuenta de GitHub ya está conectada y autenticada por OAuth oficial. No necesitas configurar ningún token manual aquí. Esta sección solo es requerida para instancias privadas de GitHub Enterprise o tokens personalizados con alcances avanzados.'
+                    : 'Your GitHub account is already connected and authenticated via official OAuth. No manual token is required here. This section is only needed for private GitHub Enterprise instances or custom-scoped tokens.'}
+                </span>
+              </div>
+            ) : (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: '9px 12px',
+                  borderRadius: 'var(--radius-sm, 6px)',
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  fontSize: 11.5,
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                <Sparkles size={16} style={{ color: 'var(--brand-primary)', flexShrink: 0 }} />
+                <span>
+                  {activeLocale === 'es'
+                    ? 'Consejo: Si inicias sesión con GitHub en la sección superior, tu autenticación se configurará automáticamente en 1 clic sin necesidad de generar ni pegar ningún token manual.'
+                    : 'Tip: If you sign in with GitHub in the section above, your authentication is configured automatically with 1 click without generating a manual token.'}
+                </span>
+              </div>
+            )}
+
             {/* Why add a token alert box */}
-            <div className="token-benefit-box" style={{ marginTop: 12 }}>
+            <div className="token-benefit-box" style={{ marginTop: 10 }}>
               <Zap size={14} className="text-amber" style={{ flexShrink: 0, marginTop: 1 }} />
               <div>
                 <strong>{t('token_benefit_title', activeLocale)}</strong>
@@ -598,14 +663,29 @@ export function SettingsView({ preferences, onSavePreferences, onClearCache, loc
               </div>
 
               {showInstructions && (
-                <ol className="instructions-steps-list">
-                  <li>{t('instruction_1', activeLocale)}</li>
-                  <li>{t('instruction_2', activeLocale)}</li>
-                  <li>{t('instruction_3', activeLocale)}</li>
-                  <li>{t('instruction_4', activeLocale)}</li>
-                  <li>{t('instruction_5', activeLocale)}</li>
-                  <li>{t('instruction_6', activeLocale)}</li>
-                </ol>
+                <>
+                  <ol className="instructions-steps-list">
+                    <li>{t('instruction_1', activeLocale)}</li>
+                    <li>{t('instruction_2', activeLocale)}</li>
+                    <li>{t('instruction_3', activeLocale)}</li>
+                    <li>{t('instruction_4', activeLocale)}</li>
+                    <li>{t('instruction_5', activeLocale)}</li>
+                    <li>{t('instruction_6', activeLocale)}</li>
+                  </ol>
+                  <div style={{ marginTop: 8 }}>
+                    <a
+                      href={GITHUB_NEW_TOKEN_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-github-direct"
+                      title="GitHub Personal Access Token page"
+                      style={{ padding: '4px 10px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                    >
+                      <span>{t('btn_create_token', activeLocale)}</span>
+                      <ExternalLink size={11} />
+                    </a>
+                  </div>
+                </>
               )}
             </div>
 

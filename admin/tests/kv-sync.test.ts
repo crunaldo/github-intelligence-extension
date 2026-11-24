@@ -483,6 +483,36 @@ describe('Admin API Handlers & Route Mounts', () => {
     )
     expect(badPriorityRes.status).toBe(400)
 
+    const badTierRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({ key: 'default_new_user_tier', value: 'invalid_tier' })
+      }),
+      upperEnv
+    )
+    expect(badTierRes.status).toBe(400)
+
+    const validTierFreeRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({ key: 'default_new_user_tier', value: 'free' })
+      }),
+      upperEnv
+    )
+    expect(validTierFreeRes.status).toBe(200)
+
+    const validTierProRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({ key: 'default_new_user_tier', value: 'pro' })
+      }),
+      upperEnv
+    )
+    expect(validTierProRes.status).toBe(200)
+
     const validSyncRes = await handleAdminKvSyncRequest(
       new Request('https://admin.local/api/admin/kv-sync', {
         method: 'POST',

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Tag, GitFork, Star } from 'lucide-react'
+import { Tag, GitFork, Star, HardDrive } from 'lucide-react'
 import type { RepositoryReport } from '../../features/repository/types'
 import { getLanguageColor } from '../../features/repository/github'
 import type { ActiveLocale } from '../i18n'
@@ -16,6 +16,19 @@ interface RepoHeroCardProps {
   locale?: ActiveLocale
   onOpenLicenseModal?: () => void
   actions?: React.ReactNode
+}
+
+function formatRepoSize(sizeKb?: number): string {
+  if (!sizeKb || sizeKb <= 0) return '0 KB'
+  if (sizeKb >= 1024 * 1024) {
+    const gb = (sizeKb / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')
+    return `${gb} GB`
+  }
+  if (sizeKb >= 1024) {
+    const mb = (sizeKb / 1024).toFixed(1).replace(/\.0$/, '')
+    return `${mb} MB`
+  }
+  return `${sizeKb.toLocaleString()} KB`
 }
 
 function formatNumber(num: number): string {
@@ -107,6 +120,17 @@ export const RepoHeroCard: React.FC<RepoHeroCardProps> = ({
               <span className="brand-pill brand-pill-subtle" title={`Rama: ${repo.defaultBranch}`}>
                 <Tag size={10} />
                 <span className="brand-pill-text">{repo.defaultBranch}</span>
+              </span>
+            )}
+
+            {/* Total Repo Size / Weight */}
+            {typeof repo.sizeKb === 'number' && repo.sizeKb > 0 && (
+              <span
+                className="brand-pill brand-pill-subtle"
+                title={`${locale === 'es' ? 'Peso total del repositorio' : 'Total repository size'}: ${formatRepoSize(repo.sizeKb)}`}
+              >
+                <HardDrive size={10} />
+                <span className="brand-pill-text">{formatRepoSize(repo.sizeKb)}</span>
               </span>
             )}
 

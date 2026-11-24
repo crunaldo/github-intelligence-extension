@@ -61,6 +61,7 @@ interface RemoteConfigResponse {
   }
   analysis_modules: Record<string, ModuleAccessLevel>
   advanced_system_settings?: Record<string, unknown>
+  default_new_user_tier?: 'free' | 'pro'
 }
 
 const DEFAULT_ANALYSIS_MODULES: Record<string, ModuleAccessLevel> = {
@@ -189,8 +190,20 @@ async function verifySupabaseUser(
     }
 
     const profiles = (await profileRes.json()) as Array<{ is_pro?: boolean }>
+    if (profiles.length > 0 && typeof profiles[0]?.is_pro === 'boolean') {
+      return {
+        isPro: profiles[0].is_pro,
+        userId: authUser.id
+      }
+    }
+
+    let defaultIsPro = false
+    if (env.KV) {
+      const defaultTier = await env.KV.get('default_new_user_tier')
+      defaultIsPro = defaultTier === 'pro'
+    }
     return {
-      isPro: Boolean(profiles?.[0]?.is_pro),
+      isPro: defaultIsPro,
       userId: authUser.id
     }
   } catch {
@@ -362,12 +375,13 @@ async function ingestRepositoryContext(owner: string, repo: string, commitSha: s
 }
 
 async function readRemoteConfig(kv: KVNamespace): Promise<RemoteConfigResponse> {
-  const [freeRaw, proRaw, flagsRaw, modulesRaw, settingsRaw] = await Promise.all([
+  const [freeRaw, proRaw, flagsRaw, modulesRaw, settingsRaw, defaultTierRaw] = await Promise.all([
     kv.get('free_daily_limit'),
     kv.get('pro_daily_limit'),
     kv.get('feature_flags'),
     kv.get('analysis_modules'),
-    kv.get('advanced_system_settings')
+    kv.get('advanced_system_settings'),
+    kv.get('default_new_user_tier')
   ])
 
   const defaults = {
@@ -424,6 +438,7 @@ async function readRemoteConfig(kv: KVNamespace): Promise<RemoteConfigResponse> 
       ...parsedFlags
     },
     analysis_modules: parsedModules,
+    default_new_user_tier: defaultTierRaw === 'pro' ? 'pro' : 'free',
     ...(parsedSettings ? { advanced_system_settings: parsedSettings } : {})
   }
 }

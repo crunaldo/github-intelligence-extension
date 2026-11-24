@@ -251,11 +251,13 @@ describe('Extension Backend Client & Auth', () => {
     expect(await getAuthSession()).toBeNull()
   })
 
-  it('signInWithGitHub supports launchWebAuthFlow implicit redirect, sends apikey, and populates isPro', async () => {
+  it('signInWithGitHub supports launchWebAuthFlow implicit redirect, sends apikey, and populates isPro and providerToken', async () => {
+    let capturedAuthUrl = ''
     const launchWebAuthFlow = vi.fn(
       (_details: { url: string; interactive: boolean }, cb: (url?: string) => void) => {
+        capturedAuthUrl = _details.url
         cb(
-          'https://ext-test-id.chromiumapp.org/supabase-auth#access_token=implicit-jwt&refresh_token=ref-1&expires_in=3600'
+          'https://ext-test-id.chromiumapp.org/supabase-auth#access_token=implicit-jwt&provider_token=gho_implicit_token_123&refresh_token=ref-1&expires_in=3600'
         )
       }
     )
@@ -298,8 +300,10 @@ describe('Extension Backend Client & Auth', () => {
     const session = await signInWithGitHub()
     expect(session).not.toBeNull()
     expect(session?.accessToken).toBe('implicit-jwt')
+    expect(session?.providerToken).toBe('gho_implicit_token_123')
     expect(session?.isPro).toBe(true)
     expect(session?.user.id).toBe('supa-user-1')
+    expect(capturedAuthUrl).toContain('scopes=read%3Auser')
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
@@ -333,6 +337,7 @@ describe('Extension Backend Client & Auth', () => {
           json: async () => ({
             access_token: 'pkce-jwt-abc',
             refresh_token: 'pkce-refresh-xyz',
+            provider_token: 'gho_pkce_token_999',
             expires_in: 3600,
             user: {
               id: 'supa-pkce-user',
@@ -356,6 +361,7 @@ describe('Extension Backend Client & Auth', () => {
     const pkceSession = await signInWithGitHub()
     expect(pkceSession?.accessToken).toBe('pkce-jwt-abc')
     expect(pkceSession?.refreshToken).toBe('pkce-refresh-xyz')
+    expect(pkceSession?.providerToken).toBe('gho_pkce_token_999')
     expect(pkceSession?.isPro).toBe(true)
 
     // Now simulate user cancel / chrome.runtime.lastError
