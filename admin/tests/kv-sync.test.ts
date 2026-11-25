@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  LOGO_VARIANTS,
+  applyTheme,
+  getStoredLogoVariant,
+  getStoredTheme
+} from '../src/lib/admin-shell'
+import {
   handleAdminCachePurgeRequest,
   handleAdminKvSyncRequest
 } from '../src/lib/admin-api'
@@ -891,5 +897,58 @@ describe('supabase-client error propagation & network resilience', () => {
         body: JSON.stringify(modules)
       })
     )
+  })
+
+  it('manages theme modes and logo variants properly', () => {
+    const originalWindow = (globalThis as { window?: unknown }).window
+    const originalDoc = (globalThis as { document?: unknown }).document
+    try {
+      const store = new Map<string, string>()
+      ;(globalThis as { window?: unknown }).window = {
+        localStorage: {
+          getItem: (k: string) => store.get(k) ?? null,
+          setItem: (k: string, v: string) => store.set(k, v),
+          removeItem: (k: string) => store.delete(k)
+        }
+      }
+
+      const classList = new Set<string>()
+      ;(globalThis as { document?: unknown }).document = {
+        documentElement: {
+          classList: {
+            add: (c: string) => classList.add(c),
+            remove: (c: string) => classList.delete(c)
+          }
+        }
+      }
+
+      // Default theme is dark
+      expect(getStoredTheme()).toBe('dark')
+
+      // Set to light
+      store.set('gpi_admin_theme', 'light')
+      expect(getStoredTheme()).toBe('light')
+      applyTheme('light')
+      expect(classList.has('light')).toBe(true)
+      expect(classList.has('dark')).toBe(false)
+
+      // Apply dark
+      applyTheme('dark')
+      expect(classList.has('dark')).toBe(true)
+      expect(classList.has('light')).toBe(false)
+
+      // Default logo variant
+      expect(getStoredLogoVariant()).toBe('default')
+      expect(LOGO_VARIANTS.length).toBeGreaterThanOrEqual(6)
+      expect(LOGO_VARIANTS.map((v) => v.id)).toContain('coding')
+      expect(LOGO_VARIANTS.map((v) => v.id)).toContain('cool')
+
+      // Custom stored variant
+      store.set('gpi_admin_logo_variant', 'cool')
+      expect(getStoredLogoVariant()).toBe('cool')
+    } finally {
+      ;(globalThis as { window?: unknown }).window = originalWindow
+      ;(globalThis as { document?: unknown }).document = originalDoc
+    }
   })
 })
