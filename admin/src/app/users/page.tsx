@@ -1,7 +1,16 @@
 'use client'
 
 import React, { useCallback, useEffect, useState } from 'react'
-import { CreditCard, Crown, RefreshCw, Save, Search, Shield, UserCheck, UserPlus } from 'lucide-react'
+import {
+  CreditCard,
+  Crown,
+  RefreshCw,
+  Save,
+  Search,
+  Shield,
+  UserCheck,
+  UserPlus
+} from 'lucide-react'
 import { AdminShell, SectionCard, StatusBanner } from '../../lib/admin-shell'
 import {
   DEFAULT_NEW_USER_TIER,
@@ -25,50 +34,67 @@ const STATUS_BADGE: Record<string, string> = {
   expired: 'bg-slate-700/40 text-slate-300 border-slate-600'
 }
 
-function UsersManagementContent({ client, session }: { client: AdminSupabaseClient; session: AdminSession }) {
-  const [search, setSearch] = useState('')
+function UsersContent({
+  client,
+  session
+}: {
+  client: AdminSupabaseClient
+  session: AdminSession
+}) {
   const [profiles, setProfiles] = useState<ProfileRow[]>([])
   const [subscriptions, setSubscriptions] = useState<SubscriptionRow[]>([])
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  // Default New User Tier Policy State
   const [defaultTier, setDefaultTier] = useState<DefaultUserTier>(DEFAULT_NEW_USER_TIER)
   const [savedDefaultTier, setSavedDefaultTier] = useState<DefaultUserTier>(DEFAULT_NEW_USER_TIER)
   const [savingTier, setSavingTier] = useState(false)
 
   const loadData = useCallback(
-    async (queryText = search, userFilter = selectedUserId) => {
+    async (searchTerm?: string, currentSelectedId?: string | null) => {
       setLoading(true)
-      const [profilesRes, subsRes, configsRes] = await Promise.all([
-        fetchProfiles(client, queryText),
-        fetchSubscriptions(client, userFilter ?? undefined),
+      setStatus(null)
+
+      const [profilesRes, subsRes, configsMap] = await Promise.all([
+        fetchProfiles(client, searchTerm),
+        fetchSubscriptions(client, currentSelectedId ?? undefined),
         fetchRemoteConfigsMap(client)
       ])
-      const errors = [profilesRes.error, subsRes.error, configsRes.error].filter(Boolean)
-      if (errors.length > 0) {
-        setStatus({ type: 'error', message: `Failed to load user records: ${errors.join(' | ')}` })
-      }
-      setProfiles(profilesRes.data)
-      setSubscriptions(subsRes.data)
-
-      if (configsRes.data) {
-        const rawTier =
-          configsRes.data['default_new_user_tier'] || configsRes.data['default_user_role']
-        const parsedTier: DefaultUserTier = rawTier === 'pro' ? 'pro' : 'free'
-        setDefaultTier(parsedTier)
-        setSavedDefaultTier(parsedTier)
-      }
 
       setLoading(false)
+
+      if (profilesRes.error) {
+        setStatus({ type: 'error', message: `Error al cargar perfiles: ${profilesRes.error}` })
+      } else {
+        setProfiles(profilesRes.data)
+      }
+
+      if (subsRes.error) {
+        setStatus({ type: 'error', message: `Error al cargar suscripciones: ${subsRes.error}` })
+      } else {
+        setSubscriptions(subsRes.data)
+      }
+
+      // Sync default_new_user_tier
+      const rawTier = configsMap.default_new_user_tier
+      if (rawTier === 'pro' || rawTier === 'free') {
+        setDefaultTier(rawTier)
+        setSavedDefaultTier(rawTier)
+      } else {
+        setDefaultTier(DEFAULT_NEW_USER_TIER)
+        setSavedDefaultTier(DEFAULT_NEW_USER_TIER)
+      }
     },
-    [client, search, selectedUserId]
+    [client]
   )
 
   useEffect(() => {
-    void loadData('', null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client])
+    void loadData()
+  }, [loadData])
 
   async function handleSaveDefaultTier() {
     setSavingTier(true)
@@ -77,30 +103,22 @@ function UsersManagementContent({ client, session }: { client: AdminSupabaseClie
     const res = await dispatchServerConfigSync(
       'default_new_user_tier',
       defaultTier,
-      session?.accessToken
+      session.accessToken
     )
     setSavingTier(false)
 
-    if (!res.success) {
+    if (res.success) {
+      setSavedDefaultTier(defaultTier)
+      setStatus({
+        type: 'success',
+        message: `Política de nuevo usuario guardada: Ahora todos los nuevos registros recibirán nivel ${defaultTier.toUpperCase()} automáticamente.`
+      })
+    } else {
       setStatus({
         type: 'error',
-        message: res.error ?? 'Error al guardar la política de rol por defecto para nuevos usuarios'
+        message: res.error ?? 'Error al guardar la política de nuevo usuario en KV y Supabase.'
       })
-      return
     }
-
-    setSavedDefaultTier(defaultTier)
-    setStatus({
-      type: 'success',
-      message: `¡Política guardada! Todos los nuevos usuarios se registrarán automáticamente con rol/plan: ${
-        defaultTier === 'pro' ? 'Pro' : 'Free'
-      }.`
-    })
-  }
-
-  async function handleSearchSubmit(event: React.FormEvent) {
-    event.preventDefault()
-    await loadData(search, selectedUserId)
   }
 
   async function handleTogglePro(profile: ProfileRow) {
@@ -114,25 +132,65 @@ function UsersManagementContent({ client, session }: { client: AdminSupabaseClie
       .eq('id', profile.id)
 
     setUpdatingId(null)
+
     if (error) {
-      setStatus({ type: 'error', message: error.message ?? 'Failed to update profile Pro status' })
+      setStatus({ type: 'error', message: `Error al actualizar estado Pro: ${error.message}` })
       return
     }
 
     setProfiles((prev) =>
-      prev.map((row) => (row.id === profile.id ? { ...row, is_pro: nextPro } : row))
+      prev.map((p) => (p.id === profile.id ? { ...p, is_pro: nextPro } : p))
     )
     setStatus({
       type: 'success',
-      message: `${profile.email} Pro membership ${nextPro ? 'enabled' : 'revoked'}.`
+      message: `Actualizado ${profile.email || profile.id} -> Membresía Pro: ${nextPro ? 'HABILITADA' : 'REVOCADA'}`
     })
+  }
+
+  async function handleToggleRole(profile: ProfileRow) {
+    const nextRole: 'admin' | 'user' = profile.role === 'admin' ? 'user' : 'admin'
+    if (
+      profile.id === session.userId &&
+      nextRole === 'user' &&
+      !window.confirm('Degradarte de admin revocará tu propio acceso a este panel. ¿Continuar?')
+    ) {
+      return
+    }
+
+    setUpdatingId(profile.id)
+    setStatus(null)
+
+    const { error } = await client
+      .from('profiles')
+      .update({ role: nextRole })
+      .eq('id', profile.id)
+
+    setUpdatingId(null)
+
+    if (error) {
+      setStatus({ type: 'error', message: `Error al actualizar rol: ${error.message}` })
+      return
+    }
+
+    setProfiles((prev) =>
+      prev.map((p) => (p.id === profile.id ? { ...p, role: nextRole } : p))
+    )
+    setStatus({
+      type: 'success',
+      message: `Actualizado ${profile.email || profile.id} -> Rol: ${nextRole}`
+    })
+  }
+
+  async function handleSearchSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    await loadData(search.trim(), selectedUserId)
   }
 
   async function handleSelectUser(userId: string | null) {
     setSelectedUserId(userId)
     const subsRes = await fetchSubscriptions(client, userId ?? undefined)
     if (subsRes.error) {
-      setStatus({ type: 'error', message: `Failed to load subscriptions: ${subsRes.error}` })
+      setStatus({ type: 'error', message: `Error al cargar suscripciones: ${subsRes.error}` })
     }
     setSubscriptions(subsRes.data)
   }
@@ -150,9 +208,9 @@ function UsersManagementContent({ client, session }: { client: AdminSupabaseClie
             type="button"
             onClick={() => void handleSaveDefaultTier()}
             disabled={savingTier || defaultTier === savedDefaultTier}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3.5 py-1.5 text-xs font-semibold text-white transition shadow-sm"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 disabled:opacity-50 px-4 py-2 text-xs font-semibold text-white transition shadow-md shadow-indigo-600/20 active:scale-[0.98]"
           >
-            <Save className="w-3.5 h-3.5" />
+            <Save className="size-3.5" />
             {savingTier ? 'Guardando...' : 'Guardar Política'}
           </button>
         }
@@ -160,23 +218,25 @@ function UsersManagementContent({ client, session }: { client: AdminSupabaseClie
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div
             onClick={() => setDefaultTier('free')}
-            className={`cursor-pointer rounded-xl border p-4 transition ${
+            className={`cursor-pointer rounded-2xl border p-5 transition-all ${
               defaultTier === 'free'
-                ? 'border-indigo-500 bg-indigo-500/10 shadow-sm'
-                : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
+                ? 'border-indigo-500 bg-indigo-500/10 shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/40'
+                : 'border-white/5 bg-[#090d16]/70 hover:border-white/15'
             }`}
           >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-slate-400" />
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2.5">
+                <div className="flex size-8 items-center justify-center rounded-xl bg-slate-800 text-slate-300 border border-white/5">
+                  <Shield className="size-4" />
+                </div>
                 <span className="font-semibold text-white text-sm">Free (Plan Gratuito)</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400 border border-slate-700">
+                <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-[10px] text-slate-400 border border-white/10 font-mono">
                   Por defecto
                 </span>
                 {savedDefaultTier === 'free' && (
-                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-300 border border-emerald-500/30">
+                  <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] text-emerald-300 border border-emerald-500/30 font-medium">
                     Activo
                   </span>
                 )}
@@ -189,23 +249,25 @@ function UsersManagementContent({ client, session }: { client: AdminSupabaseClie
 
           <div
             onClick={() => setDefaultTier('pro')}
-            className={`cursor-pointer rounded-xl border p-4 transition ${
+            className={`cursor-pointer rounded-2xl border p-5 transition-all ${
               defaultTier === 'pro'
-                ? 'border-amber-500 bg-amber-500/10 shadow-sm'
-                : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
+                ? 'border-amber-500 bg-amber-500/10 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/40'
+                : 'border-white/5 bg-[#090d16]/70 hover:border-white/15'
             }`}
           >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Crown className="w-4 h-4 text-amber-400" />
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2.5">
+                <div className="flex size-8 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  <Crown className="size-4" />
+                </div>
                 <span className="font-semibold text-white text-sm">Pro (Membresía Completa)</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] text-amber-300 border border-amber-500/30">
+                <span className="rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[10px] text-amber-300 border border-amber-500/30 font-mono">
                   Promoción
                 </span>
                 {savedDefaultTier === 'pro' && (
-                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-300 border border-emerald-500/30">
+                  <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] text-emerald-300 border border-emerald-500/30 font-medium">
                     Activo
                   </span>
                 )}
@@ -218,7 +280,7 @@ function UsersManagementContent({ client, session }: { client: AdminSupabaseClie
         </div>
 
         {defaultTier !== savedDefaultTier && (
-          <div className="mt-3 flex items-center justify-between rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-200">
+          <div className="mt-3 flex items-center justify-between rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-xs text-indigo-200 hero-in">
             <span>
               Tienes cambios sin guardar. Haz clic en <strong>Guardar Política</strong> para aplicar a Cloudflare KV y Supabase.
             </span>
@@ -227,54 +289,54 @@ function UsersManagementContent({ client, session }: { client: AdminSupabaseClie
       </SectionCard>
 
       <SectionCard
-        title="User Directory & Pro Entitlements"
-        description="Search profiles by email or UUID and manually grant or revoke Pro access."
+        title="Directorio de Usuarios & Permisos Pro"
+        description="Busca perfiles por email o UUID, y administra manualmente privilegios de administrador o membresía Pro."
         actions={
           <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="size-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search email or UUID..."
-                className="rounded-lg border border-slate-700 bg-slate-950 pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                placeholder="Buscar por email o UUID..."
+                className="w-48 sm:w-64 rounded-xl border border-white/10 bg-[#090d16] pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition"
               />
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="rounded-lg bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-xs font-medium text-white"
+              className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-3.5 py-1.5 text-xs font-semibold text-white transition shadow-sm"
             >
-              Search
+              Buscar
             </button>
             <button
               type="button"
               onClick={() => void loadData(search, selectedUserId)}
-              className="rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 p-1.5 text-slate-300"
-              aria-label="Refresh users"
+              className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 p-2 text-slate-300 transition"
+              aria-label="Refrescar usuarios"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </form>
         }
       >
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-800 text-slate-400 uppercase tracking-wider">
+            <thead className="border-b border-white/10 text-slate-400 uppercase tracking-wider text-[10px] font-semibold bg-white/[0.02]">
               <tr>
-                <th className="py-2.5 pr-4">User</th>
-                <th className="py-2.5 pr-4">Role</th>
-                <th className="py-2.5 pr-4">Lemon Customer</th>
-                <th className="py-2.5 pr-4">Pro Status</th>
-                <th className="py-2.5 text-right">Actions</th>
+                <th className="py-3 px-4">Usuario</th>
+                <th className="py-3 px-4">Rol</th>
+                <th className="py-3 px-4">Cliente Lemon</th>
+                <th className="py-3 px-4">Estado Pro</th>
+                <th className="py-3 px-4 text-right">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/70">
+            <tbody className="divide-y divide-white/5">
               {profiles.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400">
-                    {loading ? 'Loading profiles...' : 'No matching users found.'}
+                  <td colSpan={5} className="py-12 text-center text-slate-400">
+                    {loading ? 'Cargando usuarios...' : 'No se encontraron usuarios coincidentes.'}
                   </td>
                 </tr>
               ) : (
@@ -283,63 +345,77 @@ function UsersManagementContent({ client, session }: { client: AdminSupabaseClie
                   return (
                     <tr
                       key={profile.id}
-                      className={isSelected ? 'bg-indigo-500/5' : 'hover:bg-slate-800/30'}
+                      className={`transition-colors ${isSelected ? 'bg-indigo-500/10' : 'hover:bg-white/[0.03]'}`}
                     >
-                      <td className="py-3 pr-4">
-                        <div className="font-medium text-white">{profile.email}</div>
-                        <div className="font-mono text-[11px] text-slate-400">{profile.id}</div>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-300 font-bold text-[10px] border border-indigo-500/20">
+                            {profile.email?.slice(0, 2).toUpperCase() || 'US'}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-white tracking-tight">{profile.email}</div>
+                            <div className="font-mono text-[10px] text-slate-400">{profile.id}</div>
+                          </div>
+                        </div>
                       </td>
-                      <td className="py-3 pr-4">
+                      <td className="py-3 px-4">
                         <span
-                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${
                             profile.role === 'admin'
                               ? 'border-indigo-500/30 bg-indigo-500/15 text-indigo-300'
-                              : 'border-slate-700 bg-slate-800 text-slate-300'
+                              : 'border-white/10 bg-slate-800 text-slate-300'
                           }`}
                         >
-                          <Shield className="w-3 h-3" />
-                          {profile.role}
+                          <Shield className="size-3" />
+                          {profile.role.toUpperCase()}
                         </span>
                       </td>
-                      <td className="py-3 pr-4 font-mono text-slate-300">
+                      <td className="py-3 px-4 font-mono text-slate-400 text-[11px]">
                         {profile.lemon_customer_id ?? '—'}
                       </td>
-                      <td className="py-3 pr-4">
+                      <td className="py-3 px-4">
                         <span
-                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${
                             profile.is_pro
                               ? 'border-amber-500/30 bg-amber-500/15 text-amber-300'
-                              : 'border-slate-700 bg-slate-800 text-slate-400'
+                              : 'border-white/10 bg-slate-800 text-slate-400'
                           }`}
                         >
-                          <Crown className="w-3 h-3" />
-                          {profile.is_pro ? 'Pro' : 'Free'}
+                          <Crown className="size-3" />
+                          {profile.is_pro ? 'PRO ACTIVO' : 'FREE'}
                         </span>
                       </td>
-                      <td className="py-3 text-right space-x-2 whitespace-nowrap">
+                      <td className="py-3 px-4 text-right space-x-2 whitespace-nowrap">
                         <button
                           type="button"
-                          onClick={() => void handleSelectUser(isSelected ? null : profile.id)}
-                          className="rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2.5 py-1 text-[11px] text-slate-200"
+                          onClick={() => handleTogglePro(profile)}
+                          disabled={updatingId === profile.id}
+                          className={`rounded-xl border px-3 py-1 text-xs font-semibold transition ${
+                            profile.is_pro
+                              ? 'border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20'
+                              : 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                          }`}
                         >
-                          {isSelected ? 'Show All Subs' : 'View Subs'}
+                          {profile.is_pro ? 'Revocar Pro' : 'Otorgar Pro'}
                         </button>
                         <button
                           type="button"
+                          onClick={() => handleToggleRole(profile)}
                           disabled={updatingId === profile.id}
-                          onClick={() => void handleTogglePro(profile)}
-                          className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
-                            profile.is_pro
-                              ? 'border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20'
-                              : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                          className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1 text-xs text-slate-300 hover:text-white transition"
+                        >
+                          {profile.role === 'admin' ? 'Hacer Usuario' : 'Hacer Admin'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectUser(isSelected ? null : profile.id)}
+                          className={`rounded-xl border px-3 py-1 text-xs transition ${
+                            isSelected
+                              ? 'border-indigo-500 bg-indigo-600 text-white'
+                              : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
                           }`}
                         >
-                          <UserCheck className="w-3 h-3" />
-                          {updatingId === profile.id
-                            ? 'Updating...'
-                            : profile.is_pro
-                              ? 'Revoke Pro'
-                              : 'Grant Pro'}
+                          {isSelected ? 'Ocultar' : 'Suscripción'}
                         </button>
                       </td>
                     </tr>
@@ -351,97 +427,65 @@ function UsersManagementContent({ client, session }: { client: AdminSupabaseClie
         </div>
       </SectionCard>
 
-      <SectionCard
-        title="Lemon Squeezy Subscription History"
-        description={
-          selectedUserId
-            ? `Filtered for user ${selectedUserId}`
-            : 'Recent subscription webhook records synced from /v1/webhooks/lemonsqueezy'
-        }
-        actions={
-          selectedUserId && (
+      {/* Subscription details drawer */}
+      {selectedUserId && (
+        <SectionCard
+          title={`Suscripciones LemonSqueezy: ${selectedUserId}`}
+          description="Historial de eventos de pago y webhooks procesados para este usuario."
+          actions={
             <button
               type="button"
-              onClick={() => void handleSelectUser(null)}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-xs text-slate-300 hover:text-white"
+              onClick={() => setSelectedUserId(null)}
+              className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1 text-xs text-slate-300"
             >
-              Clear User Filter
+              Cerrar
             </button>
-          )
-        }
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-800 text-slate-400 uppercase tracking-wider">
-              <tr>
-                <th className="py-2.5 pr-4">Subscription ID</th>
-                <th className="py-2.5 pr-4">User ID</th>
-                <th className="py-2.5 pr-4">Status</th>
-                <th className="py-2.5 pr-4">Variant ID</th>
-                <th className="py-2.5">Period End</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/70">
-              {subscriptions.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400">
-                    No subscription records found.
-                  </td>
-                </tr>
-              ) : (
-                subscriptions.map((sub) => (
-                  <tr key={sub.id} className="hover:bg-slate-800/30">
-                    <td className="py-3 pr-4 font-mono text-white flex items-center gap-1.5">
-                      <CreditCard className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+          }
+        >
+          {subscriptions.length === 0 ? (
+            <p className="text-xs text-slate-400 py-4">No hay registros de suscripción asociados a este ID.</p>
+          ) : (
+            <div className="space-y-3">
+              {subscriptions.map((sub) => (
+                <div
+                  key={sub.id}
+                  className="rounded-xl border border-white/5 bg-[#090d16]/70 p-4 space-y-2 text-xs"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-white flex items-center gap-2">
+                      <CreditCard className="size-3.5 text-indigo-400" />
                       {sub.lemon_subscription_id}
-                    </td>
-                    <td className="py-3 pr-4 font-mono text-slate-400">{sub.user_id ?? '—'}</td>
-                    <td className="py-3 pr-4">
-                      <span
-                        className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                          STATUS_BADGE[sub.status] ?? STATUS_BADGE.expired
-                        }`}
-                      >
-                        {sub.status}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4 font-mono text-slate-300">{sub.variant_id ?? '—'}</td>
-                    <td className="py-3 text-slate-300">
-                      {sub.current_period_end
-                        ? new Date(sub.current_period_end).toLocaleDateString()
-                        : '—'}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </SectionCard>
+                    </span>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        STATUS_BADGE[sub.status] ?? 'bg-slate-800 text-slate-400'
+                      }`}
+                    >
+                      {sub.status.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-slate-400 text-[11px] pt-1">
+                    <div>Fin de período: {sub.current_period_end ? new Date(sub.current_period_end).toLocaleDateString() : '—'}</div>
+                    <div>Actualizado: {new Date(sub.updated_at).toLocaleDateString()}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      )}
     </div>
   )
 }
 
-function UsersManagementView({
-  injectedClient,
-  injectedSession
-}: {
-  injectedClient?: AdminSupabaseClient
-  injectedSession?: AdminSession
-} = {}) {
+export default function UsersManagementPage() {
   return (
     <AdminShell
       activeRoute="/users"
-      title="User & Subscription Management"
-      subtitle="Search user accounts, manage manual Pro grants, and inspect Lemon Squeezy subscription events."
-      injectedClient={injectedClient}
-      injectedSession={injectedSession}
+      title="Gestión de Usuarios & Membresías"
+      subtitle="Administra roles de acceso, membresías Pro de Supabase y la política de nivel por defecto para nuevos registros."
     >
-      {({ client, session }) => <UsersManagementContent client={client} session={session} />}
+      {({ client, session }) => <UsersContent client={client} session={session} />}
     </AdminShell>
   )
-}
-
-export default function UsersManagementPage() {
-  return <UsersManagementView />
 }

@@ -1,4 +1,9 @@
 import {
+  generateFileExplanation,
+  type FileExplainerContext,
+  type FileExplainerResult
+} from './ai/file-explainer'
+import {
   handleMascotChatRequest,
   InvalidMascotRequestError,
   type MascotChatMessage,
@@ -48,6 +53,7 @@ export interface WorkerEnv {
   createSupabaseClient?: (env: WorkerEnv) => SupabaseClientLike
   analyzeRepo?: typeof generateRepoAnalysis
   chatProviders?: MascotChatOptions['chatProviders']
+  explainFile?: typeof generateFileExplanation
 }
 
 interface RemoteConfigResponse {
@@ -1110,6 +1116,214 @@ async function handleMascotChat(
   }
 }
 
+async function handleExplainFile(
+  request: Request,
+  env: WorkerEnv,
+  ctx?: WorkerExecutionContext
+): Promise<Response> {
+  const startedAt = Date.now()
+  const config = await readRemoteConfig(env.KV)
+  if (config.feature_flags.maintenance_mode === true) {
+    return maintenanceModeResponse(config)
+  }
+
+  const authHeader = request.headers.get('Authorization') ?? ''
+  const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i)
+  const token = bearerMatch?.[1]?.trim()
+
+  const { isPro, userId } = token
+    ? await verifySupabaseUser(token, env)
+    : { isPro: false, userId: null }
+
+  const moduleAccess = config.analysis_modules?.fileTree ?? 'free'
+  if (moduleAccess === 'disabled') {
+    return jsonResponse(
+      { error: 'MODULE_DISABLED', message: 'File explanation is currently disabled' },
+      403
+    )
+  }
+
+  if (moduleAccess === 'pro' && (!userId || !isPro)) {
+    return jsonResponse(
+      { error: 'PRO_REQUIRED', message: 'File explanation requires an active Pro subscription' },
+      403
+    )
+  }
+
+  let body: Record<string, unknown>
+  try {
+    const parsed: unknown = await request.json()
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return jsonResponse({ error: 'INVALID_REQUEST', message: 'JSON object body required' }, 400)
+    }
+    body = parsed as Record<string, unknown>
+  } catch {
+    return jsonResponse({ error: 'INVALID_REQUEST', message: 'Invalid JSON body' }, 400)
+  }
+
+  const owner = body.owner
+  const repo = body.repo
+  const path = body.path
+
+  if (
+    !isSafeRepoSegment(owner) ||
+    !isSafeRepoSegment(repo) ||
+    typeof path !== 'string' ||
+    !path.trim()
+  ) {
+    return jsonResponse(
+      { error: 'INVALID_REQUEST', message: 'Valid owner, repo, and path are required' },
+      400
+    )
+  }
+
+  let remainingToday = 0
+  if (isPro && userId) {
+    const proQuota = await checkAndIncrementQuota(`pro:${userId}`, true, env.KV, {
+      proLimit: config.pro_daily_limit
+    })
+    if (!proQuota.allowed) {
+      return jsonResponse(
+        {
+          error: 'QUOTA_EXCEEDED',
+          code: 'PRO_QUOTA_EXHAUSTED',
+          message: 'Daily Pro limit reached',
+          remaining: 0
+        },
+        429
+      )
+    }
+    remainingToday = proQuota.remaining
+  } else {
+    const freeIdentifier = userId
+      ? `free:${userId}`
+      : await deriveAnonymousIdentifier(request)
+    const freeQuota = await checkAndIncrementQuota(freeIdentifier, false, env.KV, {
+      freeLimit: config.free_daily_limit
+    })
+    if (!freeQuota.allowed) {
+      return jsonResponse(
+        {
+          error: 'QUOTA_EXCEEDED',
+          code: 'FREE_QUOTA_EXHAUSTED',
+          message: 'Daily free limit reached',
+          remaining: 0
+        },
+        429
+      )
+    }
+
+    if (!userId) {
+      const ipIdentifier = await deriveIpCeilingIdentifier(request)
+      const ipQuota = await checkAndIncrementQuota(ipIdentifier, false, env.KV, {
+        freeLimit: DEFAULT_IP_DAILY_CEILING
+      })
+      if (!ipQuota.allowed) {
+        return jsonResponse(
+          {
+            error: 'QUOTA_EXCEEDED',
+            code: 'FREE_QUOTA_EXHAUSTED',
+            message: 'Daily free limit reached',
+            remaining: 0
+          },
+          429
+        )
+      }
+    }
+    remainingToday = freeQuota.remaining
+  }
+
+  let content =
+    typeof body.fileSnippet === 'string' && body.fileSnippet.trim().length > 0
+      ? body.fileSnippet.trim()
+      : ''
+
+  const ref =
+    typeof body.ref === 'string' && isSafeRepoSegment(body.ref) ? body.ref : undefined
+
+  if (!content) {
+    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${ref || 'HEAD'}/${path.replace(/^\/+/, '')}`
+    const fetched = await fetchTextIfOk(rawUrl)
+    if (fetched) {
+      content = fetched
+    }
+  }
+
+  const [repoCache, priorityOrder, apiKeysConfig] = await Promise.all([
+    resolveMascotCachedAnalysis(owner, repo, ref, env.KV),
+    readProviderPriority(env.KV),
+    readProviderApiKeys(env.KV)
+  ])
+
+  const repoSummary =
+    repoCache.cached?.summary?.whatItIs ||
+    repoCache.cached?.summary?.headline ||
+    undefined
+
+  const locale = typeof body.locale === 'string' ? body.locale : 'es'
+  const explain = env.explainFile ?? generateFileExplanation
+
+  try {
+    const result = await explain(
+      {
+        owner,
+        repo,
+        path,
+        ref,
+        fileContent: content,
+        repoSummary,
+        locale
+      },
+      {
+        geminiApiKey: env.GEMINI_API_KEY,
+        groqApiKey: env.GROQ_API_KEY,
+        cfAiBinding: env.AI,
+        openRouterApiKey: env.OPENROUTER_API_KEY,
+        priorityOrder,
+        apiKeysPool: apiKeysConfig.keys,
+        keyRotationStrategy: apiKeysConfig.strategy
+      }
+    )
+
+    recordQueryLog(env, ctx, request, {
+      userId,
+      owner,
+      repo,
+      isPro,
+      cacheHit: false,
+      provider: result.providerUsed,
+      actionType: 'analysis',
+      startedAt
+    })
+
+    return jsonResponse(
+      {
+        explanation: result.explanation,
+        remainingToday,
+        isPro,
+        providerUsed: result.providerUsed
+      },
+      200
+    )
+  } catch (error) {
+    const code = (error as { code?: string })?.code
+    if (error instanceof AIProvidersExhaustedError || code === 'AI_PROVIDERS_EXHAUSTED') {
+      return jsonResponse(
+        {
+          error: 'AI_PROVIDERS_EXHAUSTED',
+          message: 'All AI providers temporarily unavailable. Please retry shortly.'
+        },
+        503
+      )
+    }
+
+    return jsonResponse(
+      { error: 'INTERNAL_ERROR', message: 'Failed to generate file explanation' },
+      500
+    )
+  }
+}
+
 export default {
   async fetch(
     request: Request,
@@ -1138,6 +1352,13 @@ export default {
 
       if (request.method === 'POST' && url.pathname === '/v1/mascot/chat') {
         return await handleMascotChat(request, env, ctx)
+      }
+
+      if (
+        request.method === 'POST' &&
+        (url.pathname === '/v1/file/explain' || url.pathname === '/v1/explain-file')
+      ) {
+        return await handleExplainFile(request, env, ctx)
       }
 
       return jsonResponse({ error: 'NOT_FOUND', message: 'Route not found' }, 404)

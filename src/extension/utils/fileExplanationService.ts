@@ -1,3 +1,5 @@
+import { explainFileViaBackend } from '../api/backendClient'
+
 export interface FileExplanation {
   summary: string
   keyResponsibilities: string[]
@@ -98,47 +100,82 @@ export async function explainFileWithAi(params: {
   repo: string
   path: string
   ref?: string
-  isPro: boolean
+  isPro?: boolean
   fileSnippet?: string
+  locale?: string
 }): Promise<{ explanation: FileExplanation; remainingToday: number }> {
-  const { owner, repo, path, isPro } = params
+  const { owner, repo, path, ref, fileSnippet, locale = 'es', isPro = false } = params
   const cacheKey = `${owner}/${repo}/${path}`
 
-  // Check cache first
+  // Check in-memory cache first to prevent duplicate quota deduction on repeated view
   if (memoryFileCache.has(cacheKey)) {
+    const cached = memoryFileCache.get(cacheKey)!
     const quota = await checkFileExplanationQuota(isPro)
     return {
-      explanation: memoryFileCache.get(cacheKey)!,
+      explanation: cached,
       remainingToday: quota.remainingToday,
     }
   }
 
-  // Verify quota
-  const quota = await checkFileExplanationQuota(isPro)
-  if (!quota.canExplain) {
-    throw new Error('Has alcanzado el límite de tu cuota diaria de 3 explicaciones gratuitas de archivo. Actualiza a PRO para análisis ilimitado.')
-  }
+  try {
+    const res = await explainFileViaBackend({
+      owner,
+      repo,
+      path,
+      ref,
+      fileSnippet,
+      locale,
+    })
 
-  // Generate explanation based on file characteristics
-  const explanation = generateHeuristicExplanation(path, repo)
+    memoryFileCache.set(cacheKey, res.explanation)
 
-  // Cache result
-  memoryFileCache.set(cacheKey, explanation)
+    // Sync local store quota with the backend's remaining today count
+    if (!isPro && typeof res.remainingToday === 'number') {
+      const today = getTodayDateString()
+      const used = Math.max(0, FREE_DAILY_FILE_EXPLANATIONS_LIMIT - res.remainingToday)
+      await saveStoredQuota({ date: today, used })
+    }
 
-  // Decrement quota for free users
-  let remainingToday = Infinity
-  if (!isPro) {
-    const currentQuota = await getStoredQuota()
-    const today = getTodayDateString()
-    const currentUsed = currentQuota.date === today ? currentQuota.used : 0
-    const newUsed = currentUsed + 1
-    await saveStoredQuota({ date: today, used: newUsed })
-    remainingToday = Math.max(0, FREE_DAILY_FILE_EXPLANATIONS_LIMIT - newUsed)
-  }
+    return {
+      explanation: res.explanation,
+      remainingToday: res.remainingToday,
+    }
+  } catch (error) {
+    const err = error as { status?: number; code?: string; message?: string }
+    if (
+      err.status === 429 ||
+      err.code === 'QUOTA_EXCEEDED' ||
+      err.code === 'PRO_QUOTA_EXHAUSTED' ||
+      err.code === 'FREE_QUOTA_EXHAUSTED'
+    ) {
+      const msg = isPro
+        ? locale === 'es'
+          ? 'Has alcanzado el límite diario de tu plan PRO en el backend.'
+          : 'You have reached the daily quota limit for your PRO plan.'
+        : locale === 'es'
+          ? 'Has alcanzado el límite diario de consultas gratuitas. Actualiza a PRO para más solicitudes.'
+          : 'You have reached the daily free limit. Upgrade to PRO for more requests.'
+      throw new Error(msg)
+    }
 
-  return {
-    explanation,
-    remainingToday,
+    // If fetch failed completely (e.g. offline unit tests or network failure without API access),
+    // fallback gracefully to heuristic explanation:
+    if (
+      err.message &&
+      (err.message.includes('fetch') ||
+        err.message.includes('Network') ||
+        err.message.includes('Failed to fetch') ||
+        err.message.includes('NETWORK_ERROR'))
+    ) {
+      const fallback = generateHeuristicExplanation(path, repo)
+      memoryFileCache.set(cacheKey, fallback)
+      return {
+        explanation: fallback,
+        remainingToday: isPro ? Infinity : 0,
+      }
+    }
+
+    throw error
   }
 }
 

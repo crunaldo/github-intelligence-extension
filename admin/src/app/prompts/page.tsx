@@ -64,8 +64,8 @@ function PromptsStudioContent({
     setSavingKey(null)
     setStatus(
       res.success
-        ? { type: 'success', message: `${key} saved to Supabase & replicated to Cloudflare KV.` }
-        : { type: 'error', message: res.error ?? `Failed to sync ${key}` }
+        ? { type: 'success', message: `${key} guardado en Supabase y replicado a Cloudflare KV.` }
+        : { type: 'error', message: res.error ?? `Error al sincronizar ${key}` }
     )
   }
 
@@ -81,12 +81,12 @@ function PromptsStudioContent({
     if (repoRes.success && mascotRes.success) {
       setStatus({
         type: 'success',
-        message: 'Both system_prompt_repo and system_prompt_mascot synced to KV.'
+        message: 'Ambos prompts (system_prompt_repo y system_prompt_mascot) sincronizados con éxito a KV.'
       })
     } else {
       setStatus({
         type: 'error',
-        message: repoRes.error || mascotRes.error || 'Failed to sync one or more prompts'
+        message: repoRes.error || mascotRes.error || 'Fallo al sincronizar los prompts'
       })
     }
   }
@@ -102,101 +102,101 @@ function PromptsStudioContent({
           type="button"
           onClick={() => void saveAllPrompts()}
           disabled={saveDisabled}
-          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 text-sm font-semibold text-white transition"
+          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 disabled:opacity-50 px-5 py-2.5 text-xs font-semibold text-white transition shadow-md shadow-indigo-600/20 active:scale-[0.98]"
         >
-          <Sparkles className="w-4 h-4" />
-          {savingKey === 'all' ? 'Publishing...' : 'Publish All Prompts to KV'}
+          <Sparkles className="size-4" />
+          {savingKey === 'all' ? 'Publicando...' : 'Publicar Todos los Prompts a KV'}
         </button>
       </div>
 
       <SectionCard
-        title="Repository Analysis System Prompt"
-        description="KV key: system_prompt_repo — controls how /v1/analyze structures repository summaries and Mermaid diagrams."
+        title="Prompt del Sistema para Análisis de Repositorios"
+        description="Clave KV: system_prompt_repo — controla cómo /v1/analyze estructura los resúmenes de proyectos y los diagramas Mermaid."
         actions={
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setRepoPrompt(DEFAULT_SYSTEM_PROMPT_REPO)}
               disabled={loadError !== null}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-slate-300"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-slate-300 transition"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Reset
+              <RotateCcw className="size-3.5" />
+              Restablecer
             </button>
             <button
               type="button"
               onClick={() => void savePrompt('system_prompt_repo', repoPrompt)}
               disabled={saveDisabled}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3.5 py-1.5 text-xs font-semibold text-white"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3.5 py-1.5 text-xs font-semibold text-white transition shadow-sm"
             >
-              <Save className="w-3.5 h-3.5" />
-              {savingKey === 'system_prompt_repo' ? 'Saving...' : 'Save Repo Prompt'}
+              <Save className="size-3.5" />
+              {savingKey === 'system_prompt_repo' ? 'Guardando...' : 'Guardar Prompt Repo'}
             </button>
           </div>
         }
       >
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span className="inline-flex items-center gap-1.5 font-mono">
-              <FileCode2 className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="inline-flex items-center gap-1.5 font-mono text-indigo-300">
+              <FileCode2 className="size-3.5 text-indigo-400" />
               system_prompt_repo
             </span>
-            <span>
-              {repoPrompt.length} chars · ~{Math.ceil(repoPrompt.length / 4)} tokens
+            <span className="font-mono text-[11px] bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
+              {repoPrompt.length} caracteres · ~{Math.ceil(repoPrompt.length / 4)} tokens
             </span>
           </div>
           <textarea
-            rows={8}
+            rows={9}
             value={repoPrompt}
             onChange={(e) => setRepoPrompt(e.target.value)}
             disabled={loading || loadError !== null}
-            className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3.5 font-mono text-xs leading-relaxed text-slate-100 focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+            className="w-full rounded-2xl border border-white/10 bg-[#090d16] p-4 font-mono text-xs leading-relaxed text-slate-100 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none disabled:opacity-50 transition"
           />
         </div>
       </SectionCard>
 
       <SectionCard
-        title="Mascot Personality & Boundaries"
-        description="KV key: system_prompt_mascot — controls tone, boundaries, and context usage for Pro mascot chat."
+        title="Personalidad & Directivas de la Mascota IA (Octocat)"
+        description="Clave KV: system_prompt_mascot — controla el tono, límites, emojis y contexto de repositorio para el chat de la mascota."
         actions={
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setMascotPrompt(DEFAULT_SYSTEM_PROMPT_MASCOT)}
               disabled={loadError !== null}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-slate-300"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-50 px-3 py-1.5 text-xs font-medium text-slate-300 transition"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Reset
+              <RotateCcw className="size-3.5" />
+              Restablecer
             </button>
             <button
               type="button"
               onClick={() => void savePrompt('system_prompt_mascot', mascotPrompt)}
               disabled={saveDisabled}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3.5 py-1.5 text-xs font-semibold text-white"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-3.5 py-1.5 text-xs font-semibold text-white transition shadow-sm"
             >
-              <Save className="w-3.5 h-3.5" />
-              {savingKey === 'system_prompt_mascot' ? 'Saving...' : 'Save Mascot Prompt'}
+              <Save className="size-3.5" />
+              {savingKey === 'system_prompt_mascot' ? 'Guardando...' : 'Guardar Prompt Mascota'}
             </button>
           </div>
         }
       >
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span className="inline-flex items-center gap-1.5 font-mono">
-              <Bot className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="inline-flex items-center gap-1.5 font-mono text-pink-300">
+              <Bot className="size-3.5 text-pink-400" />
               system_prompt_mascot
             </span>
-            <span>
-              {mascotPrompt.length} chars · ~{Math.ceil(mascotPrompt.length / 4)} tokens
+            <span className="font-mono text-[11px] bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
+              {mascotPrompt.length} caracteres · ~{Math.ceil(mascotPrompt.length / 4)} tokens
             </span>
           </div>
           <textarea
-            rows={8}
+            rows={9}
             value={mascotPrompt}
             onChange={(e) => setMascotPrompt(e.target.value)}
             disabled={loading || loadError !== null}
-            className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3.5 font-mono text-xs leading-relaxed text-slate-100 focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+            className="w-full rounded-2xl border border-white/10 bg-[#090d16] p-4 font-mono text-xs leading-relaxed text-slate-100 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none disabled:opacity-50 transition"
           />
         </div>
       </SectionCard>
@@ -215,7 +215,7 @@ function PromptsStudioView({
     <AdminShell
       activeRoute="/prompts"
       title="Prompt & Mascot Personality Studio"
-      subtitle="Edit live Edge AI system prompts and publish updates directly to Supabase and Cloudflare KV."
+      subtitle="Edita en vivo los prompts de sistema de IA del Worker Edge y publícalos directamente a Cloudflare KV."
       injectedClient={injectedClient}
       injectedSession={injectedSession}
     >

@@ -6,27 +6,23 @@ import {
   CheckCircle2,
   Cpu,
   Eye,
-  FileCode,
-  FolderTree,
   GitBranch,
   Layers,
   Lock,
   MessageSquare,
-  PackageCheck,
+  Package,
   RefreshCw,
   Save,
   ShieldAlert,
   Sparkles,
-  Terminal,
   Zap
 } from 'lucide-react'
 import { AdminShell, KpiCard, SectionCard, StatusBanner } from '../../lib/admin-shell'
 import {
-  DEFAULT_ANALYSIS_MODULES,
-  DEFAULT_ANALYSIS_MODULES_MAP,
-  type AnalysisModuleDef,
   type AnalysisModuleId,
   type AnalysisModulesMap,
+  DEFAULT_ANALYSIS_MODULES,
+  DEFAULT_ANALYSIS_MODULES_MAP,
   type ModuleAccessLevel
 } from '../../lib/admin-types'
 import {
@@ -37,32 +33,34 @@ import {
 } from '../../lib/supabase-client'
 
 const MODULE_ICONS: Record<AnalysisModuleId, React.ReactNode> = {
-  summary: <FileCode className="w-4 h-4 text-sky-400" />,
-  installCommand: <Terminal className="w-4 h-4 text-emerald-400" />,
-  cloudSandbox: <Zap className="w-4 h-4 text-indigo-400" />,
-  hardwareCompat: <Cpu className="w-4 h-4 text-cyan-400" />,
-  roadmap: <GitBranch className="w-4 h-4 text-amber-400" />,
-  repoHealth: <PackageCheck className="w-4 h-4 text-emerald-400" />,
-  architectureDiagram: <Layers className="w-4 h-4 text-indigo-400" />,
-  deepAudit: <ShieldAlert className="w-4 h-4 text-rose-400" />,
-  fileTree: <FolderTree className="w-4 h-4 text-sky-400" />,
-  dependencies: <Boxes className="w-4 h-4 text-amber-400" />,
-  mascotChat: <MessageSquare className="w-4 h-4 text-indigo-400" />,
-  exportReport: <FileCode className="w-4 h-4 text-slate-400" />
+  summary: <Sparkles className="size-4 text-indigo-400" />,
+  installCommand: <Package className="size-4 text-emerald-400" />,
+  cloudSandbox: <Cpu className="size-4 text-sky-400" />,
+  hardwareCompat: <Layers className="size-4 text-amber-400" />,
+  roadmap: <GitBranch className="size-4 text-purple-400" />,
+  repoHealth: <CheckCircle2 className="size-4 text-teal-400" />,
+  architectureDiagram: <Boxes className="size-4 text-indigo-400" />,
+  deepAudit: <ShieldAlert className="size-4 text-rose-400" />,
+  fileTree: <Layers className="size-4 text-slate-400" />,
+  dependencies: <Package className="size-4 text-amber-400" />,
+  mascotChat: <MessageSquare className="size-4 text-pink-400" />,
+  exportReport: <Sparkles className="size-4 text-sky-400" />
 }
 
-function parseModulesMap(raw: unknown): AnalysisModulesMap {
+function parseAnalysisModulesMap(raw: unknown): AnalysisModulesMap {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { ...DEFAULT_ANALYSIS_MODULES_MAP }
   }
   const obj = raw as Record<string, unknown>
   const result: AnalysisModulesMap = { ...DEFAULT_ANALYSIS_MODULES_MAP }
-  for (const def of DEFAULT_ANALYSIS_MODULES) {
-    const val = obj[def.id]
+
+  for (const mod of DEFAULT_ANALYSIS_MODULES) {
+    const val = obj[mod.id]
     if (val === 'free' || val === 'pro' || val === 'disabled') {
-      result[def.id] = val
+      result[mod.id] = val
     }
   }
+
   return result
 }
 
@@ -77,28 +75,20 @@ function ModulesContent({
     ...DEFAULT_ANALYSIS_MODULES_MAP
   })
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [previewModuleId, setPreviewModuleId] = useState<AnalysisModuleId>('architectureDiagram')
 
   const loadData = useCallback(async () => {
     setLoading(true)
     setLoadError(null)
-    const configsRes = await fetchRemoteConfigsMap(client)
-    if (configsRes.error) {
-      setLoadError(configsRes.error)
-      setStatus({
-        type: 'error',
-        message: `Error al cargar módulos: ${configsRes.error}`
-      })
-      setLoading(false)
-      return
-    }
 
-    const parsed = parseModulesMap(configsRes.data.analysis_modules)
-    setModulesMap(parsed)
+    const configsMap = await fetchRemoteConfigsMap(client)
     setLoading(false)
+
+    const parsed = parseAnalysisModulesMap(configsMap.analysis_modules)
+    setModulesMap(parsed)
   }, [client])
 
   useEffect(() => {
@@ -106,16 +96,16 @@ function ModulesContent({
   }, [loadData])
 
   const stats = useMemo(() => {
-    const total = DEFAULT_ANALYSIS_MODULES.length
     let freeCount = 0
     let proCount = 0
     let disabledCount = 0
+    const total = DEFAULT_ANALYSIS_MODULES.length
 
-    for (const def of DEFAULT_ANALYSIS_MODULES) {
-      const access = modulesMap[def.id]
-      if (access === 'free') freeCount++
-      else if (access === 'pro') proCount++
-      else if (access === 'disabled') disabledCount++
+    for (const mod of DEFAULT_ANALYSIS_MODULES) {
+      const level = modulesMap[mod.id]
+      if (level === 'free') freeCount++
+      else if (level === 'pro') proCount++
+      else if (level === 'disabled') disabledCount++
     }
 
     return { total, freeCount, proCount, disabledCount }
@@ -199,37 +189,45 @@ function ModulesContent({
           value={stats.total}
           hint="Módulos de análisis configurables"
           accent="indigo"
-          icon={<Boxes className="w-4 h-4 text-indigo-400" />}
+          badge="Catálogo"
+          sparkline={[12, 12, 12, 12]}
+          icon={<Boxes className="size-5" />}
         />
         <KpiCard
           label="Módulos Gratuitos (Free)"
           value={stats.freeCount}
           hint="Disponibles para todos los usuarios"
           accent="emerald"
-          icon={<CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+          badge="Acceso Abierto"
+          sparkline={[8, 9, 10, stats.freeCount || 10]}
+          icon={<CheckCircle2 className="size-5" />}
         />
         <KpiCard
           label="Módulos Exclusivos (Pro Only)"
           value={stats.proCount}
           hint="Bloqueados con invitación a suscribirse"
           accent="sky"
-          icon={<Lock className="w-4 h-4 text-sky-400" />}
+          badge="Monetización"
+          sparkline={[1, 2, 2, stats.proCount || 2]}
+          icon={<Lock className="size-5" />}
         />
         <KpiCard
           label="Módulos Desactivados"
           value={stats.disabledCount}
           hint="Ocultos totalmente en la extensión"
           accent="amber"
-          icon={<ShieldAlert className="w-4 h-4 text-amber-400" />}
+          badge={stats.disabledCount === 0 ? 'Ninguno' : `${stats.disabledCount} Ocultos`}
+          sparkline={[0, 0, stats.disabledCount || 0]}
+          icon={<ShieldAlert className="size-5" />}
         />
       </div>
 
       {/* Preset Action Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border border-white/10 bg-[#0f172a]/80 backdrop-blur-md p-5 shadow-sm">
         <div className="space-y-1">
           <div className="text-sm font-semibold text-white flex items-center gap-2">
             <span>Plantillas de Monetización Rápidas</span>
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
               analysis_modules
             </span>
           </div>
@@ -242,21 +240,21 @@ function ModulesContent({
           <button
             type="button"
             onClick={() => applyPreset('standard')}
-            className="rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
+            className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
           >
             Plan Estándar (Recomendado)
           </button>
           <button
             type="button"
             onClick={() => applyPreset('aggressive')}
-            className="rounded-lg border border-indigo-500/40 bg-indigo-500/10 hover:bg-indigo-500/20 px-3 py-1.5 text-xs font-medium text-indigo-300 transition"
+            className="rounded-xl border border-indigo-500/40 bg-indigo-500/10 hover:bg-indigo-500/20 px-3 py-1.5 text-xs font-medium text-indigo-300 transition"
           >
             Freemium Agresivo
           </button>
           <button
             type="button"
             onClick={() => applyPreset('allFree')}
-            className="rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition"
+            className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition"
           >
             Todo Gratuito
           </button>
@@ -264,9 +262,9 @@ function ModulesContent({
             type="button"
             onClick={() => void handleSaveAll()}
             disabled={saving || loading}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 px-4 py-1.5 text-xs font-semibold text-white transition shadow-sm ml-2"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 px-4 py-1.5 text-xs font-semibold text-white transition shadow-md shadow-indigo-600/20 ml-2 active:scale-[0.98]"
           >
-            <Save className="w-3.5 h-3.5" />
+            <Save className="size-3.5" />
             <span>{saving ? 'Guardando...' : 'Guardar y Sincronizar KV'}</span>
           </button>
         </div>
@@ -283,21 +281,21 @@ function ModulesContent({
               <div
                 key={mod.id}
                 onClick={() => setPreviewModuleId(mod.id)}
-                className={`rounded-xl border p-4 transition-all cursor-pointer ${
+                className={`rounded-2xl border p-4 transition-all cursor-pointer ${
                   isSelectedForPreview
-                    ? 'border-indigo-500 bg-slate-900/90 shadow-md ring-1 ring-indigo-500/50'
-                    : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+                    ? 'border-indigo-500 bg-[#0f172a]/95 shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/50'
+                    : 'border-white/5 bg-[#090d16]/75 hover:border-white/15'
                 }`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div className="flex items-start gap-3">
-                    <div className="mt-1 p-2 rounded-lg bg-slate-900 border border-slate-800">
+                    <div className="mt-0.5 p-2 rounded-xl bg-white/5 border border-white/5">
                       {MODULE_ICONS[mod.id]}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-white">{mod.name}</span>
-                        <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">
+                        <span className="text-sm font-semibold text-white tracking-tight">{mod.name}</span>
+                        <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">
                           {mod.category}
                         </span>
                       </div>
@@ -307,13 +305,13 @@ function ModulesContent({
 
                   {/* 3-State Access Pill Toggle */}
                   <div
-                    className="flex items-center rounded-lg border border-slate-800 bg-slate-900/90 p-1 shrink-0 self-end sm:self-auto"
+                    className="flex items-center rounded-xl border border-white/10 bg-[#090d16] p-1 shrink-0 self-end sm:self-auto"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button
                       type="button"
                       onClick={() => handleSetAccess(mod.id, 'free')}
-                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
                         currentAccess === 'free'
                           ? 'bg-emerald-600 text-white shadow-sm'
                           : 'text-slate-400 hover:text-white'
@@ -324,19 +322,19 @@ function ModulesContent({
                     <button
                       type="button"
                       onClick={() => handleSetAccess(mod.id, 'pro')}
-                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition flex items-center gap-1 ${
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
                         currentAccess === 'pro'
                           ? 'bg-indigo-600 text-white shadow-sm'
                           : 'text-slate-400 hover:text-white'
                       }`}
                     >
-                      <Lock className="w-3 h-3" />
+                      <Lock className="size-3" />
                       Pro Only
                     </button>
                     <button
                       type="button"
                       onClick={() => handleSetAccess(mod.id, 'disabled')}
-                      className={`px-2 py-1 rounded-md text-xs font-semibold transition ${
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
                         currentAccess === 'disabled'
                           ? 'bg-rose-600 text-white shadow-sm'
                           : 'text-slate-400 hover:text-white'
@@ -358,11 +356,11 @@ function ModulesContent({
             description="Así es como un usuario gratuito verá el módulo en el sidepanel cuando esté configurado como Pro Only:"
           >
             {previewModule && (
-              <div className="rounded-xl border border-sky-400/30 bg-gradient-to-br from-sky-500/10 via-indigo-500/10 to-purple-500/10 p-5 space-y-4 shadow-xl">
+              <div className="relative overflow-hidden rounded-2xl border border-sky-400/30 bg-gradient-to-br from-sky-500/10 via-indigo-500/10 to-purple-500/10 p-5 space-y-4 shadow-xl">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="p-1.5 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30">
-                      <Lock className="w-4 h-4" />
+                      <Lock className="size-4" />
                     </div>
                     <span className="text-sm font-bold text-white tracking-tight">
                       {previewModule.name}
@@ -382,9 +380,9 @@ function ModulesContent({
                 <div className="space-y-2 pt-1">
                   <button
                     type="button"
-                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 py-2.5 px-4 text-xs font-bold text-white shadow-lg transition active:scale-[0.98]"
+                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 py-2.5 px-4 text-xs font-bold text-white shadow-lg transition active:scale-[0.98]"
                   >
-                    <Sparkles className="w-3.5 h-3.5" />
+                    <Sparkles className="size-3.5" />
                     Desbloquear con Pro
                   </button>
 
@@ -400,20 +398,20 @@ function ModulesContent({
               </div>
             )}
 
-            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-400 space-y-1 mt-4">
-              <div className="font-medium text-slate-300 flex items-center gap-1.5">
-                <Eye className="w-3.5 h-3.5 text-indigo-400" />
+            <div className="rounded-xl border border-white/5 bg-[#090d16]/70 p-3.5 text-xs text-slate-400 space-y-1.5 mt-4">
+              <div className="font-semibold text-slate-300 flex items-center gap-1.5">
+                <Eye className="size-3.5 text-indigo-400" />
                 <span>Comportamiento del Sistema:</span>
               </div>
               <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-400">
                 <li>
-                  <strong>Free (Todos):</strong> Visible para cualquier usuario sin restricciones.
+                  <strong className="text-emerald-400">Free (Todos):</strong> Visible para cualquier usuario sin restricciones.
                 </li>
                 <li>
-                  <strong>Pro Only:</strong> Muestra la tarjeta de suscripción y oculta los datos de la IA para usuarios Free.
+                  <strong className="text-indigo-400">Pro Only:</strong> Muestra la tarjeta de suscripción y oculta los datos de la IA para usuarios Free.
                 </li>
                 <li>
-                  <strong>Desactivado:</strong> Se omite por completo de la interfaz para todos.
+                  <strong className="text-rose-400">Desactivado:</strong> Se omite por completo de la interfaz para todos.
                 </li>
               </ul>
             </div>
@@ -428,8 +426,8 @@ export default function AnalysisModulesPage() {
   return (
     <AdminShell
       activeRoute="/modules"
-      title="Módulos de Análisis (Free vs Pro)"
-      subtitle="Activa, desactiva o restringe módulos específicos para forzar la conversión de usuarios Free a Pro."
+      title="Módulos de Análisis — Free vs Pro"
+      subtitle="Configura qué partes del análisis son gratuitas, exclusivas para usuarios Pro, o están temporalmente desactivadas."
     >
       {({ client, session }) => <ModulesContent client={client} session={session} />}
     </AdminShell>

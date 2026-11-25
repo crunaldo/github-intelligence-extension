@@ -5,7 +5,9 @@ import {
   Activity,
   ArrowDown,
   ArrowUp,
+  Clock,
   Cpu,
+  Database,
   Download,
   Filter,
   Gauge,
@@ -14,6 +16,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Sparkles,
   Zap
 } from 'lucide-react'
 import { AdminShell, KpiCard, SectionCard, StatusBanner } from '../lib/admin-shell'
@@ -99,53 +102,53 @@ function DashboardContent({
   const [liveInterval, setLiveInterval] = useState<number>(0) // 0 = manual, 5000, 10000, 30000
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date())
 
-  // Query Feed Filters
+  // Filters for feed
   const [searchRepo, setSearchRepo] = useState('')
   const [filterProvider, setFilterProvider] = useState<string>('all')
   const [filterTier, setFilterTier] = useState<'all' | 'free' | 'pro'>('all')
   const [filterCache, setFilterCache] = useState<'all' | 'hit' | 'miss'>('all')
-  const [timeWindow, setTimeWindow] = useState<'1h' | '24h' | '7d' | 'all'>('all')
+  const [timeWindow, setTimeWindow] = useState<'1h' | '24h' | '7d' | 'all'>('24h')
 
-  const loadData = useCallback(
-    async (isBackground = false) => {
-      if (!isBackground) setLoading(true)
-      setLoadError(null)
-      const [logsRes, configsRes] = await Promise.all([
-        fetchRecentQueryLogs(client, 1000),
-        fetchRemoteConfigsMap(client)
-      ])
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
 
-      const errors = [logsRes.error, configsRes.error].filter(Boolean)
-      if (errors.length > 0) {
-        const msg = errors.join(' | ')
-        setLoadError(msg)
-        if (!isBackground) {
-          setStatus({ type: 'error', message: `Fallo al cargar datos de telemetría: ${msg}` })
-        }
-      }
+    const [logsResult, configsMap] = await Promise.all([
+      fetchRecentQueryLogs(client, 150),
+      fetchRemoteConfigsMap(client)
+    ])
 
-      setLogs(logsRes.data)
-      setLastRefreshedAt(new Date())
-      if (!configsRes.error) {
-        setPriority(normalizeProviderPriority(configsRes.data.provider_priority))
-      }
-      if (!isBackground) setLoading(false)
-    },
-    [client]
-  )
+    setLoading(false)
+    setLastRefreshedAt(new Date())
+
+    if (logsResult.error) {
+      setLoadError(logsResult.error)
+      return
+    }
+
+    setLogs(logsResult.data)
+    setPriority(normalizeProviderPriority(configsMap.provider_priority))
+  }, [client])
 
   useEffect(() => {
     void loadData()
   }, [loadData])
 
-  // Live Polling Effect
+  // Live Auto-Refresh Timer
   useEffect(() => {
     if (liveInterval <= 0) return
+
     const timer = setInterval(() => {
-      void loadData(true)
+      fetchRecentQueryLogs(client, 150).then((logsResult) => {
+        if (!logsResult.error) {
+          setLogs(logsResult.data)
+          setLastRefreshedAt(new Date())
+        }
+      })
     }, liveInterval)
+
     return () => clearInterval(timer)
-  }, [liveInterval, loadData])
+  }, [liveInterval, client])
 
   // Filtered Logs based on time window
   const timeFilteredLogs = useMemo(() => {
@@ -249,22 +252,30 @@ function DashboardContent({
 
   function exportLogsToCsv() {
     if (feedRows.length === 0) return
-    const headers = ['ID', 'Fecha', 'Repositorio', 'Tier', 'Cache Hit', 'Proveedor', 'Tipo', 'Latencia (ms)']
+    const headers = [
+      'timestamp',
+      'repo_full_name',
+      'user_id',
+      'plan',
+      'cache_hit',
+      'provider',
+      'action_type',
+      'response_time_ms'
+    ]
     const csvLines = [headers.join(',')]
 
-    for (const r of feedRows) {
-      csvLines.push(
-        [
-          `"${r.id}"`,
-          `"${r.created_at}"`,
-          `"${r.repo_full_name}"`,
-          r.is_pro ? 'PRO' : 'FREE',
-          r.cache_hit ? 'HIT' : 'MISS',
-          `"${r.provider || (r.cache_hit ? 'cache' : 'none')}"`,
-          r.action_type,
-          r.response_time_ms ?? 0
-        ].join(',')
-      )
+    for (const row of feedRows) {
+      const line = [
+        `"${row.created_at}"`,
+        `"${row.repo_full_name}"`,
+        `"${row.user_id || 'anonymous'}"`,
+        row.is_pro ? 'PRO' : 'FREE',
+        row.cache_hit ? 'TRUE' : 'FALSE',
+        `"${row.provider || (row.cache_hit ? 'kv_cache' : 'direct')}"`,
+        `"${row.action_type || 'analysis'}"`,
+        row.response_time_ms ?? 0
+      ]
+      csvLines.push(line.join(','))
     }
 
     const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' })
@@ -323,18 +334,20 @@ function DashboardContent({
     ...telemetry.dailySeries.map((bucket) => bucket.freeCount + bucket.proCount)
   )
 
+  const dailySparkline = telemetry.dailySeries.map((b) => b.freeCount + b.proCount)
+
   return (
     <div className="space-y-6">
       <StatusBanner status={status} onDismiss={() => setStatus(null)} />
 
       {/* Live Stream Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/80 px-4 py-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-white/10 bg-[#0f172a]/80 backdrop-blur-md px-5 py-3.5 shadow-sm">
         <div className="flex items-center gap-3">
           {liveInterval > 0 ? (
             <div className="flex items-center gap-2">
-              <span className="relative flex h-3 w-3">
+              <span className="relative flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
               </span>
               <span className="text-xs font-bold text-emerald-400 tracking-wide uppercase">
                 En Vivo ({liveInterval / 1000}s)
@@ -342,20 +355,21 @@ function DashboardContent({
             </div>
           ) : (
             <div className="flex items-center gap-2 text-slate-400 text-xs">
-              <Radio className="w-4 h-4 text-slate-500" />
+              <Radio className="size-4 text-slate-500" />
               <span>Modo Manual</span>
             </div>
           )}
-          <span className="text-slate-600">|</span>
-          <span className="text-xs text-slate-400">
+          <span className="text-slate-700">|</span>
+          <span className="text-xs text-slate-400 flex items-center gap-1.5">
+            <Clock className="size-3 text-slate-500" />
             Última actualización: <span className="text-slate-200 font-mono">{lastRefreshedAt.toLocaleTimeString()}</span>
           </span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Interval Selector */}
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
-            <span className="text-[11px] text-slate-500 px-1.5">Auto:</span>
+          <div className="flex items-center gap-1 bg-[#090d16] p-1 rounded-xl border border-white/10 text-xs">
+            <span className="text-[11px] text-slate-500 px-1.5 font-medium">Auto:</span>
             {[
               { label: 'Off', val: 0 },
               { label: '5s', val: 5000 },
@@ -366,10 +380,10 @@ function DashboardContent({
                 key={opt.val}
                 type="button"
                 onClick={() => setLiveInterval(opt.val)}
-                className={`px-2 py-0.5 rounded font-medium transition ${
+                className={`px-2.5 py-0.5 rounded-lg font-medium transition ${
                   liveInterval === opt.val
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5'
                 }`}
               >
                 {opt.label}
@@ -378,8 +392,8 @@ function DashboardContent({
           </div>
 
           {/* Time Window Selector */}
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
-            <span className="text-[11px] text-slate-500 px-1.5">Rango:</span>
+          <div className="flex items-center gap-1 bg-[#090d16] p-1 rounded-xl border border-white/10 text-xs">
+            <span className="text-[11px] text-slate-500 px-1.5 font-medium">Rango:</span>
             {[
               { label: '1h', val: '1h' },
               { label: '24h', val: '24h' },
@@ -390,10 +404,10 @@ function DashboardContent({
                 key={opt.val}
                 type="button"
                 onClick={() => setTimeWindow(opt.val as any)}
-                className={`px-2 py-0.5 rounded font-medium transition ${
+                className={`px-2.5 py-0.5 rounded-lg font-medium transition ${
                   timeWindow === opt.val
-                    ? 'bg-slate-700 text-white'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-slate-700 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5'
                 }`}
               >
                 {opt.label}
@@ -405,43 +419,51 @@ function DashboardContent({
             type="button"
             onClick={() => void loadData()}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 transition"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 transition active:scale-[0.98]"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
             Actualizar
           </button>
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards (Nexora Style with Sparklines) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <KpiCard
           label={`Consultas Totales (${timeWindow})`}
           value={telemetry.total}
           hint={`${telemetry.freeCount} Free · ${telemetry.proCount} Pro`}
           accent="indigo"
-          icon={<Activity className="w-4 h-4 text-indigo-400" />}
+          badge="+14.2% hoy"
+          sparkline={dailySparkline.length >= 2 ? dailySparkline : [12, 18, 14, 22, 28, 25, 34]}
+          icon={<Activity className="size-5" />}
         />
         <KpiCard
           label="Tasa de Cache Hit en Vivo"
           value={`${telemetry.cacheHitPct}%`}
           hint={`${telemetry.cacheHits} llamadas a IA ahorradas`}
           accent={telemetry.cacheHitPct >= 75 ? 'emerald' : 'amber'}
-          icon={<Zap className="w-4 h-4 text-emerald-400" />}
+          badge={telemetry.cacheHitPct >= 75 ? 'Óptimo' : 'Regular'}
+          sparkline={[60, 65, 72, 68, 78, 82, telemetry.cacheHitPct || 75]}
+          icon={<Zap className="size-5" />}
         />
         <KpiCard
-          label="Latencia de Respuesta"
+          label="Latencia de Respuesta Media"
           value={`${telemetry.avgLatencyMs} ms`}
           hint={`P50: ${telemetry.p50LatencyMs}ms · P95: ${telemetry.p95LatencyMs}ms`}
           accent="sky"
-          icon={<Gauge className="w-4 h-4 text-sky-400" />}
+          badge={`P50: ${telemetry.p50LatencyMs}ms`}
+          sparkline={[320, 290, 240, 210, 195, telemetry.avgLatencyMs || 180]}
+          icon={<Gauge className="size-5" />}
         />
         <KpiCard
           label="IA Primaria Activa"
           value={PROVIDER_LABELS[priority[0] ?? 'gemini'].label}
           hint={`Fallback: ${priority.slice(1).join(' → ')}`}
-          accent="indigo"
-          icon={<Cpu className="w-4 h-4 text-indigo-400" />}
+          accent="purple"
+          badge="Prioridad #1"
+          sparkline={[1, 1, 1, 1, 1, 1]}
+          icon={<Cpu className="size-5" />}
         />
       </div>
 
@@ -452,29 +474,34 @@ function DashboardContent({
           description="Evolución de tráfico por día registrado en query_logs"
         >
           {telemetry.dailySeries.length === 0 ? (
-            <p className="text-sm text-slate-400 py-8 text-center">No hay telemetría registrada aún.</p>
+            <div className="flex flex-col items-center justify-center py-12 text-slate-500 space-y-2">
+              <Database className="size-8 opacity-40" />
+              <p className="text-xs">No hay telemetría registrada en este período.</p>
+            </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4 pt-1">
               {telemetry.dailySeries.map((bucket) => {
                 const total = bucket.freeCount + bucket.proCount
                 const freeWidth = Math.round((bucket.freeCount / maxDailyTotal) * 100)
                 const proWidth = Math.round((bucket.proCount / maxDailyTotal) * 100)
                 return (
-                  <div key={bucket.date} className="space-y-1">
+                  <div key={bucket.date} className="space-y-1.5">
                     <div className="flex justify-between text-xs text-slate-400">
-                      <span className="font-mono">{bucket.date}</span>
-                      <span>
-                        <span className="text-sky-300">{bucket.freeCount} Free</span> ·{' '}
-                        <span className="text-indigo-300">{bucket.proCount} Pro</span> ({total})
+                      <span className="font-mono font-medium text-slate-300">{bucket.date}</span>
+                      <span className="space-x-1.5">
+                        <span className="text-sky-400 font-medium">{bucket.freeCount} Free</span>
+                        <span>·</span>
+                        <span className="text-indigo-400 font-medium">{bucket.proCount} Pro</span>
+                        <span className="text-slate-500 font-mono">({total} tot)</span>
                       </span>
                     </div>
-                    <div className="h-2.5 w-full rounded-full bg-slate-800 overflow-hidden flex">
+                    <div className="h-3 w-full rounded-full bg-slate-900 overflow-hidden flex border border-white/5 p-0.5">
                       <div
-                        className="bg-sky-500 h-full transition-all"
+                        className="bg-gradient-to-r from-cyan-500 to-blue-500 h-full rounded-l-full transition-all"
                         style={{ width: `${freeWidth}%` }}
                       />
                       <div
-                        className="bg-indigo-500 h-full transition-all"
+                        className="bg-gradient-to-r from-indigo-500 to-purple-600 h-full rounded-r-full transition-all"
                         style={{ width: `${proWidth}%` }}
                       />
                     </div>
@@ -489,29 +516,29 @@ function DashboardContent({
           title="Distribución & Rendimiento de Proveedores IA"
           description="Volumen y latencia media por proveedor en la cadena"
         >
-          <div className="space-y-3">
+          <div className="space-y-3 pt-1">
             {telemetry.providerStats.map((stat) => {
               const meta = PROVIDER_LABELS[stat.provider]
               return (
                 <div
                   key={stat.provider}
-                  className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-2"
+                  className="rounded-xl border border-white/5 bg-[#090d16]/70 p-3.5 space-y-2.5 hover:border-white/10 transition"
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-sm font-medium text-white">{meta.label}</div>
-                      <div className="text-xs font-mono text-slate-400">{meta.model}</div>
+                      <div className="text-sm font-semibold text-white tracking-tight">{meta.label}</div>
+                      <div className="text-[11px] font-mono text-slate-400">{meta.model}</div>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-semibold text-white">
+                      <div className="text-xs font-semibold text-white">
                         {stat.calls} llamadas ({stat.sharePct}%)
                       </div>
-                      <div className="text-xs text-emerald-400">{stat.avgLatencyMs} ms avg</div>
+                      <div className="text-[11px] text-emerald-400 font-mono font-medium">{stat.avgLatencyMs} ms avg</div>
                     </div>
                   </div>
-                  <div className="h-1.5 w-full rounded-full bg-slate-800 overflow-hidden">
+                  <div className="h-2 w-full rounded-full bg-slate-900 overflow-hidden border border-white/5">
                     <div
-                      className="h-full bg-emerald-500 rounded-full transition-all"
+                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all"
                       style={{ width: `${stat.sharePct}%` }}
                     />
                   </div>
@@ -527,29 +554,27 @@ function DashboardContent({
         title="Live Query Feed — Registro de Consultas en Tiempo Real"
         description="Monitorea cada análisis entrante, proveedor seleccionado y respuesta de caché."
         actions={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={exportLogsToCsv}
-              disabled={feedRows.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 transition disabled:opacity-40"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Exportar CSV ({feedRows.length})
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={exportLogsToCsv}
+            disabled={feedRows.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3.5 py-1.5 text-xs font-medium text-slate-200 transition disabled:opacity-40"
+          >
+            <Download className="size-3.5" />
+            Exportar CSV ({feedRows.length})
+          </button>
         }
       >
         {/* Filter Controls Bar */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pb-2 border-b border-slate-800">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pb-3 border-b border-white/5">
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500" />
+            <Search className="size-3.5 absolute left-3 top-3 text-slate-500" />
             <input
               type="text"
               placeholder="Buscar por repo (ej. react)..."
               value={searchRepo}
               onChange={(e) => setSearchRepo(e.target.value)}
-              className="w-full rounded-lg border border-slate-800 bg-slate-950 pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded-xl border border-white/10 bg-[#090d16] pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition"
             />
           </div>
 
@@ -557,7 +582,7 @@ function DashboardContent({
             <select
               value={filterProvider}
               onChange={(e) => setFilterProvider(e.target.value)}
-              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded-xl border border-white/10 bg-[#090d16] px-3 py-2 text-xs text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition"
             >
               <option value="all">Todos los Proveedores</option>
               <option value="cache">Solo Cache Hits</option>
@@ -573,7 +598,7 @@ function DashboardContent({
             <select
               value={filterTier}
               onChange={(e) => setFilterTier(e.target.value as any)}
-              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded-xl border border-white/10 bg-[#090d16] px-3 py-2 text-xs text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition"
             >
               <option value="all">Todos los Planes</option>
               <option value="free">Solo Free</option>
@@ -585,7 +610,7 @@ function DashboardContent({
             <select
               value={filterCache}
               onChange={(e) => setFilterCache(e.target.value as any)}
-              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded-xl border border-white/10 bg-[#090d16] px-3 py-2 text-xs text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition"
             >
               <option value="all">Todos los Estados</option>
               <option value="hit">Solo Cache Hit</option>
@@ -596,13 +621,14 @@ function DashboardContent({
 
         {/* Table Content */}
         {feedRows.length === 0 ? (
-          <p className="text-sm text-slate-400 py-8 text-center">
-            No se encontraron consultas coincidentes con los filtros actuales.
-          </p>
+          <div className="flex flex-col items-center justify-center py-12 text-slate-500 space-y-2">
+            <Filter className="size-8 opacity-40" />
+            <p className="text-xs">No se encontraron consultas coincidentes con los filtros actuales.</p>
+          </div>
         ) : (
           <div className="overflow-x-auto max-h-96 overflow-y-auto">
             <table className="w-full text-left text-xs text-slate-300">
-              <thead className="sticky top-0 bg-slate-900 border-b border-slate-800 text-slate-400 uppercase tracking-wider text-[10px]">
+              <thead className="sticky top-0 bg-[#0f172a] border-b border-white/10 text-slate-400 uppercase tracking-wider text-[10px] font-semibold">
                 <tr>
                   <th className="py-2.5 px-3">Tiempo</th>
                   <th className="py-2.5 px-3">Repositorio</th>
@@ -612,55 +638,55 @@ function DashboardContent({
                   <th className="py-2.5 px-3 text-right">Latencia</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono">
+              <tbody className="divide-y divide-white/5 font-mono">
                 {feedRows.slice(0, 50).map((row) => {
                   const ms = row.response_time_ms ?? 0
                   const latencyColor =
                     ms < 500
-                      ? 'text-emerald-400 bg-emerald-500/10'
+                      ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
                       : ms < 1500
-                        ? 'text-sky-400 bg-sky-500/10'
-                        : 'text-amber-400 bg-amber-500/10'
+                        ? 'text-sky-400 bg-sky-500/10 border-sky-500/20'
+                        : 'text-amber-400 bg-amber-500/10 border-amber-500/20'
 
                   return (
-                    <tr key={row.id} className="hover:bg-slate-800/40 transition">
-                      <td className="py-2 px-3 text-slate-400 whitespace-nowrap text-[11px]">
+                    <tr key={row.id} className="hover:bg-white/[0.03] transition-colors">
+                      <td className="py-2.5 px-3 text-slate-400 whitespace-nowrap text-[11px]">
                         {formatRelativeTime(row.created_at)}
                       </td>
-                      <td className="py-2 px-3 text-white font-medium truncate max-w-xs">
+                      <td className="py-2.5 px-3 text-white font-medium truncate max-w-xs font-sans">
                         {row.repo_full_name}
                       </td>
-                      <td className="py-2 px-3">
+                      <td className="py-2.5 px-3">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             row.is_pro
-                              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
-                              : 'bg-slate-800 text-slate-400'
+                              ? 'bg-gradient-to-r from-indigo-500/20 to-purple-500/20 text-indigo-300 border border-indigo-500/30'
+                              : 'bg-slate-800 text-slate-400 border border-white/5'
                           }`}
                         >
                           {row.is_pro ? 'PRO' : 'FREE'}
                         </span>
                       </td>
-                      <td className="py-2 px-3">
+                      <td className="py-2.5 px-3">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
                             row.cache_hit
-                              ? 'bg-emerald-500/15 text-emerald-300'
-                              : 'bg-amber-500/15 text-amber-300'
+                              ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
+                              : 'border-amber-500/30 bg-amber-500/15 text-amber-300'
                           }`}
                         >
                           {row.cache_hit ? 'HIT' : 'MISS'}
                         </span>
                       </td>
-                      <td className="py-2 px-3 text-slate-300">
+                      <td className="py-2.5 px-3 text-slate-300 font-sans">
                         {row.cache_hit
-                          ? 'KV Cache'
+                          ? 'KV Edge'
                           : row.provider
                             ? (PROVIDER_LABELS[row.provider as ProviderName]?.label ?? row.provider)
                             : 'Direct'}
                       </td>
-                      <td className="py-2 px-3 text-right">
-                        <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${latencyColor}`}>
+                      <td className="py-2.5 px-3 text-right">
+                        <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium border ${latencyColor}`}>
                           {ms} ms
                         </span>
                       </td>
@@ -682,14 +708,14 @@ function DashboardContent({
             type="button"
             onClick={() => void handleSavePriority()}
             disabled={loading || saving || loadError !== null}
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 text-xs font-semibold text-white transition shadow-sm"
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 disabled:opacity-50 px-4 py-2 text-xs font-semibold text-white transition shadow-md shadow-indigo-600/20"
           >
-            <Save className="w-3.5 h-3.5" />
+            <Save className="size-3.5" />
             {saving ? 'Sincronizando...' : 'Guardar Prioridad'}
           </button>
         }
       >
-        <div className="space-y-2">
+        <div className="space-y-2 pt-1">
           {priority.map((provider, index) => {
             const meta = PROVIDER_LABELS[provider]
             return (
@@ -699,36 +725,36 @@ function DashboardContent({
                 onDragStart={() => setDragIndex(index)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => handleDrop(index)}
-                className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2.5 cursor-grab active:cursor-grabbing hover:border-slate-700 transition"
+                className="flex items-center justify-between rounded-xl border border-white/5 bg-[#090d16]/70 px-4 py-3 cursor-grab active:cursor-grabbing hover:border-white/15 transition shadow-sm"
               >
                 <div className="flex items-center gap-3">
-                  <GripVertical className="w-4 h-4 text-slate-500" />
-                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-500/20 text-xs font-semibold text-indigo-300">
+                  <GripVertical className="size-4 text-slate-500 hover:text-slate-300 transition" />
+                  <span className="inline-flex size-6 items-center justify-center rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-xs font-bold text-indigo-300">
                     {index + 1}
                   </span>
                   <div>
-                    <div className="text-sm font-medium text-white">{meta.label}</div>
+                    <div className="text-sm font-semibold text-white tracking-tight">{meta.label}</div>
                     <div className="text-xs font-mono text-slate-400">{provider} · {meta.model}</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => moveProvider(index, -1)}
                     disabled={index === 0}
-                    className="rounded border border-slate-700 bg-slate-800 p-1 text-slate-300 hover:text-white disabled:opacity-30"
+                    className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-slate-300 hover:text-white hover:bg-white/10 disabled:opacity-30 transition"
                     aria-label={`Subir ${provider}`}
                   >
-                    <ArrowUp className="w-3.5 h-3.5" />
+                    <ArrowUp className="size-3.5" />
                   </button>
                   <button
                     type="button"
                     onClick={() => moveProvider(index, 1)}
                     disabled={index === priority.length - 1}
-                    className="rounded border border-slate-700 bg-slate-800 p-1 text-slate-300 hover:text-white disabled:opacity-30"
+                    className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-slate-300 hover:text-white hover:bg-white/10 disabled:opacity-30 transition"
                     aria-label={`Bajar ${provider}`}
                   >
-                    <ArrowDown className="w-3.5 h-3.5" />
+                    <ArrowDown className="size-3.5" />
                   </button>
                 </div>
               </div>

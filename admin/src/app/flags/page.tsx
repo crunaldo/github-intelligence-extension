@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useState } from 'react'
-import { AlertOctagon, GitBranch, MessageSquare, Save, Sliders } from 'lucide-react'
+import { AlertOctagon, GitBranch, MessageSquare, Save, Sliders, Sparkles } from 'lucide-react'
 import { AdminShell, SectionCard, StatusBanner } from '../../lib/admin-shell'
 import {
   DEFAULT_FEATURE_FLAGS,
@@ -65,12 +65,18 @@ function ToggleRow({
   onChange: (next: boolean) => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+    <div className={`flex items-center justify-between gap-4 rounded-2xl border p-4 sm:p-5 transition-all ${
+      checked
+        ? danger
+          ? 'border-rose-500/30 bg-rose-500/10'
+          : 'border-indigo-500/30 bg-indigo-500/10'
+        : 'border-white/5 bg-[#090d16]/70 hover:border-white/10'
+    }`}>
       <div className="flex items-start gap-3">
-        <div className="mt-0.5">{icon}</div>
+        <div className="mt-0.5 p-2 rounded-xl bg-white/5 border border-white/5">{icon}</div>
         <div>
-          <div className="text-sm font-medium text-white">{label}</div>
-          <div className="text-xs text-slate-400 mt-0.5">{description}</div>
+          <div className="text-sm font-semibold text-white tracking-tight">{label}</div>
+          <div className="text-xs text-slate-400 mt-0.5 leading-relaxed">{description}</div>
         </div>
       </div>
       <button
@@ -78,7 +84,7 @@ function ToggleRow({
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
           checked
             ? danger
               ? 'bg-rose-600'
@@ -87,7 +93,7 @@ function ToggleRow({
         }`}
       >
         <span
-          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
+          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
             checked ? 'translate-x-5' : 'translate-x-0'
           }`}
         />
@@ -174,25 +180,27 @@ function FlagsQuotasContent({
           type="button"
           onClick={() => void handleSaveAll()}
           disabled={loading || saving || loadError !== null}
-          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 text-sm font-semibold text-white transition"
+          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 disabled:opacity-50 px-5 py-2.5 text-xs font-semibold text-white transition shadow-md shadow-indigo-600/20 active:scale-[0.98]"
         >
-          <Save className="w-4 h-4" />
-          {saving ? 'Syncing to KV...' : 'Save Quotas & Feature Flags'}
+          <Save className="size-4" />
+          {saving ? 'Sincronizando con KV...' : 'Guardar Cuotas & Feature Flags'}
         </button>
       </div>
 
       <SectionCard
-        title="Daily Quota Limits"
-        description="Adjust rate-limiter ceilings dynamically without redeploying the Cloudflare Worker."
+        title="Límites de Cuota Diaria (Rate Limiting)"
+        description="Ajusta los topes de peticiones diarias por usuario o IP en tiempo real sin necesidad de redesplegar el Worker."
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
+          <div className="rounded-2xl border border-white/5 bg-[#090d16]/70 p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <label htmlFor="free-limit" className="text-sm font-medium text-white flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-sky-400" />
-                Free Daily Limit
+              <label htmlFor="free-limit" className="text-sm font-semibold text-white flex items-center gap-2">
+                <Sliders className="size-4 text-sky-400" />
+                Límite Diario Plan Free
               </label>
-              <span className="font-mono text-sm font-semibold text-sky-300">{freeLimit} / day</span>
+              <span className="font-mono text-sm font-bold text-sky-300 bg-sky-500/10 px-2.5 py-0.5 rounded-full border border-sky-500/20">
+                {freeLimit} / día
+              </span>
             </div>
             <input
               id="free-limit"
@@ -201,28 +209,30 @@ function FlagsQuotasContent({
               max={100}
               value={freeLimit}
               onChange={(e) => setFreeLimit(Number(e.target.value))}
-              className="w-full accent-sky-500"
+              className="w-full accent-sky-500 cursor-pointer"
             />
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-slate-400">KV key: free_daily_limit</span>
+              <span className="text-xs text-slate-400 font-mono">free_daily_limit</span>
               <input
                 type="number"
                 min={1}
                 max={100}
                 value={freeLimit}
                 onChange={(e) => setFreeLimit(Math.max(1, Number(e.target.value) || 1))}
-                className="w-24 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-right font-mono text-xs text-white"
+                className="w-24 rounded-xl border border-white/10 bg-[#0b1120] px-3 py-1.5 text-right font-mono text-xs text-white focus:border-indigo-500 focus:outline-none"
               />
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
+          <div className="rounded-2xl border border-white/5 bg-[#090d16]/70 p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <label htmlFor="pro-limit" className="text-sm font-medium text-white flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-indigo-400" />
-                Pro Daily Limit
+              <label htmlFor="pro-limit" className="text-sm font-semibold text-white flex items-center gap-2">
+                <Sliders className="size-4 text-indigo-400" />
+                Límite Diario Plan Pro
               </label>
-              <span className="font-mono text-sm font-semibold text-indigo-300">{proLimit} / day</span>
+              <span className="font-mono text-sm font-bold text-indigo-300 bg-indigo-500/10 px-2.5 py-0.5 rounded-full border border-indigo-500/20">
+                {proLimit} / día
+              </span>
             </div>
             <input
               id="pro-limit"
@@ -232,17 +242,18 @@ function FlagsQuotasContent({
               step={25}
               value={proLimit}
               onChange={(e) => setProLimit(Number(e.target.value))}
-              className="w-full accent-indigo-500"
+              className="w-full accent-indigo-500 cursor-pointer"
             />
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-slate-400">KV key: pro_daily_limit</span>
+              <span className="text-xs text-slate-400 font-mono">pro_daily_limit</span>
               <input
                 type="number"
-                min={1}
-                max={5000}
+                min={25}
+                max={2000}
+                step={25}
                 value={proLimit}
-                onChange={(e) => setProLimit(Math.max(1, Number(e.target.value) || 1))}
-                className="w-24 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-right font-mono text-xs text-white"
+                onChange={(e) => setProLimit(Math.max(25, Number(e.target.value) || 25))}
+                className="w-24 rounded-xl border border-white/10 bg-[#0b1120] px-3 py-1.5 text-right font-mono text-xs text-white focus:border-indigo-500 focus:outline-none"
               />
             </div>
           </div>
@@ -250,72 +261,63 @@ function FlagsQuotasContent({
       </SectionCard>
 
       <SectionCard
-        title="Remote Feature Flags"
-        description="KV key: feature_flags — broadcast live feature toggles and maintenance banners to extensions."
+        title="Interruptores Globales (Feature Flags)"
+        description="Activa o desactiva subsistemas completos instantáneamente a nivel de Edge Worker."
       >
         <div className="space-y-3">
           <ToggleRow
-            label="Mascot Assistant Enabled"
-            description="Controls mascot_enabled flag for floating mascot and /v1/mascot/chat."
+            label="Chat con Mascota IA (Octocat Interactivo)"
+            description="Controla si el endpoint /v1/mascot/chat y la ventana de chat flotante de la extensión aceptan mensajes."
             checked={flags.mascot_enabled}
-            icon={<MessageSquare className="w-4 h-4 text-emerald-400" />}
+            icon={<MessageSquare className="size-4 text-pink-400" />}
             onChange={(next) => setFlags((prev) => ({ ...prev, mascot_enabled: next }))}
           />
+
           <ToggleRow
-            label="Architecture Diagrams Enabled"
-            description="Controls diagrams_enabled flag for Mermaid architecture rendering in Pro results."
+            label="Diagramas de Arquitectura (Mermaid.js)"
+            description="Permite que el Worker devuelva bloques Mermaid completos en el campo architectureDiagram del análisis."
             checked={flags.diagrams_enabled}
-            icon={<GitBranch className="w-4 h-4 text-sky-400" />}
+            icon={<GitBranch className="size-4 text-indigo-400" />}
             onChange={(next) => setFlags((prev) => ({ ...prev, diagrams_enabled: next }))}
           />
+
           <ToggleRow
-            label="Maintenance Mode"
-            description="Controls maintenance_mode flag to pause incoming requests with a maintenance notice."
+            label="Modo Mantenimiento Global (Kill-Switch)"
+            description="Cuando está activo, todas las consultas a /v1/analyze retornan HTTP 503 con el mensaje del banner personalizado."
             checked={flags.maintenance_mode}
             danger
-            icon={<AlertOctagon className="w-4 h-4 text-rose-400" />}
+            icon={<AlertOctagon className="size-4 text-rose-400" />}
             onChange={(next) => setFlags((prev) => ({ ...prev, maintenance_mode: next }))}
           />
+        </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2">
-            <label htmlFor="banner-message" className="block text-sm font-medium text-white">
-              Global Banner Message (optional)
+        {flags.maintenance_mode && (
+          <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-5 space-y-2 hero-in">
+            <label className="block text-xs font-semibold text-rose-200">
+              Mensaje del Banner de Mantenimiento (Mostrado a los usuarios)
             </label>
             <input
-              id="banner-message"
               type="text"
               value={flags.banner_message ?? ''}
               onChange={(e) => setFlags((prev) => ({ ...prev, banner_message: e.target.value }))}
-              placeholder="e.g. New Gemini 2.5 engine enabled for all repositories!"
-              className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+              placeholder="El servicio está en mantenimiento temporal para actualización de infraestructura."
+              className="w-full rounded-xl border border-rose-500/40 bg-[#090d16] px-3.5 py-2 text-xs text-white placeholder-rose-300/40 focus:border-rose-400 focus:outline-none"
             />
           </div>
-        </div>
+        )}
       </SectionCard>
     </div>
   )
 }
 
-function FeatureFlagsView({
-  injectedClient,
-  injectedSession
-}: {
-  injectedClient?: AdminSupabaseClient
-  injectedSession?: AdminSession
-} = {}) {
+export default function FeatureFlagsPage() {
   return (
     <AdminShell
       activeRoute="/flags"
-      title="Feature Flags & Quotas"
-      subtitle="Control Free/Pro daily rate limits, runtime toggles, and global extension banners."
-      injectedClient={injectedClient}
-      injectedSession={injectedSession}
+      title="Cuotas Diarias & Feature Flags"
+      subtitle="Ajusta límites diarios Free/Pro y conmuta interruptores globales del sistema en Cloudflare KV."
     >
       {({ client, session }) => <FlagsQuotasContent client={client} session={session} />}
     </AdminShell>
   )
-}
-
-export default function FeatureFlagsPage() {
-  return <FeatureFlagsView />
 }

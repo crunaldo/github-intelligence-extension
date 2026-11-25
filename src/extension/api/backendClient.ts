@@ -713,3 +713,64 @@ export async function streamMascotChat(params: StreamMascotChatParams): Promise<
 
   return consumeSseDeltaStream(res.body, params.onDelta)
 }
+
+export interface ExplainFileParams {
+  owner: string
+  repo: string
+  path: string
+  ref?: string
+  fileSnippet?: string
+  locale?: string
+}
+
+export interface ExplainFileResponse {
+  explanation: {
+    summary: string
+    keyResponsibilities: string[]
+    architectureRole: string
+  }
+  remainingToday: number
+  isPro?: boolean
+  providerUsed?: string
+}
+
+/**
+ * Calls the backend `/v1/file/explain` endpoint to generate an AI explanation for an individual file.
+ * Automatically checks and deducts daily quota (Free or Pro limits from backend configuration).
+ */
+export async function explainFileViaBackend(
+  params: ExplainFileParams
+): Promise<ExplainFileResponse> {
+  const [signature, session] = await Promise.all([getClientSignature(), getAuthSession()])
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Client-Signature': signature,
+  }
+
+  if (session?.accessToken) {
+    headers.Authorization = `Bearer ${session.accessToken}`
+  }
+
+  const res = await fetch(`${getBackendBaseUrl()}/v1/file/explain`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(params),
+  })
+
+  if (!res.ok) {
+    const err = await parseErrorResponse(res)
+    if (
+      err.status === 429 ||
+      err.code === 'QUOTA_EXCEEDED' ||
+      err.code === 'PRO_QUOTA_EXHAUSTED' ||
+      err.code === 'FREE_QUOTA_EXHAUSTED'
+    ) {
+      void markDailyQuotaExceeded()
+    }
+    throw err
+  }
+
+  return (await res.json()) as ExplainFileResponse
+}
+

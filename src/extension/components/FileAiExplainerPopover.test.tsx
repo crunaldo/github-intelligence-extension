@@ -47,7 +47,7 @@ describe('FileAiExplainerPopover', () => {
     expect(container.textContent).toContain('Punto de entrada de la aplicación')
     expect(container.textContent).toContain('Inicializa servicios')
     expect(container.textContent).toContain('Bootstrap neurálgico')
-    expect(container.textContent).toContain('2 de 3 explicaciones gratuitas hoy')
+    expect(container.textContent).toContain('2 consultas gratuitas hoy')
   })
 
   it('renders Pro unlimited badge for Pro user', async () => {

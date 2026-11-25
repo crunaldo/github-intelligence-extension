@@ -220,13 +220,20 @@ export function FileAiExplainerPopover({
           >
             {isPro ? (
               <span style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 3, fontWeight: 600 }}>
-                <Crown size={11} /> {locale === 'es' ? 'PRO Ilimitado' : 'PRO Unlimited'}
+                <Crown size={11} />{' '}
+                {remaining !== Infinity && remaining !== undefined
+                  ? locale === 'es'
+                    ? `PRO: ${remaining} restantes hoy`
+                    : `PRO: ${remaining} left today`
+                  : locale === 'es'
+                    ? 'PRO Ilimitado'
+                    : 'PRO Unlimited'}
               </span>
             ) : (
               <span>
                 {locale === 'es'
-                  ? `${remaining} de 3 explicaciones gratuitas hoy`
-                  : `${remaining} of 3 free explanations today`}
+                  ? `${remaining} consultas gratuitas hoy`
+                  : `${remaining} free queries today`}
               </span>
             )}
             <span style={{ opacity: 0.8 }}>Powered by AI</span>

@@ -835,4 +835,45 @@ describe('Extension Backend Client & Auth', () => {
       expect(res2.architectureDiagram).toBe('graph TD; A-->B;')
     })
   })
+
+  describe('explainFileViaBackend', () => {
+    it('sends POST /v1/file/explain with client signature and parses response', async () => {
+      const mockResponse = {
+        explanation: {
+          summary: 'File summary from AI',
+          keyResponsibilities: ['Duty 1'],
+          architectureRole: 'Service',
+        },
+        remainingToday: 248,
+        isPro: true,
+      }
+
+      let capturedUrl = ''
+      let capturedBody: Record<string, unknown> = {}
+      globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+        capturedUrl = String(url)
+        capturedBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+        return {
+          status: 200,
+          ok: true,
+          json: async () => mockResponse,
+        }
+      }) as unknown as typeof fetch
+
+      const { explainFileViaBackend } = await import('../api/backendClient')
+      const res = await explainFileViaBackend({
+        owner: 'testowner',
+        repo: 'testrepo',
+        path: 'src/main.ts',
+        ref: 'main',
+        locale: 'es',
+      })
+
+      expect(capturedUrl).toContain('/v1/file/explain')
+      expect(capturedBody.owner).toBe('testowner')
+      expect(capturedBody.path).toBe('src/main.ts')
+      expect(res.remainingToday).toBe(248)
+      expect(res.explanation.summary).toBe('File summary from AI')
+    })
+  })
 })
