@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles.css'
 import AdminDashboardPage from './app/page'
+import TelemetryPage from './app/telemetry/page'
 import ApisManagementPage from './app/apis/page'
 import AnalysisModulesPage from './app/modules/page'
 import PromptsStudioPage from './app/prompts/page'
@@ -59,6 +60,8 @@ function AdminAppRouter() {
   }, [])
 
   switch (pathname) {
+    case '/telemetry':
+      return <TelemetryPage />
     case '/apis':
       return <ApisManagementPage />
     case '/modules':

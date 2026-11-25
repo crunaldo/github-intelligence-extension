@@ -14,6 +14,7 @@ import {
   Flame,
   GitBranch,
   KeyRound,
+  LayoutDashboard,
   Lock,
   LogOut,
   Menu,
@@ -129,6 +130,7 @@ export function ThemeToggle({
 
 export type AdminRoute =
   | '/'
+  | '/telemetry'
   | '/apis'
   | '/modules'
   | '/flags'
@@ -163,9 +165,10 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: 'Panel & Inteligencia',
+    label: 'Panel Principal',
     items: [
-      { href: '/', label: 'Live Telemetry & AI', icon: Activity, badge: 'Live' },
+      { href: '/', label: 'Dashboard General', icon: LayoutDashboard, badge: 'KPIs' },
+      { href: '/telemetry', label: 'Telemetría en Vivo', icon: Activity, badge: 'Live' },
       { href: '/prompts', label: 'Prompts & Mascota', icon: Sparkles }
     ]
   },
