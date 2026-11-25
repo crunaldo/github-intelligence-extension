@@ -153,10 +153,17 @@ export function parseSessionFromUrlHash(): AdminSession | null {
   }
 }
 
+export interface AuthUserSummary {
+  id: string
+  email: string
+  providerId?: string
+  userName?: string
+}
+
 export async function fetchAuthUser(
   accessToken: string,
   config = getPublicSupabaseConfig()
-): Promise<{ id: string; email: string } | null> {
+): Promise<AuthUserSummary | null> {
   if (!config.supabaseUrl || !config.supabaseAnonKey || !accessToken) {
     return null
   }
@@ -172,17 +179,65 @@ export async function fetchAuthUser(
     if (!res.ok) {
       return null
     }
-    const data = (await res.json()) as { id?: string; email?: string }
+    const data = (await res.json()) as {
+      id?: string
+      email?: string
+      user_metadata?: {
+        email?: string
+        user_name?: string
+        preferred_username?: string
+        provider_id?: string | number
+      }
+    }
     if (!data?.id) {
       return null
     }
+    const meta = data.user_metadata
+    const resolvedEmail =
+      data.email ||
+      (typeof meta?.email === 'string' && meta.email ? meta.email : '') ||
+      (typeof meta?.user_name === 'string' && meta.user_name ? meta.user_name : '') ||
+      (typeof meta?.preferred_username === 'string' && meta.preferred_username ? meta.preferred_username : '') ||
+      ''
     return {
       id: data.id,
-      email: data.email ?? ''
+      email: resolvedEmail,
+      providerId: meta?.provider_id !== undefined ? String(meta.provider_id) : undefined,
+      userName: meta?.user_name || meta?.preferred_username
     }
   } catch {
     return null
   }
+}
+
+/**
+ * Resolves an OAuth callback from URL (either PKCE query param `code` or implicit hash `access_token`),
+ * fetches the authenticated user profile, and persists the session.
+ */
+export async function resolveOAuthSessionFromUrl(
+  config = getPublicSupabaseConfig()
+): Promise<{ session: AdminSession | null; error?: string }> {
+  const { accessToken, code, error } = parseOAuthCallbackFromUrl()
+  if (error) {
+    return { session: null, error }
+  }
+  if (code) {
+    return exchangeAdminPkceCode(code, config)
+  }
+  if (accessToken) {
+    const user = await fetchAuthUser(accessToken, config)
+    if (!user) {
+      return { session: null, error: 'No se pudo verificar la identidad del usuario desde Supabase.' }
+    }
+    const session: AdminSession = {
+      accessToken,
+      userId: user.id,
+      email: user.email
+    }
+    storeAdminSession(session)
+    return { session }
+  }
+  return { session: null }
 }
 
 export async function signInWithEmailPassword(

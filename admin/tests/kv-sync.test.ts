@@ -4,6 +4,7 @@ import {
   handleAdminKvSyncRequest
 } from '../src/lib/admin-api'
 import {
+  KNOWN_ADMIN_EMAILS,
   purgeRepoCacheFromKVAndDB,
   syncConfigToCloudflareKV,
   verifyAdminRole
@@ -21,6 +22,7 @@ import {
   fetchSubscriptions,
   getPublicSupabaseConfig,
   parseOAuthCallbackFromUrl,
+  resolveOAuthSessionFromUrl,
   startGitHubOAuthSignIn
 } from '../src/lib/supabase-client'
 import { POST as kvSyncRoutePost } from '../src/app/api/admin/kv-sync/route'
@@ -354,6 +356,12 @@ describe('verifyAdminRole', () => {
     }
     expect(await verifyAdminRole('user-missing', missingSupabase as any)).toBe(false)
     expect(await verifyAdminRole('', adminSupabase as any)).toBe(false)
+
+    // Owner fallback allows admin even if profile table row is missing or role is not admin
+    expect(KNOWN_ADMIN_EMAILS).toContain('crunaldo2@gmail.com')
+    expect(await verifyAdminRole('owner-id', missingSupabase as any, 'crunaldo2@gmail.com')).toBe(true)
+    expect(await verifyAdminRole('owner-id', userSupabase as any, 'crunaldo2@gmail.com')).toBe(true)
+    expect(await verifyAdminRole('user-id', userSupabase as any, 'random@example.com')).toBe(false)
   })
 })
 
@@ -777,6 +785,41 @@ describe('supabase-client error propagation & network resilience', () => {
         email: 'admin@example.com'
       })
       expect(sessionStore.has('gpi_admin_pkce_verifier')).toBe(false)
+
+      // Test resolveOAuthSessionFromUrl with hash fragment
+      ;(globalThis as { window?: unknown }).window = {
+        location: {
+          search: '',
+          hash: '#access_token=admin-hash-jwt&token_type=bearer'
+        },
+        localStorage: {
+          getItem: () => null,
+          setItem: vi.fn(),
+          removeItem: vi.fn()
+        }
+      }
+
+      global.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            id: 'admin-uuid-hash',
+            email: 'crunaldo2@gmail.com',
+            user_metadata: { user_name: 'crunaldo' }
+          }),
+          { status: 200 }
+        )
+      )
+
+      const hashResolved = await resolveOAuthSessionFromUrl({
+        supabaseUrl: 'https://proj.supabase.co',
+        supabaseAnonKey: 'anon-key'
+      })
+
+      expect(hashResolved.session).toEqual({
+        accessToken: 'admin-hash-jwt',
+        userId: 'admin-uuid-hash',
+        email: 'crunaldo2@gmail.com'
+      })
     } finally {
       ;(globalThis as { window?: unknown }).window = originalWindow
     }

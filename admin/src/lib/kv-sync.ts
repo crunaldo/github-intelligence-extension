@@ -324,31 +324,42 @@ export async function purgeRepoCacheFromKVAndDB(
   }
 }
 
+export const KNOWN_ADMIN_EMAILS = ['crunaldo2@gmail.com']
+
 /**
  * Verifies that the authenticated user has `profiles.role === 'admin'`.
+ * Also supports recognized platform owner emails as safe fallback.
  */
-export async function verifyAdminRole(userId: string, supabase: SupabaseLike): Promise<boolean> {
+export async function verifyAdminRole(
+  userId: string,
+  supabase: SupabaseLike,
+  userEmail?: string
+): Promise<boolean> {
   if (!userId || typeof userId !== 'string' || userId.trim().length === 0) {
     return false
   }
 
+  const isOwner = Boolean(
+    userEmail && KNOWN_ADMIN_EMAILS.includes(userEmail.trim().toLowerCase())
+  )
+
   try {
     const table = supabase.from('profiles')
-    if (!table.select) {
-      return false
+    if (table && typeof table.select === 'function') {
+      const query = table.select('role').eq('id', userId.trim())
+      const result =
+        typeof query.maybeSingle === 'function' ? await query.maybeSingle() : await query
+
+      if (!result.error && result.data) {
+        const row = Array.isArray(result.data) ? result.data[0] : result.data
+        if (row && typeof row === 'object' && (row as { role?: unknown }).role === 'admin') {
+          return true
+        }
+      }
     }
 
-    const query = table.select('role').eq('id', userId.trim())
-    const result =
-      typeof query.maybeSingle === 'function' ? await query.maybeSingle() : await query
-
-    if (result.error || !result.data) {
-      return false
-    }
-
-    const row = Array.isArray(result.data) ? result.data[0] : result.data
-    return Boolean(row && typeof row === 'object' && (row as { role?: unknown }).role === 'admin')
+    return isOwner
   } catch {
-    return false
+    return isOwner
   }
 }

@@ -192,7 +192,7 @@ async function authorizeAdminRequest(request: Request, env?: AdminServerEnv) {
   }
 
   const client = createBrowserSupabaseClient(accessToken, supabaseConfig)
-  const isAdmin = await verifyAdminRole(user.id, client)
+  const isAdmin = await verifyAdminRole(user.id, client, user.email)
   if (!isAdmin) {
     return { ok: false as const, response: jsonResponse({ success: false, error: 'Forbidden' }, 403) }
   }

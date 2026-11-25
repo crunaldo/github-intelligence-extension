@@ -36,11 +36,9 @@ import {
   type AdminSession,
   type AdminSupabaseClient,
   createBrowserSupabaseClient,
-  exchangeAdminPkceCode,
   fetchAuthUser,
   getStoredAdminSession,
-  parseOAuthCallbackFromUrl,
-  parseSessionFromUrlHash,
+  resolveOAuthSessionFromUrl,
   signInWithEmailPassword,
   startGitHubOAuthSignIn,
   storeAdminSession
@@ -130,42 +128,44 @@ export function AdminShell({
     async function resolveSession() {
       if (injectedSession) {
         const client = injectedClient ?? createBrowserSupabaseClient(injectedSession.accessToken)
-        const isAdmin = await verifyAdminRole(injectedSession.userId, client)
+        const isAdmin = await verifyAdminRole(injectedSession.userId, client, injectedSession.email)
         if (!active) return
         setSession(injectedSession)
         setAuthStatus(isAdmin ? 'authorized' : 'forbidden')
         return
       }
 
-      const hashSession = parseSessionFromUrlHash()
-      if (hashSession) {
-        storeAdminSession(hashSession)
-        const client = createBrowserSupabaseClient(hashSession.accessToken)
-        const isAdmin = await verifyAdminRole(hashSession.userId, client)
+      // Check if arriving from OAuth callback (hash #access_token=... or search ?code=...)
+      const oauthResult = await resolveOAuthSessionFromUrl()
+      if (oauthResult.error) {
         if (!active) return
-        setSession(hashSession)
-        setAuthStatus(isAdmin ? 'authorized' : 'forbidden')
-        window.history.replaceState(null, '', window.location.pathname)
+        setAuthError(oauthResult.error)
+        setAuthStatus('unauthenticated')
+        if (typeof window !== 'undefined' && window.history?.replaceState) {
+          window.history.replaceState(null, '', window.location.pathname)
+        }
         return
       }
 
-      const oauthCode = parseOAuthCallbackFromUrl()
-      if (oauthCode) {
-        const pkceSession = await exchangeAdminPkceCode(oauthCode)
-        if (pkceSession) {
-          storeAdminSession(pkceSession)
-          const client = createBrowserSupabaseClient(pkceSession.accessToken)
-          const isAdmin = await verifyAdminRole(pkceSession.userId, client)
-          if (!active) return
-          setSession(pkceSession)
-          setAuthStatus(isAdmin ? 'authorized' : 'forbidden')
+      if (oauthResult.session) {
+        const client = createBrowserSupabaseClient(oauthResult.session.accessToken)
+        const isAdmin = await verifyAdminRole(
+          oauthResult.session.userId,
+          client,
+          oauthResult.session.email
+        )
+        if (!active) return
+        setSession(oauthResult.session)
+        setAuthStatus(isAdmin ? 'authorized' : 'forbidden')
+        if (typeof window !== 'undefined' && window.history?.replaceState) {
           window.history.replaceState(null, '', window.location.pathname)
-          return
         }
+        return
       }
 
+      // Check stored session in localStorage
       const stored = getStoredAdminSession()
-      if (!stored) {
+      if (!stored || !stored.accessToken) {
         if (!active) return
         setAuthStatus('unauthenticated')
         return
@@ -179,10 +179,23 @@ export function AdminShell({
         return
       }
 
-      const client = createBrowserSupabaseClient(stored.accessToken)
-      const isAdmin = await verifyAdminRole(stored.userId, client)
+      const repairedSession: AdminSession = {
+        accessToken: stored.accessToken,
+        userId: user.id,
+        email: user.email || stored.email || ''
+      }
+      if (stored.userId !== user.id || stored.email !== repairedSession.email) {
+        storeAdminSession(repairedSession)
+      }
+
+      const client = createBrowserSupabaseClient(repairedSession.accessToken)
+      const isAdmin = await verifyAdminRole(
+        repairedSession.userId,
+        client,
+        repairedSession.email
+      )
       if (!active) return
-      setSession(stored)
+      setSession(repairedSession)
       setAuthStatus(isAdmin ? 'authorized' : 'forbidden')
     }
 
@@ -210,12 +223,12 @@ export function AdminShell({
     setSubmitting(false)
 
     if (!result.session) {
-      setAuthError(result.error ?? 'Authentication failed')
+      setAuthError(result.error ?? 'Error de autenticación')
       return
     }
 
     const client = injectedClient ?? createBrowserSupabaseClient(result.session.accessToken)
-    const isAdmin = await verifyAdminRole(result.session.userId, client)
+    const isAdmin = await verifyAdminRole(result.session.userId, client, result.session.email)
     setSession(result.session)
     setAuthStatus(isAdmin ? 'authorized' : 'forbidden')
   }
@@ -224,7 +237,7 @@ export function AdminShell({
     setAuthError(null)
     const result = await startGitHubOAuthSignIn()
     if (!result.ok) {
-      setAuthError(result.error ?? 'Unable to start GitHub OAuth sign-in')
+      setAuthError(result.error ?? 'No se pudo iniciar el flujo de GitHub OAuth')
     }
   }
 
@@ -232,6 +245,9 @@ export function AdminShell({
     storeAdminSession(null)
     setSession(null)
     setAuthStatus('unauthenticated')
+    if (typeof window !== 'undefined' && window.history?.replaceState) {
+      window.history.replaceState(null, '', window.location.pathname)
+    }
   }
 
   // ---------------------------------------------------------------------------
