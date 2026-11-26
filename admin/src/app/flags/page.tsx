@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useState } from 'react'
-import { AlertOctagon, GitBranch, MessageSquare, Save, Sliders, Sparkles } from 'lucide-react'
+import { AlertCircle, AlertOctagon, GitBranch, Megaphone, MessageSquare, Save, Sliders, Sparkles, Trash2 } from 'lucide-react'
 import { AdminShell, SectionCard, StatusBanner } from '../../lib/admin-shell'
 import {
   DEFAULT_FEATURE_FLAGS,
@@ -290,21 +290,78 @@ function FlagsQuotasContent({
             onChange={(next) => setFlags((prev) => ({ ...prev, maintenance_mode: next }))}
           />
         </div>
+      </SectionCard>
 
-        {flags.maintenance_mode && (
-          <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-5 space-y-2 hero-in">
-            <label className="block text-xs font-semibold text-rose-200">
-              Mensaje del Banner de Mantenimiento (Mostrado a los usuarios)
+      {/* Banner Superior de Avisos & Anuncios Globales */}
+      <SectionCard
+        title="Banner Superior de Avisos & Anuncios Globales"
+        description="Configura el mensaje que se muestra en la franja superior de la extensión (Sidepanel y Popup). Úsalo para avisos a la comunidad, transmisiones en vivo o explicaciones durante mantenimiento."
+      >
+        <div className="rounded-2xl border border-white/5 bg-[#090d16]/70 p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label htmlFor="banner-message" className="text-sm font-semibold text-white flex items-center gap-2">
+              <Megaphone className="size-4 text-amber-400" />
+              Texto del Aviso Superior (Broadcast Banner)
             </label>
+            {flags.banner_message?.trim() ? (
+              <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
+                <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Aviso Activo en Extensión
+              </span>
+            ) : (
+              <span className="text-[11px] text-slate-500 bg-white/5 px-2.5 py-0.5 rounded-full border border-white/5">
+                Sin aviso activo (Oculto)
+              </span>
+            )}
+          </div>
+
+          <div className="relative">
             <input
+              id="banner-message"
               type="text"
               value={flags.banner_message ?? ''}
               onChange={(e) => setFlags((prev) => ({ ...prev, banner_message: e.target.value }))}
-              placeholder="El servicio está en mantenimiento temporal para actualización de infraestructura."
-              className="w-full rounded-xl border border-rose-500/40 bg-[#090d16] px-3.5 py-2 text-xs text-white placeholder-rose-300/40 focus:border-rose-400 focus:outline-none"
+              placeholder="Ej: Pronto estaremos en línea | Mantenimiento programado hoy a las 02:00 UTC"
+              className="w-full rounded-xl border border-white/10 bg-[#0b1120] px-4 py-2.5 pr-20 text-xs text-white placeholder-slate-500 focus:border-amber-500/60 focus:outline-none transition"
             />
+            {flags.banner_message ? (
+              <button
+                type="button"
+                onClick={() => setFlags((prev) => ({ ...prev, banner_message: '' }))}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 hover:text-white px-2 py-1 rounded-lg hover:bg-white/10 transition flex items-center gap-1"
+                title="Limpiar y ocultar aviso"
+              >
+                <Trash2 className="size-3" />
+                Limpiar
+              </button>
+            ) : null}
           </div>
-        )}
+
+          <div className="text-xs text-slate-400 space-y-2">
+            {flags.banner_message?.trim() ? (
+              <div className="space-y-2 mt-3 pt-3 border-t border-white/5">
+                <span className="text-[11px] font-medium text-slate-300">Vista previa en la extensión:</span>
+                <div
+                  className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs border ${
+                    flags.maintenance_mode
+                      ? 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                      : 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                  }`}
+                >
+                  <AlertCircle className={`size-4 shrink-0 ${flags.maintenance_mode ? 'text-rose-400' : 'text-amber-400'}`} />
+                  <span className="font-medium truncate">{flags.banner_message}</span>
+                  <span className="ml-auto text-[10px] uppercase font-bold tracking-wider opacity-85 shrink-0 px-2 py-0.5 rounded bg-black/20">
+                    {flags.maintenance_mode ? 'Modo Mantenimiento (503)' : 'Aviso Informativo'}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-slate-500 text-[11px]">
+                Deja este campo en blanco si no deseas mostrar ninguna franja de aviso superior en la extensión. Recuerda presionar &quot;Guardar Cuotas &amp; Feature Flags&quot; arriba a la derecha para sincronizar los cambios.
+              </p>
+            )}
+          </div>
+        </div>
       </SectionCard>
     </div>
   )

@@ -62,6 +62,12 @@ export function CampaignsContent({
   const [previewTier, setPreviewTier] = useState<'free' | 'pro'>('free')
   const [copiedCoupon, setCopiedCoupon] = useState(false)
 
+  // Global Upper Announcement Banner (banner_message in feature_flags)
+  const [globalBannerText, setGlobalBannerText] = useState('')
+  const [featureFlagsRaw, setFeatureFlagsRaw] = useState<Record<string, unknown>>({})
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false)
+  const [savingGlobalBanner, setSavingGlobalBanner] = useState(false)
+
   const loadData = useCallback(async () => {
     setLoading(true)
     const res = await fetchRemoteConfigsMap(client)
@@ -72,6 +78,13 @@ export function CampaignsContent({
       if (Array.isArray(saved.banners)) {
         setConfig({ banners: saved.banners })
       }
+    }
+
+    if (res.data?.feature_flags && typeof res.data.feature_flags === 'object') {
+      const rawFlags = res.data.feature_flags as Record<string, unknown>
+      setFeatureFlagsRaw(rawFlags)
+      setGlobalBannerText(typeof rawFlags.banner_message === 'string' ? rawFlags.banner_message : '')
+      setIsMaintenanceMode(Boolean(rawFlags.maintenance_mode))
     }
   }, [client])
 
@@ -102,6 +115,41 @@ export function CampaignsContent({
       )
     } else {
       setStatus({ type: 'error', message: res.error || 'Error al sincronizar campañas en KV.' })
+    }
+  }
+
+  async function handleSaveGlobalBanner(nextText: string) {
+    setSavingGlobalBanner(true)
+    setStatus(null)
+    const updatedFlags = {
+      ...featureFlagsRaw,
+      banner_message: nextText.trim()
+    }
+    const res = await dispatchServerConfigSync(
+      'feature_flags',
+      updatedFlags,
+      session.accessToken
+    )
+    setSavingGlobalBanner(false)
+    if (res.success) {
+      setGlobalBannerText(nextText.trim())
+      setFeatureFlagsRaw(updatedFlags)
+      setStatus({
+        type: 'success',
+        message: nextText.trim()
+          ? 'Banner superior global de avisos actualizado correctamente en Cloudflare KV.'
+          : 'Banner superior global desactivado (oculto en la extensión).'
+      })
+      await recordAdminAuditLog(
+        client,
+        session.email,
+        'UPDATE_GLOBAL_BANNER',
+        'feature_flags.banner_message',
+        { banner_message: nextText.trim() },
+        session.accessToken
+      )
+    } else {
+      setStatus({ type: 'error', message: res.error || 'Error al guardar el banner superior global.' })
     }
   }
 
@@ -244,6 +292,92 @@ export function CampaignsContent({
           sparkline={[0, 1, 1, proCount || 1]}
           icon={<Users className="size-5" />}
         />
+      </div>
+
+      {/* Banner Superior Global de Avisos & Transmisión (banner_message) */}
+      <div className="rounded-2xl border border-white/10 bg-[#090d16]/80 p-5 backdrop-blur-md shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+              <Megaphone className="size-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-white">Banner Superior Global de Avisos (Encabezado)</h3>
+              <p className="text-xs text-slate-400">
+                Aviso textual fijo mostrado en la parte superior del Sidepanel y Popup de la extensión.
+              </p>
+            </div>
+          </div>
+          {globalBannerText.trim() ? (
+            <span className="self-start sm:self-auto text-[11px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 rounded-full flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+              Activo: &quot;{globalBannerText}&quot;
+            </span>
+          ) : (
+            <span className="self-start sm:self-auto text-[11px] text-slate-500 bg-white/5 border border-white/5 px-2.5 py-1 rounded-full">
+              Inactivo (Oculto en extensión)
+            </span>
+          )}
+        </div>
+
+        <div className="space-y-3 pt-2">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={globalBannerText}
+              onChange={(e) => setGlobalBannerText(e.target.value)}
+              placeholder="Ej: Pronto estaremos en línea | Mantenimiento programado hoy a las 02:00 UTC"
+              className="flex-1 rounded-xl border border-white/10 bg-[#0b1120] px-4 py-2 text-xs text-white placeholder-slate-500 focus:border-amber-500/60 focus:outline-none transition"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSaveGlobalBanner(globalBannerText)}
+                disabled={savingGlobalBanner}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-amber-600/20 transition disabled:opacity-50"
+              >
+                {savingGlobalBanner ? 'Guardando...' : 'Actualizar Aviso'}
+              </button>
+              {globalBannerText ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGlobalBannerText('')
+                    void handleSaveGlobalBanner('')
+                  }}
+                  disabled={savingGlobalBanner}
+                  className="rounded-xl border border-white/10 bg-white/5 hover:bg-rose-500/10 hover:border-rose-500/30 text-slate-400 hover:text-rose-300 px-3 py-2 text-xs transition"
+                  title="Eliminar y ocultar el aviso superior"
+                >
+                  Limpiar / Desactivar
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          {globalBannerText.trim() ? (
+            <div className="pt-2">
+              <div
+                className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs border ${
+                  isMaintenanceMode
+                    ? 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                    : 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                }`}
+              >
+                <AlertCircle className={`size-3.5 shrink-0 ${isMaintenanceMode ? 'text-rose-400' : 'text-amber-400'}`} />
+                <span className="font-medium truncate">{globalBannerText}</span>
+                <span className="ml-auto text-[10px] uppercase font-bold tracking-wider opacity-85 shrink-0 px-2 py-0.5 rounded bg-black/20">
+                  {isMaintenanceMode ? 'Alerta Mantenimiento (503)' : 'Aviso Informativo'}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-[11px] text-slate-500">
+              Consejo: También puedes activar o desactivar este aviso desde el menú <strong>Cuotas &amp; Feature Flags</strong>.
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
