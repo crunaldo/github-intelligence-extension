@@ -5,10 +5,13 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  Bot,
   Boxes,
   Check,
   CheckCircle2,
   ChevronRight,
+  Clock,
+  CreditCard,
   Database,
   ExternalLink,
   Eye,
@@ -19,6 +22,7 @@ import {
   LayoutDashboard,
   Lock,
   LogOut,
+  Megaphone,
   Menu,
   Moon,
   Palette,
@@ -133,11 +137,16 @@ export function ThemeToggle({
 export type AdminRoute =
   | '/'
   | '/telemetry'
+  | '/playground'
+  | '/prompts'
   | '/apis'
   | '/modules'
-  | '/flags'
-  | '/prompts'
+  | '/access'
   | '/users'
+  | '/campaigns'
+  | '/billing'
+  | '/audit'
+  | '/flags'
   | '/cache'
   | '/settings'
 
@@ -170,24 +179,34 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Panel Principal',
     items: [
       { href: '/', label: 'Dashboard General', icon: LayoutDashboard, badge: 'KPIs' },
-      { href: '/telemetry', label: 'Telemetría en Vivo', icon: Activity, badge: 'Live' },
+      { href: '/telemetry', label: 'Telemetría & CSAT', icon: Activity, badge: 'Live' },
+      { href: '/playground', label: 'AI Playground', icon: Bot, badge: 'Simulador' },
       { href: '/prompts', label: 'Prompts & Mascota', icon: Sparkles }
     ]
   },
   {
-    label: 'Modelos & Acceso',
+    label: 'Modelos, Claves & Acceso',
     items: [
-      { href: '/apis', label: 'API Keys Multi-Pool', icon: KeyRound, badge: 'Pool' },
+      { href: '/apis', label: 'API Keys & Health Check', icon: KeyRound, badge: 'Pool' },
       { href: '/modules', label: 'Módulos Free vs Pro', icon: Boxes },
+      { href: '/access', label: 'Control de Acceso & VIP', icon: ShieldAlert, badge: 'Baneos' },
       { href: '/users', label: 'Usuarios & Membresías', icon: Users }
     ]
   },
   {
-    label: 'Sistema & Infraestructura',
+    label: 'Marketing & Facturación',
     items: [
+      { href: '/campaigns', label: 'Campañas & Banners Dock', icon: Megaphone, badge: 'Nuevo' },
+      { href: '/billing', label: 'Facturación & Pasarelas', icon: CreditCard, badge: 'MRR' }
+    ]
+  },
+  {
+    label: 'Sistema & Auditoría',
+    items: [
+      { href: '/audit', label: 'Registro de Auditoría', icon: Clock, badge: 'Audit' },
       { href: '/flags', label: 'Cuotas & Feature Flags', icon: Sliders },
       { href: '/cache', label: 'Explorador de Caché KV', icon: Database },
-      { href: '/settings', label: 'Configuración Avanzada', icon: Settings }
+      { href: '/settings', label: 'Configuración & Telegram', icon: Settings }
     ]
   }
 ]

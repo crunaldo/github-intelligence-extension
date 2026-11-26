@@ -33,7 +33,12 @@ const ALLOWED_CONFIG_KEYS = new Set<string>([
   'analysis_modules',
   'advanced_system_settings',
   'default_new_user_tier',
-  'default_user_role'
+  'default_user_role',
+  'access_control_rules',
+  'campaign_banners',
+  'telegram_alerts',
+  'billing_config',
+  'admin_audit_logs'
 ])
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -168,6 +173,45 @@ function validateRemoteConfigEntry(key: string, value: unknown): string | null {
     case 'default_user_role': {
       if (value !== 'free' && value !== 'pro') {
         return `${key} must be either 'free' or 'pro'`
+      }
+      return null
+    }
+
+    case 'access_control_rules': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'access_control_rules must be a valid JSON object'
+      }
+      return null
+    }
+
+    case 'campaign_banners': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'campaign_banners must be an object with banners array'
+      }
+      const cfg = value as Record<string, unknown>
+      if (!Array.isArray(cfg.banners)) {
+        return 'campaign_banners.banners must be an array'
+      }
+      return null
+    }
+
+    case 'telegram_alerts': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'telegram_alerts must be a JSON object'
+      }
+      return null
+    }
+
+    case 'billing_config': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'billing_config must be a JSON object'
+      }
+      return null
+    }
+
+    case 'admin_audit_logs': {
+      if (!Array.isArray(value)) {
+        return 'admin_audit_logs must be an array of audit log entries'
       }
       return null
     }

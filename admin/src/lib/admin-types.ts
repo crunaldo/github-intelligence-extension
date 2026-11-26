@@ -268,3 +268,179 @@ export interface RemoteConfigRow {
   description?: string | null
   updated_at: string
 }
+
+// --- Access Control (Ban & VIP Whitelist) ---
+
+export interface BannedIpEntry {
+  ipHash: string
+  reason: string
+  createdAt: string
+  bannedBy?: string
+}
+
+export interface BannedUserEntry {
+  userId: string
+  email?: string
+  reason: string
+  createdAt: string
+  bannedBy?: string
+}
+
+export interface VipUserEntry {
+  userId: string
+  email?: string
+  note?: string
+  addedAt: string
+}
+
+export interface VipIpEntry {
+  ipHash: string
+  note?: string
+  addedAt: string
+}
+
+export interface AccessControlConfig {
+  bannedIpHashes: BannedIpEntry[]
+  bannedUserIds: BannedUserEntry[]
+  vipUserIds: VipUserEntry[]
+  vipIpHashes: VipIpEntry[]
+  rateLimitPerMinute: number
+  autoBanThresholdPerMin: number
+}
+
+export const DEFAULT_ACCESS_CONTROL_CONFIG: AccessControlConfig = {
+  bannedIpHashes: [],
+  bannedUserIds: [],
+  vipUserIds: [],
+  vipIpHashes: [],
+  rateLimitPerMinute: 60,
+  autoBanThresholdPerMin: 120
+}
+
+// --- Campaign & In-App Banners ---
+
+export type CampaignTargetTier = 'all' | 'free' | 'pro'
+
+export interface CampaignBannerItem {
+  id: string
+  title: string
+  message: string
+  badge?: string
+  targetTier: CampaignTargetTier
+  ctaText: string
+  ctaUrl: string
+  couponCode?: string
+  enabled: boolean
+  priority: number
+  createdAt: string
+  expiresAt?: string
+}
+
+export interface CampaignBannersConfig {
+  banners: CampaignBannerItem[]
+}
+
+export const DEFAULT_CAMPAIGN_BANNERS_CONFIG: CampaignBannersConfig = {
+  banners: [
+    {
+      id: 'banner_pro_launch',
+      title: 'Desbloquea Análisis Ilimitados con Pro',
+      message: 'Obtén diagramas de arquitectura interactivos Mermaid y chat ilimitado con Octo Mascot.',
+      badge: '50% OFF',
+      targetTier: 'free',
+      ctaText: 'Actualizar a Pro',
+      ctaUrl: 'https://github-intelligence.com/pricing',
+      couponCode: 'LAUNCH50',
+      enabled: true,
+      priority: 1,
+      createdAt: new Date().toISOString()
+    }
+  ]
+}
+
+// --- Telegram Webhook Alerts ---
+
+export interface TelegramAlertsConfig {
+  enabled: boolean
+  botToken: string
+  chatId: string
+  notifyOnAiFallback: boolean
+  notifyOnNewProSubscriber: boolean
+  notifyOnErrorSpike: boolean
+  notifyOnBan: boolean
+  lastTestedAt?: string
+}
+
+export const DEFAULT_TELEGRAM_ALERTS_CONFIG: TelegramAlertsConfig = {
+  enabled: false,
+  botToken: '',
+  chatId: '',
+  notifyOnAiFallback: true,
+  notifyOnNewProSubscriber: true,
+  notifyOnErrorSpike: true,
+  notifyOnBan: false
+}
+
+// --- Modular Billing & Payments (Lemon Squeezy, Stripe, Polar, Paddle) ---
+
+export type BillingProviderName = 'lemonsqueezy' | 'stripe' | 'polar' | 'paddle'
+
+export interface BillingSettingsConfig {
+  activeProvider: BillingProviderName
+  monthlyPriceUsd: number
+  annualPriceUsd: number
+  trialDays: number
+  customCheckoutUrl?: string
+  portalUrl?: string
+  // Stripe
+  stripePublishableKey?: string
+  stripeSecretKey?: string
+  stripeWebhookSecret?: string
+  stripeMonthlyPriceId?: string
+  stripeAnnualPriceId?: string
+  // Lemon Squeezy (Legacy)
+  lemonStoreId?: string
+  lemonApiKey?: string
+  lemonWebhookSecret?: string
+  // Polar.sh
+  polarAccessToken?: string
+  polarOrganizationId?: string
+  // Paddle
+  paddleVendorId?: string
+  paddleApiKey?: string
+  paddleWebhookSecret?: string
+}
+
+export const DEFAULT_BILLING_SETTINGS_CONFIG: BillingSettingsConfig = {
+  activeProvider: 'stripe',
+  monthlyPriceUsd: 9,
+  annualPriceUsd: 79,
+  trialDays: 7,
+  customCheckoutUrl: '',
+  portalUrl: ''
+}
+
+// --- Admin Audit Log Entries ---
+
+export interface AdminAuditLogEntry {
+  id: string
+  timestamp: string
+  adminEmail: string
+  action: string
+  target: string
+  details?: Record<string, unknown> | string
+}
+
+// --- User Feedback & CSAT ---
+
+export interface UserFeedbackItem {
+  id: string
+  timestamp: string
+  repo: string
+  rating: 'positive' | 'negative'
+  category: 'accuracy' | 'diagram' | 'mascot' | 'speed' | 'general'
+  comment?: string
+  provider?: string
+  userId?: string
+}
+

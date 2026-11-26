@@ -10,6 +10,11 @@ import FeatureFlagsPage from './app/flags/page'
 import UsersManagementPage from './app/users/page'
 import CacheExplorerPage from './app/cache/page'
 import SettingsPage from './app/settings/page'
+import PlaygroundPage from './app/playground/page'
+import AccessControlPage from './app/access/page'
+import AuditLogPage from './app/audit/page'
+import CampaignsPage from './app/campaigns/page'
+import BillingPage from './app/billing/page'
 
 function normalizePath(pathname: string): string {
   const cleaned = pathname.replace(/\/+$/, '')
@@ -62,14 +67,24 @@ function AdminAppRouter() {
   switch (pathname) {
     case '/telemetry':
       return <TelemetryPage />
+    case '/playground':
+      return <PlaygroundPage />
     case '/apis':
       return <ApisManagementPage />
     case '/modules':
       return <AnalysisModulesPage />
+    case '/access':
+      return <AccessControlPage />
     case '/prompts':
       return <PromptsStudioPage />
     case '/flags':
       return <FeatureFlagsPage />
+    case '/campaigns':
+      return <CampaignsPage />
+    case '/billing':
+      return <BillingPage />
+    case '/audit':
+      return <AuditLogPage />
     case '/users':
       return <UsersManagementPage />
     case '/cache':

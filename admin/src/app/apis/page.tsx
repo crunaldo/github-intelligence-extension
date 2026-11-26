@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  Activity,
   AlertCircle,
   Check,
   CheckCircle2,
@@ -31,8 +32,16 @@ import {
   type AdminSession,
   type AdminSupabaseClient,
   dispatchServerConfigSync,
-  fetchRemoteConfigsMap
+  fetchRemoteConfigsMap,
+  recordAdminAuditLog
 } from '../../lib/supabase-client'
+
+export interface KeyTestResult {
+  ok: boolean
+  message: string
+  latencyMs: number
+  status: 'healthy' | 'warning' | 'error'
+}
 
 function maskApiKey(key: string): string {
   const trimmed = key.trim()
@@ -81,22 +90,46 @@ function parseApiKeysConfig(raw: unknown): ProviderApiKeysConfig {
 async function verifyApiKeyDirectly(
   provider: ProviderName,
   apiKey: string
-): Promise<{ ok: boolean; message: string }> {
+): Promise<KeyTestResult> {
+  const startTime = performance.now()
   const key = apiKey.trim()
-  if (!key) return { ok: false, message: 'La clave API no puede estar vacía.' }
+  if (!key) {
+    return {
+      ok: false,
+      message: 'La clave API no puede estar vacía.',
+      latencyMs: 0,
+      status: 'error'
+    }
+  }
 
   try {
     if (provider === 'gemini') {
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash?key=${encodeURIComponent(key)}`
       )
+      const latencyMs = Math.round(performance.now() - startTime)
       if (res.ok) {
-        return { ok: true, message: 'Clave Gemini válida y conectada (HTTP 200)' }
+        return {
+          ok: true,
+          message: `Gemini Activa (HTTP 200) · ${latencyMs}ms`,
+          latencyMs,
+          status: latencyMs > 2500 ? 'warning' : 'healthy'
+        }
+      }
+      if (res.status === 429) {
+        return {
+          ok: false,
+          message: `Límite de cuota o RPM excedido (HTTP 429)`,
+          latencyMs,
+          status: 'warning'
+        }
       }
       const err = (await res.json().catch(() => null)) as { error?: { message?: string } } | null
       return {
         ok: false,
-        message: err?.error?.message ? `Gemini Error: ${err.error.message}` : `HTTP ${res.status}`
+        message: err?.error?.message ? `Gemini Error: ${err.error.message}` : `HTTP ${res.status}`,
+        latencyMs,
+        status: 'error'
       }
     }
 
@@ -104,27 +137,66 @@ async function verifyApiKeyDirectly(
       const res = await fetch('https://api.groq.com/openai/v1/models', {
         headers: { Authorization: `Bearer ${key}` }
       })
+      const latencyMs = Math.round(performance.now() - startTime)
       if (res.ok) {
-        return { ok: true, message: 'Clave Groq válida y conectada (HTTP 200)' }
+        return {
+          ok: true,
+          message: `Groq Activa (HTTP 200) · ${latencyMs}ms`,
+          latencyMs,
+          status: latencyMs > 2000 ? 'warning' : 'healthy'
+        }
       }
-      return { ok: false, message: `Groq Error: HTTP ${res.status}` }
+      if (res.status === 429) {
+        return {
+          ok: false,
+          message: `Límite RPM/TPM excedido en Groq (HTTP 429)`,
+          latencyMs,
+          status: 'warning'
+        }
+      }
+      return {
+        ok: false,
+        message: `Groq Error: HTTP ${res.status}`,
+        latencyMs,
+        status: 'error'
+      }
     }
 
     if (provider === 'openRouter') {
       const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
         headers: { Authorization: `Bearer ${key}` }
       })
+      const latencyMs = Math.round(performance.now() - startTime)
       if (res.ok) {
-        return { ok: true, message: 'Clave OpenRouter válida (HTTP 200)' }
+        return {
+          ok: true,
+          message: `OpenRouter Activa (HTTP 200) · ${latencyMs}ms`,
+          latencyMs,
+          status: 'healthy'
+        }
       }
-      return { ok: false, message: `OpenRouter Error: HTTP ${res.status}` }
+      return {
+        ok: false,
+        message: `OpenRouter Error: HTTP ${res.status}`,
+        latencyMs,
+        status: 'error'
+      }
     }
 
-    return { ok: true, message: 'Proveedor validado por binding nativo de Cloudflare.' }
+    const latencyMs = Math.round(performance.now() - startTime)
+    return {
+      ok: true,
+      message: `Proveedor Workers AI verificado (${latencyMs}ms)`,
+      latencyMs,
+      status: 'healthy'
+    }
   } catch (err) {
+    const latencyMs = Math.round(performance.now() - startTime)
     return {
       ok: false,
-      message: err instanceof Error ? err.message : 'Error al conectar con el proveedor.'
+      message: err instanceof Error ? err.message : 'Error al conectar con el proveedor.',
+      latencyMs,
+      status: 'error'
     }
   }
 }
@@ -152,7 +224,8 @@ function ApisContent({
 
   // Test status per key
   const [testingKeyId, setTestingKeyId] = useState<string | null>(null)
-  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string }>>({})
+  const [isTestingAll, setIsTestingAll] = useState(false)
+  const [testResults, setTestResults] = useState<Record<string, KeyTestResult>>({})
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -270,6 +343,44 @@ function ApisContent({
     const result = await verifyApiKeyDirectly(item.provider, item.key)
     setTestResults((prev) => ({ ...prev, [item.id]: result }))
     setTestingKeyId(null)
+
+    await recordAdminAuditLog(
+      client,
+      session.email,
+      'HEALTH_CHECK_SINGLE',
+      item.label,
+      { provider: item.provider, ok: result.ok, latencyMs: result.latencyMs, status: result.status },
+      session.accessToken
+    )
+  }
+
+  async function handleTestAllKeys() {
+    if (config.keys.length === 0) return
+    setIsTestingAll(true)
+    const results: Record<string, KeyTestResult> = {}
+    await Promise.all(
+      config.keys.map(async (k) => {
+        const res = await verifyApiKeyDirectly(k.provider, k.key)
+        results[k.id] = res
+      })
+    )
+    setTestResults(results)
+    setIsTestingAll(false)
+
+    const healthyCount = Object.values(results).filter((r) => r.ok).length
+    setStatus({
+      type: healthyCount === config.keys.length ? 'success' : 'error',
+      message: `Health Check 1-Clic completado: ${healthyCount}/${config.keys.length} claves operativas en el pool.`
+    })
+
+    await recordAdminAuditLog(
+      client,
+      session.email,
+      'HEALTH_CHECK_ALL',
+      'provider_api_keys',
+      { totalTested: config.keys.length, healthyCount },
+      session.accessToken
+    )
   }
 
   async function handleCopyKey(id: string, text: string) {
@@ -353,6 +464,17 @@ function ApisContent({
               Round-Robin Equitativo (Distribuye aleatoriamente entre activas)
             </option>
           </select>
+
+          <button
+            type="button"
+            onClick={() => void handleTestAllKeys()}
+            disabled={isTestingAll || config.keys.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-3.5 py-2 text-xs font-semibold text-emerald-300 transition active:scale-[0.98] disabled:opacity-50"
+            title="Verificar latencia y validez de todas las claves configuradas"
+          >
+            <Activity className={`size-3.5 ${isTestingAll ? 'animate-spin' : ''}`} />
+            <span>{isTestingAll ? 'Verificando Pool...' : 'Health Check 1-Clic'}</span>
+          </button>
 
           <button
             type="button"
@@ -510,6 +632,32 @@ function ApisContent({
                           <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
                             {meta.label}
                           </span>
+                          {testResult && (
+                            <span
+                              className={`text-[10px] font-medium px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${
+                                testResult.status === 'healthy'
+                                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                  : testResult.status === 'warning'
+                                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                    : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                              }`}
+                            >
+                              <span
+                                className={`size-1.5 rounded-full ${
+                                  testResult.status === 'healthy'
+                                    ? 'bg-emerald-400 animate-pulse'
+                                    : testResult.status === 'warning'
+                                      ? 'bg-amber-400'
+                                      : 'bg-rose-400'
+                                }`}
+                              />
+                              {testResult.status === 'healthy'
+                                ? `🟢 Activa · ${testResult.latencyMs}ms`
+                                : testResult.status === 'warning'
+                                  ? `🟡 Límite/Lento · ${testResult.latencyMs}ms`
+                                  : `🔴 Error`}
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] text-slate-400 font-mono mt-0.5">
                           Modelo: {meta.model}
@@ -622,8 +770,8 @@ export default function ApisManagementPage() {
   return (
     <AdminShell
       activeRoute="/apis"
-      title="Gestión de API Keys & Multi-Pool"
-      subtitle="Configura múltiples APIs para Gemini, Groq y OpenRouter. Soporta rotación automática por límites de cuota (429) o Round-Robin."
+      title="Pool Multi-API & Health Check"
+      subtitle="Configura múltiples APIs para Gemini, Groq y OpenRouter con Health Check en 1-Clic, rotación automática por cuota (429) y balanceo Round-Robin."
     >
       {({ client, session }) => <ApisContent client={client} session={session} />}
     </AdminShell>

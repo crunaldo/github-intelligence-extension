@@ -6,6 +6,7 @@ import type {
   SupabaseQueryResult
 } from './kv-sync'
 import type {
+  AdminAuditLogEntry,
   ProfileRow,
   QueryLogRow,
   RemoteConfigRow,
@@ -814,5 +815,36 @@ export async function dispatchServerCachePurge(
       success: false,
       error: error instanceof Error ? error.message : 'Network error purging cache'
     }
+  }
+}
+
+/**
+ * Records an entry into the admin audit log in remote_configs and Cloudflare KV.
+ */
+export async function recordAdminAuditLog(
+  client: AdminSupabaseClient,
+  adminEmail: string,
+  action: string,
+  target: string,
+  details?: Record<string, unknown> | string,
+  accessToken?: string
+): Promise<void> {
+  try {
+    const entry: AdminAuditLogEntry = {
+      id: `audit_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      adminEmail: adminEmail || 'admin@github-intelligence.com',
+      action,
+      target,
+      details
+    }
+    const { data: configs } = await fetchRemoteConfigsMap(client)
+    const existing = Array.isArray(configs.admin_audit_logs)
+      ? (configs.admin_audit_logs as AdminAuditLogEntry[])
+      : []
+    const updated = [entry, ...existing].slice(0, 100)
+    await dispatchServerConfigSync('admin_audit_logs', updated, accessToken)
+  } catch (err) {
+    console.warn('Failed to record admin audit log:', err)
   }
 }

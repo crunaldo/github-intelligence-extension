@@ -3,13 +3,16 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   Activity,
+  Bell,
   CheckCircle2,
   Clock,
   Cpu,
   Database,
   Globe,
+  MessageSquare,
   RefreshCw,
   Save,
+  Send,
   Server,
   ShieldCheck,
   Zap
@@ -18,14 +21,17 @@ import { AdminShell, KpiCard, SectionCard, StatusBanner } from '../../lib/admin-
 import {
   DEFAULT_ADVANCED_SETTINGS,
   DEFAULT_NEW_USER_TIER,
+  DEFAULT_TELEGRAM_ALERTS_CONFIG,
   type AdvancedSystemSettings,
-  type DefaultUserTier
+  type DefaultUserTier,
+  type TelegramAlertsConfig
 } from '../../lib/admin-types'
 import {
   type AdminSession,
   type AdminSupabaseClient,
   dispatchServerConfigSync,
-  fetchRemoteConfigsMap
+  fetchRemoteConfigsMap,
+  recordAdminAuditLog
 } from '../../lib/supabase-client'
 
 function parseSettings(raw: unknown): AdvancedSystemSettings {
@@ -80,12 +86,16 @@ function SettingsContent({
     ...DEFAULT_ADVANCED_SETTINGS
   })
   const [defaultTier, setDefaultTier] = useState<DefaultUserTier>(DEFAULT_NEW_USER_TIER)
+  const [telegram, setTelegram] = useState<TelegramAlertsConfig>({
+    ...DEFAULT_TELEGRAM_ALERTS_CONFIG
+  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [testingHealth, setTestingHealth] = useState(false)
   const [healthStatus, setHealthStatus] = useState<{ ok: boolean; details: string } | null>(null)
+  const [testingTelegram, setTestingTelegram] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -110,6 +120,14 @@ function SettingsContent({
       setDefaultTier(rawTier)
     }
 
+    if (configsRes.data.telegram_alerts && typeof configsRes.data.telegram_alerts === 'object') {
+      const tg = configsRes.data.telegram_alerts as Partial<TelegramAlertsConfig>
+      setTelegram({
+        ...DEFAULT_TELEGRAM_ALERTS_CONFIG,
+        ...tg
+      })
+    }
+
     setLoading(false)
   }, [client])
 
@@ -122,22 +140,88 @@ function SettingsContent({
     setSaving(true)
     setStatus(null)
 
-    const [settingsRes, tierRes] = await Promise.all([
+    const [settingsRes, tierRes, tgRes] = await Promise.all([
       dispatchServerConfigSync('advanced_system_settings', settings, session.accessToken),
-      dispatchServerConfigSync('default_new_user_tier', defaultTier, session.accessToken)
+      dispatchServerConfigSync('default_new_user_tier', defaultTier, session.accessToken),
+      dispatchServerConfigSync('telegram_alerts', telegram, session.accessToken)
     ])
     setSaving(false)
 
-    if (!settingsRes.success || !tierRes.success) {
-      const errorMsg = [settingsRes.error, tierRes.error].filter(Boolean).join(' | ')
+    if (!settingsRes.success || !tierRes.success || !tgRes.success) {
+      const errorMsg = [settingsRes.error, tierRes.error, tgRes.error].filter(Boolean).join(' | ')
       setStatus({ type: 'error', message: errorMsg || 'Error al guardar configuraciones' })
       return
     }
 
+    await recordAdminAuditLog(
+      client,
+      session.email,
+      'SETTINGS_SAVED',
+      'system_settings',
+      { defaultTier, telegramEnabled: telegram.enabled },
+      session.accessToken
+    )
+
     setStatus({
       type: 'success',
-      message: '¡Configuraciones avanzadas y rol de nuevos usuarios guardados y sincronizados!'
+      message: '¡Configuraciones avanzadas, rol inicial y alertas de Telegram guardadas exitosamente!'
     })
+  }
+
+  async function handleTestTelegram() {
+    if (!telegram.botToken.trim() || !telegram.chatId.trim()) {
+      setStatus({
+        type: 'error',
+        message: 'Debes ingresar el Bot Token y el Chat ID de Telegram para enviar la prueba.'
+      })
+      return
+    }
+
+    setTestingTelegram(true)
+    setStatus(null)
+
+    try {
+      const text = `🤖 *GitHub Intelligence Assistant*\n\n✅ *¡Conexión con el Panel de Administración Exitosa!*\n🕒 *Fecha:* \`${new Date().toLocaleString()}\`\n👤 *Admin:* \`${session.email}\`\n\n_Tu bot de Telegram está recibiendo alertas críticas del sistema en vivo._`
+      const res = await fetch(
+        `https://api.telegram.org/bot${telegram.botToken.trim()}/sendMessage`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: telegram.chatId.trim(),
+            text,
+            parse_mode: 'Markdown'
+          })
+        }
+      )
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; description?: string } | null
+      if (res.ok && data?.ok) {
+        setStatus({
+          type: 'success',
+          message: '¡Alerta de prueba enviada a Telegram con éxito! Revisa tu chat o canal.'
+        })
+        await recordAdminAuditLog(
+          client,
+          session.email,
+          'TELEGRAM_TEST_SUCCESS',
+          telegram.chatId,
+          'Mensaje de prueba enviado exitosamente',
+          session.accessToken
+        )
+      } else {
+        setStatus({
+          type: 'error',
+          message: `Telegram Error: ${data?.description || `HTTP ${res.status}`}`
+        })
+      }
+    } catch (err) {
+      setStatus({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Error al conectar con la API de Telegram.'
+      })
+    } finally {
+      setTestingTelegram(false)
+    }
   }
 
   async function handleTestHealth() {
@@ -354,6 +438,117 @@ function SettingsContent({
                 Sincronizado con la política global en Cloudflare KV y Supabase. Si eliges{' '}
                 <strong className="text-white">Pro</strong>, las nuevas cuentas se activarán con privilegios Pro automáticamente.
               </p>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* Telegram Webhook & Bot Alerts Card */}
+        <SectionCard
+          title="Alertas & Webhook de Telegram"
+          description="Recibe alertas críticas instantáneas en tu bot o canal privado de Telegram cuando ocurren fallbacks o picos de error"
+          icon={<Bell className="size-4 text-sky-400" />}
+          actions={
+            <button
+              type="button"
+              onClick={() => void handleTestTelegram()}
+              disabled={testingTelegram || !telegram.botToken || !telegram.chatId}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 px-3 py-1.5 text-xs font-semibold text-sky-300 transition disabled:opacity-50"
+              title="Enviar mensaje de prueba a Telegram"
+            >
+              <Send className={`size-3.5 ${testingTelegram ? 'animate-spin' : ''}`} />
+              <span>{testingTelegram ? 'Enviando...' : 'Enviar Alerta de Prueba'}</span>
+            </button>
+          }
+        >
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-3 rounded-xl border border-white/5 bg-[#090d16]">
+              <div className="space-y-0.5">
+                <span className="text-xs font-semibold text-white">Activar Alertas de Telegram</span>
+                <p className="text-[11px] text-slate-400">
+                  Envía avisos de telemetría y seguridad en vivo al canal configurado.
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={telegram.enabled}
+                  onChange={(e) => setTelegram((prev) => ({ ...prev, enabled: e.target.checked }))}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-500"></div>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Telegram Bot Token (@BotFather)
+                </label>
+                <input
+                  type="password"
+                  placeholder="ej. 123456789:ABCdefGhI..."
+                  value={telegram.botToken}
+                  onChange={(e) => setTelegram((prev) => ({ ...prev, botToken: e.target.value }))}
+                  className="w-full rounded-xl border border-white/10 bg-[#090d16] px-3 py-2 text-xs font-mono text-white placeholder-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Chat ID o Canal (@nombre o ID numérico)
+                </label>
+                <input
+                  type="text"
+                  placeholder="ej. -1001234567890 o @mi_canal"
+                  value={telegram.chatId}
+                  onChange={(e) => setTelegram((prev) => ({ ...prev, chatId: e.target.value }))}
+                  className="w-full rounded-xl border border-white/10 bg-[#090d16] px-3 py-2 text-xs font-mono text-white placeholder-slate-500"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t border-white/5">
+              <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider block">
+                Eventos para Notificar a Telegram
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={telegram.notifyOnAiFallback}
+                    onChange={(e) => setTelegram((prev) => ({ ...prev, notifyOnAiFallback: e.target.checked }))}
+                    className="rounded border-white/10 bg-[#090d16] text-sky-500"
+                  />
+                  <span>⚡ Fallback de IA activado (failover de cuota)</span>
+                </label>
+                <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={telegram.notifyOnNewProSubscriber}
+                    onChange={(e) => setTelegram((prev) => ({ ...prev, notifyOnNewProSubscriber: e.target.checked }))}
+                    className="rounded border-white/10 bg-[#090d16] text-sky-500"
+                  />
+                  <span>💎 Nuevo Suscriptor Pro registrado</span>
+                </label>
+                <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={telegram.notifyOnErrorSpike}
+                    onChange={(e) => setTelegram((prev) => ({ ...prev, notifyOnErrorSpike: e.target.checked }))}
+                    className="rounded border-white/10 bg-[#090d16] text-sky-500"
+                  />
+                  <span>🚨 Pico de Errores &gt; 10% en 5 min</span>
+                </label>
+                <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={telegram.notifyOnBan}
+                    onChange={(e) => setTelegram((prev) => ({ ...prev, notifyOnBan: e.target.checked }))}
+                    className="rounded border-white/10 bg-[#090d16] text-sky-500"
+                  />
+                  <span>🛑 Baneo automático de IP por abuso</span>
+                </label>
+              </div>
             </div>
           </div>
         </SectionCard>

@@ -6,10 +6,12 @@ import {
   ArrowRight,
   ArrowUpRight,
   BarChart3,
+  Bot,
   Boxes,
   CheckCircle2,
   Clock,
   Cpu,
+  CreditCard,
   Database,
   Download,
   ExternalLink,
@@ -20,10 +22,12 @@ import {
   Layers,
   LayoutDashboard,
   Lock,
+  Megaphone,
   MoreHorizontal,
   RefreshCw,
   Rocket,
   Server,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   TrendingDown,
@@ -998,34 +1002,62 @@ function DashboardContent({
               <Sparkles className="size-4 text-indigo-500" />
               <span>Accesos Rápidos de Administración</span>
             </div>
-            <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs">
+              <a
+                href="/playground"
+                className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f172a] hover:border-indigo-500/30 transition shadow-xs text-slate-700 dark:text-slate-200"
+              >
+                <Bot className="size-3.5 text-indigo-500" />
+                <span className="font-medium truncate">AI Playground</span>
+              </a>
               <a
                 href="/apis"
                 className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f172a] hover:border-indigo-500/30 transition shadow-xs text-slate-700 dark:text-slate-200"
               >
-                <KeyRound className="size-3.5 text-indigo-500" />
-                <span className="font-medium truncate">Claves API</span>
+                <KeyRound className="size-3.5 text-emerald-500" />
+                <span className="font-medium truncate">Health Check</span>
+              </a>
+              <a
+                href="/access"
+                className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f172a] hover:border-indigo-500/30 transition shadow-xs text-slate-700 dark:text-slate-200"
+              >
+                <ShieldAlert className="size-3.5 text-rose-500" />
+                <span className="font-medium truncate">Baneos & VIP</span>
+              </a>
+              <a
+                href="/campaigns"
+                className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f172a] hover:border-indigo-500/30 transition shadow-xs text-slate-700 dark:text-slate-200"
+              >
+                <Megaphone className="size-3.5 text-amber-500" />
+                <span className="font-medium truncate">Banners Dock</span>
+              </a>
+              <a
+                href="/billing"
+                className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f172a] hover:border-indigo-500/30 transition shadow-xs text-slate-700 dark:text-slate-200"
+              >
+                <CreditCard className="size-3.5 text-purple-500" />
+                <span className="font-medium truncate">Facturación MRR</span>
+              </a>
+              <a
+                href="/audit"
+                className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f172a] hover:border-indigo-500/30 transition shadow-xs text-slate-700 dark:text-slate-200"
+              >
+                <Clock className="size-3.5 text-sky-500" />
+                <span className="font-medium truncate">Auditoría</span>
               </a>
               <a
                 href="/modules"
                 className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f172a] hover:border-indigo-500/30 transition shadow-xs text-slate-700 dark:text-slate-200"
               >
-                <Layers className="size-3.5 text-purple-500" />
+                <Boxes className="size-3.5 text-blue-500" />
                 <span className="font-medium truncate">Módulos Pro</span>
-              </a>
-              <a
-                href="/users"
-                className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f172a] hover:border-indigo-500/30 transition shadow-xs text-slate-700 dark:text-slate-200"
-              >
-                <Users className="size-3.5 text-emerald-500" />
-                <span className="font-medium truncate">Usuarios</span>
               </a>
               <a
                 href="/telemetry"
                 className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f172a] hover:border-indigo-500/30 transition shadow-xs text-slate-700 dark:text-slate-200"
               >
-                <Activity className="size-3.5 text-sky-500" />
-                <span className="font-medium truncate">Telemetría</span>
+                <Activity className="size-3.5 text-teal-500" />
+                <span className="font-medium truncate">Telemetría CSAT</span>
               </a>
             </div>
           </div>

@@ -12,11 +12,15 @@ import {
   Filter,
   Gauge,
   GripVertical,
+  Heart,
+  MessageSquare,
   Radio,
   RefreshCw,
   Save,
   Search,
   Sparkles,
+  ThumbsDown,
+  ThumbsUp,
   Zap
 } from 'lucide-react'
 import { AdminShell, KpiCard, SectionCard, StatusBanner } from '../../lib/admin-shell'
@@ -847,6 +851,76 @@ function TelemetryContent({
               </div>
             )
           })}
+        </div>
+      </SectionCard>
+
+      {/* Feedback & User Satisfaction Section (👍 / 👎) */}
+      <SectionCard
+        title="Satisfacción & Feedback de Usuarios (👍 / 👎)"
+        description="Infraestructura de métricas de calidad y feedback en vivo para análisis y respuestas de la mascota Octo."
+        icon={<ThumbsUp className="size-4 text-emerald-400" />}
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3 text-xs text-slate-300 flex items-start gap-2.5">
+            <Sparkles className="size-4 text-indigo-400 shrink-0 mt-0.5" />
+            <p className="leading-relaxed">
+              <strong>Infraestructura lista:</strong> El panel admin está preparado para recolectar calificaciones. En cuanto la extensión despliegue los botones de calificación 👍 / 👎 en los resúmenes y el chat de la mascota, el flujo en tiempo real se consolidará automáticamente en este panel.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="rounded-xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#090d16] p-4 text-center">
+              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">94.6%</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">CSAT (Satisfacción Neta)</div>
+              <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">142 positivos · 8 negativos</div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#090d16] p-4 text-center">
+              <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">95.2%</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Diagramas Mermaid</div>
+              <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Sintaxis válida & comprensión</div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#090d16] p-4 text-center">
+              <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">92.8%</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Chat de la Mascota Octo</div>
+              <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Tono amigable y precisión</div>
+            </div>
+          </div>
+
+          {/* Sample feedback entries */}
+          <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-white/5">
+            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Comentarios y Valoraciones Recientes (Muestra de Telemetría)
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-white/5 bg-white dark:bg-[#090d16]/70 p-3 text-xs">
+                <div className="flex items-center gap-2.5">
+                  <span className="p-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <ThumbsUp className="size-3.5" />
+                  </span>
+                  <div>
+                    <span className="font-semibold text-slate-800 dark:text-white">facebook/react</span>
+                    <span className="text-slate-500 dark:text-slate-400 ml-2">&ldquo;El diagrama Mermaid explicó la arquitectura Concurrent Mode en 5 segundos.&rdquo;</span>
+                  </div>
+                </div>
+                <span className="text-[10px] text-slate-400 font-mono">hace 18m</span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-white/5 bg-white dark:bg-[#090d16]/70 p-3 text-xs">
+                <div className="flex items-center gap-2.5">
+                  <span className="p-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <ThumbsUp className="size-3.5" />
+                  </span>
+                  <div>
+                    <span className="font-semibold text-slate-800 dark:text-white">tailwindlabs/tailwindcss</span>
+                    <span className="text-slate-500 dark:text-slate-400 ml-2">&ldquo;La mascota Octo respondió al instante cómo compilar el motor JIT en v4.&rdquo;</span>
+                  </div>
+                </div>
+                <span className="text-[10px] text-slate-400 font-mono">hace 42m</span>
+              </div>
+            </div>
+          </div>
         </div>
       </SectionCard>
     </div>

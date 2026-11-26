@@ -527,6 +527,57 @@ describe('Admin API Handlers & Route Mounts', () => {
     )
     expect(validTierProRes.status).toBe(200)
 
+    // Test new suite keys: access_control_rules, campaign_banners, telegram_alerts, billing_config, admin_audit_logs
+    const validAccessRulesRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({ key: 'access_control_rules', value: { bannedIpHashes: [], vipUserIds: [] } })
+      }),
+      upperEnv
+    )
+    expect(validAccessRulesRes.status).toBe(200)
+
+    const validCampaignsRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({ key: 'campaign_banners', value: { banners: [] } })
+      }),
+      upperEnv
+    )
+    expect(validCampaignsRes.status).toBe(200)
+
+    const validTelegramRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({ key: 'telegram_alerts', value: { enabled: true, botToken: 'tok', chatId: '123' } })
+      }),
+      upperEnv
+    )
+    expect(validTelegramRes.status).toBe(200)
+
+    const validBillingRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({ key: 'billing_config', value: { activeProvider: 'stripe', monthlyPriceUsd: 9 } })
+      }),
+      upperEnv
+    )
+    expect(validBillingRes.status).toBe(200)
+
+    const validAuditLogsRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({ key: 'admin_audit_logs', value: [{ id: '1', action: 'TEST', target: 'sys' }] })
+      }),
+      upperEnv
+    )
+    expect(validAuditLogsRes.status).toBe(200)
+
     const validSyncRes = await handleAdminKvSyncRequest(
       new Request('https://admin.local/api/admin/kv-sync', {
         method: 'POST',
