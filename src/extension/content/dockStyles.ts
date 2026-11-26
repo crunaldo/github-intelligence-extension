@@ -569,4 +569,137 @@ export const DOCK_CSS = `
   background: rgba(248, 81, 73, 0.2);
   color: #f85149;
 }
+
+/* In-Dock Dynamic Campaign Banner */
+.gpi-campaign-banner {
+  margin: 8px 10px 4px 10px;
+  padding: 9px 11px;
+  background: linear-gradient(135deg, rgba(255, 59, 92, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%);
+  border: 1px solid rgba(255, 59, 92, 0.3);
+  border-radius: 8px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  animation: gpi-fade-in 0.2s ease-out;
+}
+
+:host([data-theme="light"]) .gpi-campaign-banner {
+  background: linear-gradient(135deg, rgba(255, 59, 92, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
+  border: 1px solid rgba(255, 59, 92, 0.25);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.gpi-campaign-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding-right: 18px;
+}
+
+.gpi-campaign-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #FF3B5C;
+  color: #ffffff;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+  line-height: 1.3;
+}
+
+.gpi-campaign-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--gpi-text);
+  line-height: 1.3;
+}
+
+.gpi-campaign-desc {
+  font-size: 11px;
+  color: var(--gpi-text-muted);
+  line-height: 1.35;
+  margin: 0;
+}
+
+.gpi-campaign-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+:host([data-theme="light"]) .gpi-campaign-actions {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.gpi-campaign-coupon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gpi-campaign-coupon:hover {
+  background: rgba(245, 158, 11, 0.22);
+}
+
+.gpi-campaign-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+  background: linear-gradient(135deg, #FF3B5C 0%, #FF234E 100%);
+  border: none;
+  border-radius: 5px;
+  padding: 3.5px 9px;
+  cursor: pointer;
+  text-decoration: none;
+  box-shadow: 0 1px 4px rgba(255, 59, 92, 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  margin-left: auto;
+}
+
+.gpi-campaign-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(255, 59, 92, 0.45);
+}
+
+.gpi-campaign-dismiss {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background: transparent;
+  border: none;
+  color: var(--gpi-text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.gpi-campaign-dismiss:hover {
+  color: var(--gpi-text);
+  background: rgba(255, 255, 255, 0.1);
+}
 `

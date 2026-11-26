@@ -56,6 +56,19 @@ export interface WorkerEnv {
   explainFile?: typeof generateFileExplanation
 }
 
+interface CampaignBannerItem {
+  id: string
+  title: string
+  message: string
+  badge?: string
+  targetTier: 'all' | 'free' | 'pro'
+  ctaText: string
+  ctaUrl: string
+  couponCode?: string
+  enabled: boolean
+  priority?: number
+}
+
 interface RemoteConfigResponse {
   free_daily_limit: number
   pro_daily_limit: number
@@ -65,9 +78,11 @@ interface RemoteConfigResponse {
     maintenance_mode: boolean
     [key: string]: unknown
   }
+  feedback_locations?: Record<string, boolean>
   analysis_modules: Record<string, ModuleAccessLevel>
   advanced_system_settings?: Record<string, unknown>
   default_new_user_tier?: 'free' | 'pro'
+  campaign_banners?: CampaignBannerItem[]
 }
 
 const DEFAULT_ANALYSIS_MODULES: Record<string, ModuleAccessLevel> = {
@@ -381,19 +396,44 @@ async function ingestRepositoryContext(owner: string, repo: string, commitSha: s
 }
 
 async function readRemoteConfig(kv: KVNamespace): Promise<RemoteConfigResponse> {
-  const [freeRaw, proRaw, flagsRaw, modulesRaw, settingsRaw, defaultTierRaw] = await Promise.all([
+  const [freeRaw, proRaw, flagsRaw, modulesRaw, settingsRaw, defaultTierRaw, feedbackLocRaw, campaignsRaw] = await Promise.all([
     kv.get('free_daily_limit'),
     kv.get('pro_daily_limit'),
     kv.get('feature_flags'),
     kv.get('analysis_modules'),
     kv.get('advanced_system_settings'),
-    kv.get('default_new_user_tier')
+    kv.get('default_new_user_tier'),
+    kv.get('feedback_locations'),
+    kv.get('campaign_banners')
   ])
 
   const defaults = {
     mascot_enabled: true,
     diagrams_enabled: true,
     maintenance_mode: false
+  }
+
+  const defaultFeedbackLocations = {
+    repo_explanation: true,
+    architecture: true,
+    file_explainer: true,
+    mascot: true,
+    overview: true
+  }
+
+  let parsedFeedbackLocations = { ...defaultFeedbackLocations }
+  if (feedbackLocRaw) {
+    try {
+      const candidate: unknown = JSON.parse(feedbackLocRaw)
+      if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+        parsedFeedbackLocations = {
+          ...defaultFeedbackLocations,
+          ...(candidate as Record<string, boolean>)
+        }
+      }
+    } catch {
+      // Use defaults
+    }
   }
 
   let parsedFlags: Record<string, unknown> = {}
@@ -436,6 +476,25 @@ async function readRemoteConfig(kv: KVNamespace): Promise<RemoteConfigResponse> 
     }
   }
 
+  let parsedCampaigns: CampaignBannerItem[] = []
+  if (campaignsRaw) {
+    try {
+      const candidate: unknown = JSON.parse(campaignsRaw)
+      if (candidate && typeof candidate === 'object') {
+        const banners = Array.isArray((candidate as any).banners)
+          ? (candidate as any).banners
+          : Array.isArray(candidate)
+            ? candidate
+            : []
+        parsedCampaigns = banners.filter(
+          (b: any) => b && typeof b.title === 'string' && b.enabled !== false
+        )
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
   return {
     free_daily_limit: parsePositiveInteger(freeRaw, DEFAULT_FREE_DAILY_LIMIT),
     pro_daily_limit: parsePositiveInteger(proRaw, DEFAULT_PRO_DAILY_LIMIT),
@@ -443,8 +502,10 @@ async function readRemoteConfig(kv: KVNamespace): Promise<RemoteConfigResponse> 
       ...defaults,
       ...parsedFlags
     },
+    feedback_locations: parsedFeedbackLocations,
     analysis_modules: parsedModules,
     default_new_user_tier: defaultTierRaw === 'pro' ? 'pro' : 'free',
+    campaign_banners: parsedCampaigns,
     ...(parsedSettings ? { advanced_system_settings: parsedSettings } : {})
   }
 }
@@ -1324,6 +1385,100 @@ async function handleExplainFile(
   }
 }
 
+async function handleFeedback(
+  request: Request,
+  env: WorkerEnv,
+  ctx?: WorkerExecutionContext
+): Promise<Response> {
+  let body: Record<string, unknown>
+  try {
+    const parsed: unknown = await request.json()
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return jsonResponse({ error: 'INVALID_REQUEST', message: 'JSON object body required' }, 400)
+    }
+    body = parsed as Record<string, unknown>
+  } catch {
+    return jsonResponse({ error: 'INVALID_REQUEST', message: 'Invalid JSON body' }, 400)
+  }
+
+  const repo = typeof body.repo === 'string' ? body.repo.trim() : ''
+  const rating = body.rating === 'positive' || body.rating === 'negative' ? body.rating : null
+  const categoryRaw = typeof body.category === 'string' ? body.category.trim() : 'general'
+  const category = ['accuracy', 'diagram', 'mascot', 'speed', 'general'].includes(categoryRaw)
+    ? categoryRaw
+    : 'general'
+  const comment = typeof body.comment === 'string' ? body.comment.trim().slice(0, 1000) : null
+  const provider = typeof body.provider === 'string' ? body.provider.trim() : null
+  const locationRaw = typeof body.location === 'string' ? body.location.trim() : null
+  const location = locationRaw || (category === 'diagram' ? 'architecture' : category === 'mascot' ? 'mascot' : 'repo_explanation')
+
+  if (!repo || !rating) {
+    return jsonResponse(
+      { error: 'INVALID_REQUEST', message: 'Valid repo and rating (positive/negative) are required' },
+      400
+    )
+  }
+
+  const authHeader = request.headers.get('Authorization') ?? ''
+  const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i)
+  const token = bearerMatch?.[1]?.trim()
+  const { userId } = token ? await verifySupabaseUser(token, env) : { userId: null }
+
+  const clientFingerprint = request.headers.get('X-Client-Signature')?.trim() || null
+
+  const feedbackId = crypto.randomUUID()
+  const feedbackItem = {
+    id: feedbackId,
+    user_id: userId,
+    client_fingerprint: clientFingerprint,
+    repo: repo.toLowerCase(),
+    rating,
+    category,
+    location,
+    comment,
+    provider,
+    created_at: new Date().toISOString()
+  }
+
+  // 1. Save to KV for zero-latency, high-availability cache
+  scheduleBackgroundTask(ctx, async () => {
+    try {
+      const rawRecent = await env.KV.get('recent_user_feedback')
+      let list: Array<Record<string, unknown>> = []
+      if (rawRecent) {
+        try {
+          const parsed = JSON.parse(rawRecent)
+          if (Array.isArray(parsed)) list = parsed
+        } catch {
+          list = []
+        }
+      }
+      list.unshift(feedbackItem)
+      const trimmed = list.slice(0, 100)
+      await env.KV.put('recent_user_feedback', JSON.stringify(trimmed))
+    } catch {
+      // ignore KV write errors in background
+    }
+  })
+
+  // 2. Insert into Supabase user_feedback table for persistent SQL analytics
+  if (isSupabaseConfigured(env)) {
+    scheduleBackgroundTask(ctx, async () => {
+      try {
+        const supabase = createRestSupabaseClient(env)
+        const table = supabase.from('user_feedback')
+        if (typeof table.insert === 'function') {
+          await table.insert(feedbackItem)
+        }
+      } catch {
+        // ignore persistence errors in background
+      }
+    })
+  }
+
+  return jsonResponse({ success: true, id: feedbackItem.id }, 201)
+}
+
 export default {
   async fetch(
     request: Request,
@@ -1359,6 +1514,10 @@ export default {
         (url.pathname === '/v1/file/explain' || url.pathname === '/v1/explain-file')
       ) {
         return await handleExplainFile(request, env, ctx)
+      }
+
+      if (request.method === 'POST' && url.pathname === '/v1/feedback') {
+        return await handleFeedback(request, env, ctx)
       }
 
       return jsonResponse({ error: 'NOT_FOUND', message: 'Route not found' }, 404)

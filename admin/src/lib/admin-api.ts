@@ -38,7 +38,8 @@ const ALLOWED_CONFIG_KEYS = new Set<string>([
   'campaign_banners',
   'telegram_alerts',
   'billing_config',
-  'admin_audit_logs'
+  'admin_audit_logs',
+  'feedback_locations'
 ])
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -109,6 +110,13 @@ function validateRemoteConfigEntry(key: string, value: unknown): string | null {
       }
       if ('banner_message' in flags && typeof flags.banner_message !== 'string') {
         return 'feature_flags.banner_message must be a string'
+      }
+      return null
+    }
+
+    case 'feedback_locations': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'feedback_locations must be a plain JSON object'
       }
       return null
     }

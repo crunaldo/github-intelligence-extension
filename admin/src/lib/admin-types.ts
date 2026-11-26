@@ -433,6 +433,22 @@ export interface AdminAuditLogEntry {
 
 // --- User Feedback & CSAT ---
 
+export interface FeedbackLocationsConfig {
+  repo_explanation: boolean
+  architecture: boolean
+  file_explainer: boolean
+  mascot: boolean
+  overview: boolean
+}
+
+export const DEFAULT_FEEDBACK_LOCATIONS: FeedbackLocationsConfig = {
+  repo_explanation: true,
+  architecture: true,
+  file_explainer: true,
+  mascot: true,
+  overview: true,
+}
+
 export interface UserFeedbackItem {
   id: string
   timestamp: string
@@ -442,5 +458,6 @@ export interface UserFeedbackItem {
   comment?: string
   provider?: string
   userId?: string
+  location?: string
 }
 

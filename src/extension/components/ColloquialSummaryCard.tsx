@@ -11,6 +11,7 @@ import {
   type ColloquialExplanation,
 } from '../spanishSummary'
 import { t, type ActiveLocale } from '../i18n'
+import { UserFeedbackWidget } from './UserFeedbackWidget'
 
 type Props = {
   report: RepositoryReport
@@ -281,6 +282,16 @@ export function ColloquialSummaryCard({
               {t('ideal_for', locale)} <strong>{summary.targetAudience}</strong>
             </span>
           </div>
+
+          {/* Feedback & Valoración sobre la Explicación del Repo */}
+          <UserFeedbackWidget
+            repo={report.repository?.fullName || `${report.target?.owner}/${report.target?.repository}`}
+            provider={report.aiAnalysis?.providerUsed}
+            defaultCategory="accuracy"
+            location="repo_explanation"
+            locale={locale}
+            compact
+          />
         </>
       )}
     </div>

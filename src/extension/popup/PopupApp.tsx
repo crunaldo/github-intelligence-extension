@@ -64,6 +64,8 @@ import { EditorLaunchButtons } from '../components/EditorLaunchButtons'
 import { RepoHealthCard } from '../components/RepoHealthCard'
 import { ArchitectureDiagramView } from '../components/ArchitectureDiagramView'
 import { DeepTechnicalAuditCard } from '../components/DeepTechnicalAuditCard'
+import { UserFeedbackWidget } from '../components/UserFeedbackWidget'
+import { CampaignBanner } from '../components/CampaignBanner'
 import { PackageInstallCommand } from '../components/PackageInstallCommand'
 import { ApiErrorCard } from '../components/ApiErrorCard'
 import { ExtHeaderBrand } from '../components/ExtHeaderBrand'
@@ -111,6 +113,15 @@ export function PopupApp() {
   const inFlightUrlRef = useRef<string | null>(null)
 
   const isPro = Boolean(session?.isPro)
+
+  const activeCampaignBanner = useMemo(() => {
+    const banners = remoteConfig?.campaignBanners
+    if (!banners || banners.length === 0) return null
+    const userTier = isPro ? 'pro' : 'free'
+    return banners.find(
+      (b) => b.enabled !== false && (b.targetTier === 'all' || b.targetTier === userTier)
+    )
+  }, [remoteConfig?.campaignBanners, isPro])
   const archAccess = getModuleAccess(remoteConfig, 'architectureDiagram', 'pro')
 
   // Detect system hardware, remote config, and auth session with live sync
@@ -624,6 +635,12 @@ export function PopupApp() {
         </div>
       )}
 
+      {/* Dynamic Campaign Banner (Admin Config) */}
+      <CampaignBanner
+        banner={activeCampaignBanner}
+        onOpenPricing={() => setShowSettings(true)}
+      />
+
 
 
       {/* 1. Nuevo repositorio detectado al cambiar de pestaña */}
@@ -854,6 +871,15 @@ export function PopupApp() {
                 <EditorLaunchButtons repoUrl={report.repository.htmlUrl} fullName={report.repository.fullName} locale={activeLocale} />
               </div>
             </div>
+
+            {/* Satisfacción & Feedback de Usuario */}
+            <UserFeedbackWidget
+              repo={report.repository.fullName}
+              provider={report.aiAnalysis?.providerUsed}
+              defaultCategory="general"
+              location="overview"
+              locale={activeLocale}
+            />
 
             {/* Selector de Vistas Secundarias (Tu PC, Instalación, Detalles) */}
             <div className="secondary-nav-chips">

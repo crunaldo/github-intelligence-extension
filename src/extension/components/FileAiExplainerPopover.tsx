@@ -5,6 +5,7 @@ import {
   type FileExplanation,
 } from '../utils/fileExplanationService'
 import { t, type ActiveLocale } from '../i18n'
+import { UserFeedbackWidget } from './UserFeedbackWidget'
 
 export interface FileAiExplainerPopoverProps {
   filePath: string
@@ -205,6 +206,15 @@ export function FileAiExplainerPopover({
               <strong style={{ color: 'var(--gpi-text, #e6edf3)' }}>{explanation.architectureRole}</strong>
             </div>
           )}
+
+          {/* Feedback & Valoración sobre la Explicación del Archivo */}
+          <UserFeedbackWidget
+            repo={`${owner}/${repo}`}
+            defaultCategory="accuracy"
+            location="file_explainer"
+            locale={locale}
+            compact
+          />
 
           {/* Footer Quota info */}
           <div

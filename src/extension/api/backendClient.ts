@@ -24,6 +24,35 @@ export interface FilteredAnalysisResult {
 
 export type ModuleAccessLevel = 'free' | 'pro' | 'disabled'
 
+export interface FeedbackLocationsConfig {
+  repo_explanation: boolean
+  architecture: boolean
+  file_explainer: boolean
+  mascot: boolean
+  overview: boolean
+}
+
+export const DEFAULT_FEEDBACK_LOCATIONS: FeedbackLocationsConfig = {
+  repo_explanation: true,
+  architecture: true,
+  file_explainer: true,
+  mascot: true,
+  overview: true,
+}
+
+export interface CampaignBannerItem {
+  id: string
+  title: string
+  message: string
+  badge?: string
+  targetTier: 'all' | 'free' | 'pro'
+  ctaText: string
+  ctaUrl: string
+  couponCode?: string
+  enabled: boolean
+  priority?: number
+}
+
 export interface RemoteConfig {
   freeDailyLimit: number
   proDailyLimit: number
@@ -33,7 +62,9 @@ export interface RemoteConfig {
     maintenanceMode: boolean
     bannerMessage?: string
   }
+  feedbackLocations?: FeedbackLocationsConfig
   analysisModules?: Record<string, ModuleAccessLevel>
+  campaignBanners?: CampaignBannerItem[]
 }
 
 export class BackendApiError extends Error {
@@ -565,6 +596,23 @@ export async function fetchRemoteConfig(options?: { forceRefresh?: boolean }): P
     }
   }
 
+  const rawLocs = ((raw.feedbackLocations ?? raw.feedback_locations) || {}) as Record<string, unknown>
+  const feedbackLocations: FeedbackLocationsConfig = {
+    repo_explanation: Boolean(rawLocs.repo_explanation ?? true),
+    architecture: Boolean(rawLocs.architecture ?? true),
+    file_explainer: Boolean(rawLocs.file_explainer ?? true),
+    mascot: Boolean(rawLocs.mascot ?? true),
+    overview: Boolean(rawLocs.overview ?? true),
+  }
+
+  const rawCampaigns = raw.campaign_banners ?? raw.campaignBanners
+  let campaignBanners: CampaignBannerItem[] = []
+  if (Array.isArray(rawCampaigns)) {
+    campaignBanners = rawCampaigns as CampaignBannerItem[]
+  } else if (rawCampaigns && typeof rawCampaigns === 'object' && Array.isArray((rawCampaigns as any).banners)) {
+    campaignBanners = (rawCampaigns as any).banners as CampaignBannerItem[]
+  }
+
   const config: RemoteConfig = {
     freeDailyLimit: Number.isFinite(freeDailyLimit) ? freeDailyLimit : 15,
     proDailyLimit: Number.isFinite(proDailyLimit) ? proDailyLimit : 250,
@@ -576,11 +624,24 @@ export async function fetchRemoteConfig(options?: { forceRefresh?: boolean }): P
         ? { bannerMessage: bannerMessageRaw }
         : {}),
     },
+    feedbackLocations,
     analysisModules,
+    campaignBanners,
   }
 
   memoryRemoteConfig = { config, timestamp: Date.now() }
   return config
+}
+
+/**
+ * Checks whether the feedback widget should appear in a given section based on remote config.
+ */
+export function isFeedbackLocationEnabled(
+  config: RemoteConfig | null,
+  location: keyof FeedbackLocationsConfig
+): boolean {
+  if (!config || !config.feedbackLocations) return true
+  return config.feedbackLocations[location] !== false
 }
 
 /**
@@ -773,4 +834,50 @@ export async function explainFileViaBackend(
 
   return (await res.json()) as ExplainFileResponse
 }
+
+export interface SubmitFeedbackParams {
+  repo: string
+  rating: 'positive' | 'negative'
+  category?: 'accuracy' | 'diagram' | 'mascot' | 'speed' | 'general'
+  location?: string
+  comment?: string
+  provider?: string
+}
+
+export interface SubmitFeedbackResponse {
+  success: boolean
+  id: string
+}
+
+/**
+ * Submits user satisfaction and feedback (rating, category, and optional comment)
+ * directly to the backend /v1/feedback endpoint.
+ */
+export async function submitUserFeedback(
+  params: SubmitFeedbackParams
+): Promise<SubmitFeedbackResponse> {
+  const [signature, session] = await Promise.all([getClientSignature(), getAuthSession()])
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Client-Signature': signature,
+  }
+
+  if (session?.accessToken) {
+    headers.Authorization = `Bearer ${session.accessToken}`
+  }
+
+  const res = await fetch(`${getBackendBaseUrl()}/v1/feedback`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(params),
+  })
+
+  if (!res.ok) {
+    throw await parseErrorResponse(res)
+  }
+
+  return (await res.json()) as SubmitFeedbackResponse
+}
+
 

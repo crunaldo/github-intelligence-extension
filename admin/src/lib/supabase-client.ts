@@ -11,7 +11,8 @@ import type {
   QueryLogRow,
   RemoteConfigRow,
   RepoAnalysisRow,
-  SubscriptionRow
+  SubscriptionRow,
+  UserFeedbackItem
 } from './admin-types'
 
 export interface AdminSession {
@@ -748,6 +749,60 @@ export async function fetchRepoAnalyses(
   return {
     data: deduplicated,
     error: null
+  }
+}
+
+export async function fetchRecentUserFeedback(
+  client: AdminSupabaseClient,
+  limitCount = 100
+): Promise<SupabaseDataResult<UserFeedbackItem[]>> {
+  try {
+    const { data, error } = await client
+      .from('user_feedback')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limitCount)
+
+    if (error) {
+      // Fallback: try reading from KV recent_user_feedback via remote configs
+      try {
+        const { data: configs } = await fetchRemoteConfigsMap(client)
+        const kvList = Array.isArray(configs.recent_user_feedback)
+          ? (configs.recent_user_feedback as Array<Record<string, unknown>>)
+          : []
+        const mapped = kvList.map((item) => ({
+          id: String(item.id || ''),
+          timestamp: String(item.created_at || item.timestamp || new Date().toISOString()),
+          repo: String(item.repo || ''),
+          rating: (item.rating === 'positive' || item.rating === 'negative' ? item.rating : 'positive') as 'positive' | 'negative',
+          category: (item.category || 'general') as UserFeedbackItem['category'],
+          location: item.location ? String(item.location) : undefined,
+          comment: item.comment ? String(item.comment) : undefined,
+          provider: item.provider ? String(item.provider) : undefined,
+          userId: item.user_id ? String(item.user_id) : undefined
+        }))
+        return { data: mapped, error: null }
+      } catch {
+        return { data: [], error: error.message || 'Failed to load user_feedback' }
+      }
+    }
+
+    const rawRows = Array.isArray(data) ? (data as Array<Record<string, unknown>>) : []
+    const mapped: UserFeedbackItem[] = rawRows.map((r) => ({
+      id: String(r.id || ''),
+      timestamp: String(r.created_at || r.timestamp || new Date().toISOString()),
+      repo: String(r.repo || ''),
+      rating: (r.rating === 'positive' || r.rating === 'negative' ? r.rating : 'positive') as 'positive' | 'negative',
+      category: (r.category || 'general') as UserFeedbackItem['category'],
+      location: r.location ? String(r.location) : undefined,
+      comment: r.comment ? String(r.comment) : undefined,
+      provider: r.provider ? String(r.provider) : undefined,
+      userId: r.user_id ? String(r.user_id) : undefined
+    }))
+
+    return { data: mapped, error: null }
+  } catch (err) {
+    return { data: [], error: err instanceof Error ? err.message : 'Error fetching user feedback' }
   }
 }
 

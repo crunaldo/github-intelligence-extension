@@ -769,6 +769,40 @@ describe('Extension Backend Client & Auth', () => {
       expect(getModuleAccess(null, 'summary', 'pro')).toBe('pro')
     })
 
+    it('parses campaign_banners correctly in fetchRemoteConfig', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          free_daily_limit: 15,
+          pro_daily_limit: 250,
+          feature_flags: {
+            maintenance_mode: false,
+          },
+          campaign_banners: [
+            {
+              id: 'cyber-monday-2026',
+              title: 'Black Friday 50% OFF',
+              message: 'Obtén acceso PRO ilimitado por la mitad de precio.',
+              badge: 'PROMO',
+              targetTier: 'free',
+              ctaText: 'Mejorar a PRO',
+              ctaUrl: 'https://example.com/pricing',
+              couponCode: 'BF50',
+              enabled: true,
+            },
+          ],
+        }),
+      }) as unknown as typeof fetch
+
+      const cfg = await fetchRemoteConfig({ forceRefresh: true })
+      expect(cfg.campaignBanners).toBeDefined()
+      expect(cfg.campaignBanners).toHaveLength(1)
+      expect(cfg.campaignBanners?.[0].id).toBe('cyber-monday-2026')
+      expect(cfg.campaignBanners?.[0].couponCode).toBe('BF50')
+      expect(cfg.campaignBanners?.[0].targetTier).toBe('free')
+    })
+
     it('bypasses stripped cache entries lacking architectureDiagram when requester is Pro', async () => {
       // 1. First fetch as free user: returns summary without architectureDiagram
       await saveAuthSession({
@@ -874,6 +908,42 @@ describe('Extension Backend Client & Auth', () => {
       expect(capturedBody.path).toBe('src/main.ts')
       expect(res.remainingToday).toBe(248)
       expect(res.explanation.summary).toBe('File summary from AI')
+    })
+
+    it('sends POST /v1/feedback with payload and client signature', async () => {
+      let capturedUrl = ''
+      let capturedBody: Record<string, unknown> = {}
+      let capturedHeaders: Record<string, string> = {}
+
+      globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+        capturedUrl = String(url)
+        capturedBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+        capturedHeaders = (init?.headers || {}) as Record<string, string>
+        return {
+          status: 201,
+          ok: true,
+          json: async () => ({ success: true, id: 'fb_uuid_999' }),
+        }
+      }) as unknown as typeof fetch
+
+      const { submitUserFeedback } = await import('../api/backendClient')
+      const res = await submitUserFeedback({
+        repo: 'facebook/react',
+        rating: 'positive',
+        category: 'diagram',
+        comment: 'Super diagram!',
+        provider: 'cfAi',
+      })
+
+      expect(capturedUrl).toContain('/v1/feedback')
+      expect(capturedBody.repo).toBe('facebook/react')
+      expect(capturedBody.rating).toBe('positive')
+      expect(capturedBody.category).toBe('diagram')
+      expect(capturedBody.comment).toBe('Super diagram!')
+      expect(capturedBody.provider).toBe('cfAi')
+      expect(capturedHeaders['X-Client-Signature']).toBeDefined()
+      expect(res.success).toBe(true)
+      expect(res.id).toBe('fb_uuid_999')
     })
   })
 })

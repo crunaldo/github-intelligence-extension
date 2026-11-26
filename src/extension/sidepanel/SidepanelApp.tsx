@@ -81,6 +81,8 @@ import { DirectoryTree } from '../components/DirectoryTree'
 import { QuotaExceededCard } from '../components/QuotaExceededCard'
 import { GitHubLoginGateCard } from '../components/GitHubLoginGateCard'
 import { DeepTechnicalAuditCard } from '../components/DeepTechnicalAuditCard'
+import { UserFeedbackWidget } from '../components/UserFeedbackWidget'
+import { CampaignBanner } from '../components/CampaignBanner'
 import {
   getGuestAnalysisCount,
   incrementGuestAnalysisCount,
@@ -154,6 +156,15 @@ export function SidepanelApp() {
   }, [])
 
   const isPro = Boolean(session?.isPro)
+
+  const activeCampaignBanner = useMemo(() => {
+    const banners = remoteConfig?.campaignBanners
+    if (!banners || banners.length === 0) return null
+    const userTier = isPro ? 'pro' : 'free'
+    return banners.find(
+      (b) => b.enabled !== false && (b.targetTier === 'all' || b.targetTier === userTier)
+    )
+  }, [remoteConfig?.campaignBanners, isPro])
 
   const summaryAccess = getModuleAccess(remoteConfig, 'summary', 'free')
   const installAccess = getModuleAccess(remoteConfig, 'installCommand', 'free')
@@ -699,6 +710,12 @@ export function SidepanelApp() {
         </div>
       )}
 
+      {/* Dynamic Campaign Banner (Admin Config) */}
+      <CampaignBanner
+        banner={activeCampaignBanner}
+        onOpenPricing={() => setNav('settings')}
+      />
+
       {/* Nuevo repositorio detectado al cambiar de pestaña */}
       {activeTabRepo && report && `${activeTabRepo.owner}/${activeTabRepo.repository}`.toLowerCase() !== (report.repository?.fullName || '').toLowerCase() && dismissedDetectedRepo !== activeTabRepo.originalUrl && (
         <div className="ext-new-repo-detected-banner animate-fade-in">
@@ -1034,6 +1051,15 @@ export function SidepanelApp() {
                       </div>
                       <p className="insight-text">{report.technicalSummary}</p>
                     </div>
+
+                    {/* Satisfacción & Feedback de Usuario */}
+                    <UserFeedbackWidget
+                      repo={report.repository.fullName}
+                      provider={report.aiAnalysis?.providerUsed}
+                      defaultCategory="general"
+                      location="overview"
+                      locale={activeLocale}
+                    />
                   </div>
                 )}
 
@@ -1061,6 +1087,14 @@ export function SidepanelApp() {
                         }}
                       />
                     )}
+
+                    <UserFeedbackWidget
+                      repo={report.repository.fullName}
+                      provider={report.aiAnalysis?.providerUsed}
+                      defaultCategory="diagram"
+                      location="architecture"
+                      locale={activeLocale}
+                    />
 
                     <div className="insight-card">
                       <div className="insight-title" style={{ color: 'var(--text-secondary)' }}>

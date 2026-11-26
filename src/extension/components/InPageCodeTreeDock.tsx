@@ -19,6 +19,9 @@ import {
   Pin,
   PinOff,
   ArrowLeft,
+  ArrowRight,
+  Check,
+  Tag,
   GitPullRequest,
   GitCommit,
 } from 'lucide-react'
@@ -27,6 +30,7 @@ import { classifyFile, getFileIcon } from '../utils/fileClassifier'
 import { FileAiExplainerPopover } from './FileAiExplainerPopover'
 import type { CodeTreePreferences } from '../storage'
 import { DEFAULT_CODE_TREE_PREFERENCES, saveStoredPreferences, getStoredGitHubToken } from '../storage'
+import { fetchRemoteConfig, type CampaignBannerItem } from '../api/backendClient'
 import {
   parsePrOrCommitUrl,
   resolvePrOrCommitFiles,
@@ -331,6 +335,36 @@ export function InPageCodeTreeDock({
       setPrResolution(null)
     }
   }, [owner, repo, targetUrl, prOrCommitResolution, codeTreePreferences?.customEnterpriseDomains])
+
+  // Dynamic In-Dock Campaign Banners from Remote Config
+  const [campaignBanners, setCampaignBanners] = useState<CampaignBannerItem[]>([])
+  const [dismissedBannerIds, setDismissedBannerIds] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = sessionStorage.getItem('gpi_dismissed_banners')
+      return raw ? JSON.parse(raw) : {}
+    } catch {
+      return {}
+    }
+  })
+  const [copiedCouponId, setCopiedCouponId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchRemoteConfig()
+      .then((cfg) => {
+        if (cfg?.campaignBanners && cfg.campaignBanners.length > 0) {
+          setCampaignBanners(cfg.campaignBanners)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  const activeBanner = useMemo(() => {
+    if (!campaignBanners || campaignBanners.length === 0) return null
+    const userTier = isPro ? 'pro' : 'free'
+    return campaignBanners.find(
+      (b) => b.enabled !== false && (b.targetTier === 'all' || b.targetTier === userTier) && !dismissedBannerIds[b.id]
+    )
+  }, [campaignBanners, isPro, dismissedBannerIds])
 
   // Load saved width & open state from chrome.storage
   useEffect(() => {
@@ -789,6 +823,66 @@ export function InPageCodeTreeDock({
             </button>
           </div>
         </div>
+
+        {/* Dynamic Campaign & Promotion Banner */}
+        {activeBanner && (
+          <div className="gpi-campaign-banner" role="complementary" aria-label="Aviso de Campaña">
+            <button
+              type="button"
+              className="gpi-campaign-dismiss"
+              onClick={() => {
+                setDismissedBannerIds((prev) => {
+                  const updated = { ...prev, [activeBanner.id]: true }
+                  try {
+                    sessionStorage.setItem('gpi_dismissed_banners', JSON.stringify(updated))
+                  } catch {}
+                  return updated
+                })
+              }}
+              title="Ocultar aviso"
+              aria-label="Cerrar aviso"
+            >
+              <X size={12} />
+            </button>
+            <div className="gpi-campaign-header">
+              {activeBanner.badge && <span className="gpi-campaign-badge">{activeBanner.badge}</span>}
+              <span className="gpi-campaign-title">{activeBanner.title}</span>
+            </div>
+            {activeBanner.message && <p className="gpi-campaign-desc">{activeBanner.message}</p>}
+            <div className="gpi-campaign-actions">
+              {activeBanner.couponCode ? (
+                <button
+                  type="button"
+                  className="gpi-campaign-coupon"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(activeBanner.couponCode!)
+                    setCopiedCouponId(activeBanner.id)
+                    setTimeout(() => setCopiedCouponId(null), 2000)
+                  }}
+                  title="Copiar cupón"
+                >
+                  <Tag size={11} />
+                  <span>{copiedCouponId === activeBanner.id ? '¡Copiado!' : activeBanner.couponCode}</span>
+                  {copiedCouponId === activeBanner.id && <Check size={11} />}
+                </button>
+              ) : <div />}
+              <a
+                href={activeBanner.ctaUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="gpi-campaign-cta"
+                onClick={() => {
+                  if (onOpenSidepanel && (activeBanner.ctaUrl.includes('pricing') || activeBanner.ctaUrl.includes('pro'))) {
+                    onOpenSidepanel()
+                  }
+                }}
+              >
+                <span>{activeBanner.ctaText}</span>
+                <ArrowRight size={11} />
+              </a>
+            </div>
+          </div>
+        )}
 
         {/* View Switching: In-Dock Settings vs Tree Content */}
         {activeView === 'settings' ? (
