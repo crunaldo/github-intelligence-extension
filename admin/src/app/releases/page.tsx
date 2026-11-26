@@ -161,32 +161,36 @@ export function ReleasesContent({
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
-          title="Versión Más Reciente"
+          label="Versión Más Reciente"
           value={`v${config.latestVersion}`}
           hint="Revisión actual disponible en Chrome Web Store"
-          icon={Rocket}
-          trend="neutral"
+          icon={<Rocket className="size-4" />}
+          accent="indigo"
+          badge="Live"
         />
         <KpiCard
-          title="Versión Mínima Soportada"
+          label="Versión Mínima Soportada"
           value={`v${config.minSupportedVersion}`}
           hint="Versiones anteriores recibirán alerta de actualización"
-          icon={ShieldAlert}
-          trend={config.forceUpdateNotice ? 'down' : 'neutral'}
+          icon={<ShieldAlert className="size-4" />}
+          accent="amber"
+          badge={config.forceUpdateNotice ? 'Requerido' : 'Permisivo'}
         />
         <KpiCard
-          title="Fuerza de Actualización"
+          label="Fuerza de Actualización"
           value={config.forceUpdateNotice ? 'Estricta' : 'Flexible'}
           hint={config.forceUpdateNotice ? 'Bloquea uso hasta actualizar' : 'Aviso no intrusivo'}
-          icon={AlertTriangle}
-          trend={config.forceUpdateNotice ? 'down' : 'up'}
+          icon={<AlertTriangle className="size-4" />}
+          accent="rose"
+          badge={config.forceUpdateNotice ? 'Bloqueo' : 'Aviso'}
         />
         <KpiCard
-          title="Modal What's New"
+          label="Modal What's New"
           value={config.whatsNew.enabled ? 'Activo' : 'Desactivado'}
           hint={`${config.whatsNew.highlights.length} características destacadas`}
-          icon={Sparkles}
-          trend={config.whatsNew.enabled ? 'up' : 'neutral'}
+          icon={<Sparkles className="size-4" />}
+          accent="emerald"
+          badge="In-App"
         />
       </div>
 

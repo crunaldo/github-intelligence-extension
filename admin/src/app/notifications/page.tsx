@@ -228,32 +228,36 @@ export function NotificationsContent({
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
-          title="Avisos Activos"
+          label="Avisos Activos"
           value={activeCount.toString()}
           hint={`De ${config.notifications.length} anuncios creados`}
-          icon={Bell}
-          trend={activeCount > 0 ? 'up' : 'neutral'}
+          icon={<Bell className="size-4" />}
+          accent="indigo"
+          badge="Live"
         />
         <KpiCard
-          title="Aperturas / Vistas"
+          label="Aperturas / Vistas"
           value={totalReads.toLocaleString()}
           hint="Impresiones en el centro de avisos"
-          icon={Eye}
-          trend="up"
+          icon={<Eye className="size-4" />}
+          accent="sky"
+          badge="Vistas"
         />
         <KpiCard
-          title="Clics en Acciones"
+          label="Clics en Acciones"
           value={totalClicks.toLocaleString()}
           hint="Interacciones con botones de enlace"
-          icon={ExternalLink}
-          trend="up"
+          icon={<ExternalLink className="size-4" />}
+          accent="emerald"
+          badge="Clicks"
         />
         <KpiCard
-          title="Tasa de Clics (CTR)"
+          label="Tasa de Clics (CTR)"
           value={`${avgCtr}%`}
           hint="Efectividad de engagement"
-          icon={Sparkles}
-          trend="up"
+          icon={<Sparkles className="size-4" />}
+          accent="purple"
+          badge="CTR"
         />
       </div>
 

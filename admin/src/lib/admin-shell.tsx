@@ -865,7 +865,9 @@ export function AdminShell({
             </div>
           </div>
 
-          {children({ client: activeClient, session })}
+          <AdminErrorBoundary fallbackTitle={title}>
+            {children({ client: activeClient, session })}
+          </AdminErrorBoundary>
         </main>
       </div>
     </div>
@@ -873,10 +875,74 @@ export function AdminShell({
 }
 
 // -----------------------------------------------------------------------------
+// Componente ErrorBoundary Resiliente
+// -----------------------------------------------------------------------------
+export class AdminErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallbackTitle?: string },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode; fallbackTitle?: string }) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[AdminErrorBoundary] Rendering error caught:', error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="rounded-2xl border border-rose-500/30 bg-slate-900/90 backdrop-blur-xl p-6 shadow-2xl space-y-4 my-4">
+          <div className="flex items-center gap-3 text-rose-500">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/10 border border-rose-500/20">
+              <ShieldAlert className="size-5 text-rose-500" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-white">
+                {this.props.fallbackTitle || 'Error al Cargar la Sección'}
+              </h2>
+              <p className="text-xs text-rose-400">Ocurrió un error inesperado al renderizar el componente</p>
+            </div>
+          </div>
+          <p className="text-xs text-slate-300 font-mono bg-black/40 p-3 rounded-lg border border-white/5 break-words">
+            {this.state.error?.message || 'Error desconocido'}
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, error: null })
+              }}
+              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition"
+            >
+              Reintentar
+            </button>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-medium text-white transition"
+            >
+              Recargar Página
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Componente KpiCard Mejorado
 // -----------------------------------------------------------------------------
 export function KpiCard({
   label,
+  title,
   value,
   hint,
   accent = 'indigo',
@@ -885,15 +951,17 @@ export function KpiCard({
   trend,
   sparkline
 }: {
-  label: string
+  label?: string
+  title?: string
   value: string | number
   hint?: string
   accent?: 'indigo' | 'emerald' | 'amber' | 'sky' | 'purple' | 'rose'
-  icon?: React.ReactNode
+  icon?: React.ReactNode | React.ComponentType<{ className?: string }>
   badge?: string
   trend?: string
   sparkline?: number[]
 }) {
+  const displayLabel = label || title || ''
   const accentConfig = {
     indigo: {
       border: 'border-indigo-500/20 hover:border-indigo-500/40',
@@ -946,16 +1014,22 @@ export function KpiCard({
   const pathD = `M ${coords.join(' L ')}`
   const areaD = `${pathD} L 100,24 L 0,24 Z`
 
+  const renderedIcon = React.isValidElement(icon)
+    ? icon
+    : typeof icon === 'function' || (typeof icon === 'object' && icon !== null && '$$typeof' in icon)
+      ? React.createElement(icon as any, { className: 'size-4' })
+      : null
+
   return (
     <div
       className={`relative overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 ${accentConfig.border} bg-white dark:bg-[#0f172a]/80 backdrop-blur-md p-5 shadow-sm transition-all bg-dot-pattern-dense`}
     >
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
-        {icon && (
+        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{displayLabel}</span>
+        {renderedIcon && (
           <div className="flex size-9 items-center justify-center rounded-xl p-0.5 border border-slate-200 dark:border-white/10 shadow-sm">
             <div className={`flex size-full items-center justify-center rounded-[10px] ${accentConfig.iconBg}`}>
-              {icon}
+              {renderedIcon}
             </div>
           </div>
         )}

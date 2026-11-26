@@ -188,32 +188,36 @@ export function CostsContent({
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
-          title="Gasto Mensual Estimado"
+          label="Gasto Mensual Estimado"
           value={`$${currentMonthlySpend.toFixed(2)} USD`}
           hint={`Límite fijado: $${budgetConfig.monthlyBudgetUsd} USD (${budgetUsagePercent}% consumido)`}
-          icon={DollarSign}
-          trend={budgetUsagePercent > budgetConfig.alertThresholdPercent ? 'down' : 'up'}
+          icon={<DollarSign className="size-4" />}
+          accent="indigo"
+          badge={`${budgetUsagePercent}%`}
         />
         <KpiCard
-          title="Gasto Diario Actual"
+          label="Gasto Diario Actual"
           value={`$${currentDailySpend.toFixed(2)} USD`}
           hint={`Límite de alerta: $${budgetConfig.dailyBudgetUsd} USD/día`}
-          icon={Coins}
-          trend="neutral"
+          icon={<Coins className="size-4" />}
+          accent="amber"
+          badge="Hoy"
         />
         <KpiCard
-          title="Costo Promedio por Repo"
+          label="Costo Promedio por Repo"
           value={`$${simCalculations.costPerAnalysis.toFixed(5)}`}
           hint="Calculado con mezcla Gemini Flash + Groq Llama 3.3"
-          icon={Zap}
-          trend="up"
+          icon={<Zap className="size-4" />}
+          accent="sky"
+          badge="Por Repo"
         />
         <KpiCard
-          title="Ahorro vs OpenAI GPT-4o"
+          label="Ahorro vs OpenAI GPT-4o"
           value={`${simCalculations.savingsPercentage}%`}
           hint={`Ahorro de ~$${(simCalculations.benchmarkGpt4o - simCalculations.avgOurPortfolioCost).toFixed(2)}/mes`}
-          icon={TrendingDown}
-          trend="up"
+          icon={<TrendingDown className="size-4" />}
+          accent="emerald"
+          badge="Eficiencia"
         />
       </div>
 

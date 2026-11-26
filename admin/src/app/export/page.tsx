@@ -205,31 +205,31 @@ export function ExportContent({
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
-          title="Datasets Disponibles"
+          label="Datasets Disponibles"
           value="5 Entidades"
           hint="Usuarios, CSAT, Auditoría, Consultas y KV"
-          icon={Database}
+          icon={<Database className="size-4" />}
           trend="neutral"
         />
         <KpiCard
-          title="Cumplimiento GDPR & SOC2"
+          label="Cumplimiento GDPR & SOC2"
           value="100% Exportable"
           hint="Portabilidad y backups en 1 clic"
-          icon={ShieldCheck}
+          icon={<ShieldCheck className="size-4" />}
           trend="up"
         />
         <KpiCard
-          title="Formatos Soportados"
+          label="Formatos Soportados"
           value="JSON & CSV"
           hint="Listos para Excel, BigQuery o restauración"
-          icon={FileSpreadsheet}
+          icon={<FileSpreadsheet className="size-4" />}
           trend="up"
         />
         <KpiCard
-          title="Último Backup KV"
+          label="Último Backup KV"
           value="Al Día"
           hint="Sincronizado con Cloudflare Edge"
-          icon={HardDrive}
+          icon={<HardDrive className="size-4" />}
           trend="up"
         />
       </div>

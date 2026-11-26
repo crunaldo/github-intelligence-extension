@@ -292,32 +292,36 @@ export function TrendsContent({
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
-          title="Repositorios Analizados"
+          label="Repositorios Analizados"
           value="18,450+"
           hint="En los últimos 30 días"
-          icon={Flame}
-          trend="up"
+          icon={<Flame className="size-4" />}
+          accent="amber"
+          badge="Global"
         />
         <KpiCard
-          title="Tasa de Aciertos Caché (Hit)"
+          label="Tasa de Aciertos Caché (Hit)"
           value="74.2%"
           hint="Respuestas servidas directo desde Cloudflare KV"
-          icon={Database}
-          trend="up"
+          icon={<Database className="size-4" />}
+          accent="emerald"
+          badge="KV Edge"
         />
         <KpiCard
-          title="Aceleración de Latencia"
+          label="Aceleración de Latencia"
           value="12.5x Más Rápido"
           hint="145ms en Caché vs ~1,850ms llamada LLM"
-          icon={Zap}
-          trend="up"
+          icon={<Zap className="size-4" />}
+          accent="sky"
+          badge="145ms"
         />
         <KpiCard
-          title="Pre-Warming Automático"
+          label="Pre-Warming Automático"
           value={config.autoPrewarmTopRepos ? 'Activo (Diario)' : 'Pausado'}
           hint={`Objetivo: Top ${config.targetTopCount} repositorios`}
-          icon={Sparkles}
-          trend={config.autoPrewarmTopRepos ? 'up' : 'neutral'}
+          icon={<Sparkles className="size-4" />}
+          accent="purple"
+          badge={config.autoPrewarmTopRepos ? 'Cron ON' : 'Pausado'}
         />
       </div>
 

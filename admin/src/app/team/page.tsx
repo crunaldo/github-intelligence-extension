@@ -204,31 +204,31 @@ export function TeamContent({
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
-          title="Miembros del Panel"
+          label="Miembros del Panel"
           value={config.members.length.toString()}
           hint="Administradores y operadores activos"
-          icon={Users}
+          icon={<Users className="size-4" />}
           trend="up"
         />
         <KpiCard
-          title="Super Administradores"
+          label="Super Administradores"
           value={superAdminsCount.toString()}
           hint="Control total de claves y finanzas"
-          icon={ShieldCheck}
+          icon={<ShieldCheck className="size-4" />}
           trend="neutral"
         />
         <KpiCard
-          title="Ingenieros / Developers"
+          label="Ingenieros / Developers"
           value={devsCount.toString()}
           hint="Gestión técnica de IA, prompts y flags"
-          icon={UserCheck}
+          icon={<UserCheck className="size-4" />}
           trend="up"
         />
         <KpiCard
-          title="Autenticación 2FA"
+          label="Autenticación 2FA"
           value={config.enforce2fa ? 'Obligatoria' : 'Opcional'}
           hint={config.enforce2fa ? 'Seguridad estricta activada' : 'Recomendado activar'}
-          icon={Lock}
+          icon={<Lock className="size-4" />}
           trend={config.enforce2fa ? 'up' : 'down'}
         />
       </div>
