@@ -126,15 +126,42 @@ export function ExportContent({
           },
           ...prev
         ])
+      } else if (dataset === 'audit_logs') {
+        const configMap = await fetchRemoteConfigsMap(client)
+        const auditLogs = Array.isArray(configMap.data?.admin_audit_logs)
+          ? (configMap.data.admin_audit_logs as Record<string, unknown>[])
+          : []
+        rows = auditLogs.length > 0
+          ? auditLogs
+          : [{ id: 'sample-1', dataset, note: 'Sin registros de auditoría aún', exportedAt: new Date().toISOString() }]
+
+        const content =
+          format === 'json' ? JSON.stringify(rows, null, 2) : convertToCSV(rows)
+        const mime = format === 'json' ? 'application/json' : 'text/csv;charset=utf-8;'
+
+        triggerDownload(filename, content, mime)
+
+        setExportHistory((prev) => [
+          {
+            id: `exp-${Date.now()}`,
+            dataset,
+            format,
+            rowCount: rows.length,
+            fileSizeBytes: content.length,
+            exportedAt: new Date().toISOString(),
+            exportedBy: session.user.email
+          },
+          ...prev
+        ])
       } else {
         // Query from Supabase corresponding table
         const tableName =
           dataset === 'users'
-            ? 'users'
+            ? 'profiles'
             : dataset === 'csat_feedback'
-            ? 'feedback'
-            : dataset === 'audit_logs'
-            ? 'admin_audit_logs'
+            ? 'user_feedback'
+            : dataset === 'queries'
+            ? 'query_logs'
             : 'repo_analyses'
 
         try {

@@ -43,9 +43,13 @@ const ALLOWED_CONFIG_KEYS = new Set<string>([
   'extension_release',
   'in_app_notifications',
   'team_rbac',
+  'team_rbac_config',
   'cost_budget',
+  'finops_budget_config',
   'llm_pricing',
-  'trends_config'
+  'finops_pricing_models',
+  'trends_config',
+  'cache_prewarm_config'
 ])
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -244,28 +248,32 @@ function validateRemoteConfigEntry(key: string, value: unknown): string | null {
       return null
     }
 
-    case 'team_rbac': {
+    case 'team_rbac':
+    case 'team_rbac_config': {
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return 'team_rbac must be a JSON object'
       }
       return null
     }
 
-    case 'cost_budget': {
+    case 'cost_budget':
+    case 'finops_budget_config': {
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return 'cost_budget must be a JSON object'
       }
       return null
     }
 
-    case 'llm_pricing': {
+    case 'llm_pricing':
+    case 'finops_pricing_models': {
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return 'llm_pricing must be a JSON object'
       }
       return null
     }
 
-    case 'trends_config': {
+    case 'trends_config':
+    case 'cache_prewarm_config': {
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return 'trends_config must be a JSON object'
       }

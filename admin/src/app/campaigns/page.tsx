@@ -73,10 +73,15 @@ export function CampaignsContent({
     const res = await fetchRemoteConfigsMap(client)
     setLoading(false)
 
-    if (res.data?.campaign_banners && typeof res.data.campaign_banners === 'object') {
-      const saved = res.data.campaign_banners as Partial<CampaignBannersConfig>
-      if (Array.isArray(saved.banners)) {
-        setConfig({ banners: saved.banners })
+    if (res.data?.campaign_banners) {
+      const raw = res.data.campaign_banners
+      const bannersList = Array.isArray(raw)
+        ? raw
+        : raw && typeof raw === 'object' && Array.isArray((raw as any).banners)
+          ? (raw as any).banners
+          : []
+      if (bannersList.length > 0) {
+        setConfig({ banners: bannersList })
       }
     }
 

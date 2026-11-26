@@ -149,8 +149,9 @@ export function TrendsContent({
     setLoading(true)
     const res = await fetchRemoteConfigsMap(client)
 
-    if (res.data?.cache_prewarm_config && typeof res.data.cache_prewarm_config === 'object') {
-      const saved = res.data.cache_prewarm_config as Partial<CachePrewarmConfig>
+    const rawPrewarm = res.data?.cache_prewarm_config || res.data?.trends_config
+    if (rawPrewarm && typeof rawPrewarm === 'object') {
+      const saved = rawPrewarm as Partial<CachePrewarmConfig>
       setConfig((prev) => ({
         ...prev,
         ...saved,
