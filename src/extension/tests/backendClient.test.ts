@@ -803,6 +803,61 @@ describe('Extension Backend Client & Auth', () => {
       expect(cfg.campaignBanners?.[0].targetTier).toBe('free')
     })
 
+    it('parses and normalizes extension_release (whatsNewModal & string highlights) and in_app_notifications (actionText & enabled)', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          extension_release: {
+            minSupportedVersion: '1.0.0',
+            latestVersion: '1.2.0',
+            forceUpdate: false,
+            downloadUrl: 'https://github.com/crunaldo/github-project-intelligence/releases',
+            whatsNewModal: {
+              enabled: true,
+              version: '1.2.0',
+              title: '¡Novedades en GitHub Intelligence v1.2.0! 🚀',
+              description: 'Nuevos modelos y notificaciones.',
+              highlights: [
+                'Centro de Notificaciones y Avisos de la Comunidad',
+                'Soporte para DeepSeek Chat & Gemini 2.0 Flash'
+              ],
+              actionButtonText: '¡Entendido!',
+              actionButtonUrl: 'https://github.com'
+            }
+          },
+          in_app_notifications: [
+            {
+              id: 'notif_welcome_v12',
+              title: 'Bienvenido a GitHub Intelligence v1.2',
+              message: 'Ahora puedes consultar explicaciones con 1-click.',
+              type: 'feature',
+              targetTier: 'all',
+              actionText: 'Ver Documentación',
+              actionUrl: 'https://github.com',
+              enabled: true
+            }
+          ]
+        }),
+      }) as unknown as typeof fetch
+
+      const cfg = await fetchRemoteConfig({ forceRefresh: true })
+      expect(cfg.extensionRelease).toBeDefined()
+      expect(cfg.extensionRelease?.whatsNew.title).toBe('¡Novedades en GitHub Intelligence v1.2.0! 🚀')
+      expect(cfg.extensionRelease?.whatsNew.summary).toBe('Nuevos modelos y notificaciones.')
+      expect(cfg.extensionRelease?.whatsNew.ctaText).toBe('¡Entendido!')
+      expect(cfg.extensionRelease?.whatsNew.ctaUrl).toBe('https://github.com')
+      expect(cfg.extensionRelease?.whatsNew.highlights).toHaveLength(2)
+      expect(cfg.extensionRelease?.whatsNew.highlights[0].title).toBe('Centro de Notificaciones y Avisos de la Comunidad')
+      expect(cfg.extensionRelease?.updateUrl).toBe('https://github.com/crunaldo/github-project-intelligence/releases')
+
+      expect(cfg.inAppNotifications).toBeDefined()
+      expect(cfg.inAppNotifications).toHaveLength(1)
+      expect(cfg.inAppNotifications?.[0].id).toBe('notif_welcome_v12')
+      expect(cfg.inAppNotifications?.[0].actionLabel).toBe('Ver Documentación')
+      expect(cfg.inAppNotifications?.[0].active).toBe(true)
+    })
+
     it('bypasses stripped cache entries lacking architectureDiagram when requester is Pro', async () => {
       // 1. First fetch as free user: returns summary without architectureDiagram
       await saveAuthSession({

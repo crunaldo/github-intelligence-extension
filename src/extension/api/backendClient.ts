@@ -664,33 +664,89 @@ export async function fetchRemoteConfig(options?: { forceRefresh?: boolean }): P
   const rawRelease = (raw.extension_release ?? raw.extensionRelease) as Record<string, unknown> | undefined
   let extensionRelease: ExtensionReleaseConfig | undefined = undefined
   if (rawRelease && typeof rawRelease === 'object') {
-    const rawWhatsNew = (rawRelease.whatsNew ?? rawRelease.whats_new) as Record<string, unknown> | undefined
+    const rawWhatsNew = (rawRelease.whatsNew ?? rawRelease.whats_new ?? (rawRelease as any).whatsNewModal) as Record<string, unknown> | undefined
+
+    let normalizedHighlights: WhatsNewHighlight[] = []
+    if (Array.isArray(rawWhatsNew?.highlights)) {
+      normalizedHighlights = rawWhatsNew.highlights.map((h: any, idx: number) => {
+        if (typeof h === 'string') {
+          return {
+            id: `hl-${idx + 1}`,
+            icon: 'sparkles',
+            title: h,
+            description: ''
+          }
+        }
+        return {
+          id: String(h?.id || `hl-${idx + 1}`),
+          icon: String(h?.icon || 'sparkles'),
+          title: String(h?.title || ''),
+          description: String(h?.description || '')
+        }
+      })
+    }
+
     extensionRelease = {
       minSupportedVersion: String(rawRelease.minSupportedVersion ?? rawRelease.min_supported_version ?? '1.2.0'),
       latestVersion: String(rawRelease.latestVersion ?? rawRelease.latest_version ?? '1.4.0'),
-      updateUrl: String(rawRelease.updateUrl ?? rawRelease.update_url ?? ''),
-      forceUpdateNotice: Boolean(rawRelease.forceUpdateNotice ?? rawRelease.force_update_notice ?? false),
-      forceUpdateMessage: typeof rawRelease.forceUpdateMessage === 'string' ? rawRelease.forceUpdateMessage : undefined,
+      updateUrl: String(rawRelease.updateUrl ?? rawRelease.update_url ?? (rawRelease as any).downloadUrl ?? ''),
+      forceUpdateNotice: Boolean(
+        rawRelease.forceUpdateNotice ?? rawRelease.force_update_notice ?? (rawRelease as any).forceUpdate ?? false
+      ),
+      forceUpdateMessage:
+        typeof rawRelease.forceUpdateMessage === 'string'
+          ? rawRelease.forceUpdateMessage
+          : typeof (rawRelease as any).force_update_message === 'string'
+            ? (rawRelease as any).force_update_message
+            : undefined,
       whatsNew: {
         enabled: Boolean(rawWhatsNew?.enabled ?? true),
-        version: String(rawWhatsNew?.version ?? '1.4.0'),
+        version: String(rawWhatsNew?.version ?? rawRelease.latestVersion ?? rawRelease.latest_version ?? '1.4.0'),
         releaseDate: String(rawWhatsNew?.releaseDate ?? rawWhatsNew?.release_date ?? ''),
         title: String(rawWhatsNew?.title ?? "¡Novedades en GitHub Intelligence!"),
-        summary: String(rawWhatsNew?.summary ?? ''),
-        highlights: Array.isArray(rawWhatsNew?.highlights) ? (rawWhatsNew?.highlights as WhatsNewHighlight[]) : [],
+        summary: String(rawWhatsNew?.summary ?? rawWhatsNew?.description ?? ''),
+        highlights: normalizedHighlights,
         blogUrl: typeof rawWhatsNew?.blogUrl === 'string' ? rawWhatsNew.blogUrl : undefined,
-        ctaText: typeof rawWhatsNew?.ctaText === 'string' ? rawWhatsNew.ctaText : undefined,
-        ctaUrl: typeof rawWhatsNew?.ctaUrl === 'string' ? rawWhatsNew.ctaUrl : undefined,
+        ctaText:
+          typeof rawWhatsNew?.ctaText === 'string'
+            ? rawWhatsNew.ctaText
+            : typeof (rawWhatsNew as any)?.actionButtonText === 'string'
+              ? (rawWhatsNew as any).actionButtonText
+              : undefined,
+        ctaUrl:
+          typeof rawWhatsNew?.ctaUrl === 'string'
+            ? rawWhatsNew.ctaUrl
+            : typeof (rawWhatsNew as any)?.actionButtonUrl === 'string'
+              ? (rawWhatsNew as any).actionButtonUrl
+              : undefined,
       }
     }
   }
 
   const rawNotifs = raw.in_app_notifications ?? raw.inAppNotifications
   let inAppNotifications: InAppNotificationItem[] = []
-  if (Array.isArray(rawNotifs)) {
-    inAppNotifications = rawNotifs as InAppNotificationItem[]
-  } else if (rawNotifs && typeof rawNotifs === 'object' && Array.isArray((rawNotifs as any).notifications)) {
-    inAppNotifications = (rawNotifs as any).notifications as InAppNotificationItem[]
+  const rawNotifList = Array.isArray(rawNotifs)
+    ? rawNotifs
+    : rawNotifs && typeof rawNotifs === 'object' && Array.isArray((rawNotifs as any).notifications)
+      ? (rawNotifs as any).notifications
+      : []
+
+  if (rawNotifList.length > 0) {
+    inAppNotifications = rawNotifList.map((item: any, idx: number) => ({
+      id: String(item.id || `notif-${idx + 1}`),
+      title: String(item.title || ''),
+      message: String(item.message || ''),
+      type: (item.type || 'info') as InAppNotificationType,
+      targetTier: (item.targetTier || 'all') as 'all' | 'free' | 'pro',
+      actionUrl: item.actionUrl || item.action_url || '',
+      actionLabel: item.actionLabel || item.actionText || item.action_label || '',
+      pinned: Boolean(item.pinned),
+      active: item.active !== false && item.enabled !== false,
+      createdAt: String(item.createdAt || item.created_at || ''),
+      expiresAt: item.expiresAt || item.expires_at || undefined,
+      readCount: Number(item.readCount || 0),
+      clickCount: Number(item.clickCount || 0)
+    }))
   }
 
   const config: RemoteConfig = {

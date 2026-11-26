@@ -578,6 +578,84 @@ describe('Admin API Handlers & Route Mounts', () => {
     )
     expect(validAuditLogsRes.status).toBe(200)
 
+    const validReleaseRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({
+          key: 'extension_release',
+          value: { minSupportedVersion: '1.2.0', latestVersion: '1.4.0', whatsNew: { enabled: true } }
+        })
+      }),
+      upperEnv
+    )
+    expect(validReleaseRes.status).toBe(200)
+
+    const validNotifsRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({
+          key: 'in_app_notifications',
+          value: { notifications: [{ id: 'notif-1', title: 'Test', active: true }] }
+        })
+      }),
+      upperEnv
+    )
+    expect(validNotifsRes.status).toBe(200)
+
+    const validTeamRbacRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({
+          key: 'team_rbac',
+          value: { members: [] }
+        })
+      }),
+      upperEnv
+    )
+    expect(validTeamRbacRes.status).toBe(200)
+
+    const validCostBudgetRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({
+          key: 'cost_budget',
+          value: { monthlyBudgetUsd: 100 }
+        })
+      }),
+      upperEnv
+    )
+    expect(validCostBudgetRes.status).toBe(200)
+
+    const validLlmPricingRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({
+          key: 'llm_pricing',
+          value: { geminiInputPerMillion: 0.1 }
+        })
+      }),
+      upperEnv
+    )
+    expect(validLlmPricingRes.status).toBe(200)
+
+    const validTrendsConfigRes = await handleAdminKvSyncRequest(
+      new Request('https://admin.local/api/admin/kv-sync', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-jwt' },
+        body: JSON.stringify({
+          key: 'trends_config',
+          value: { defaultSort: 'trending' }
+        })
+      }),
+      upperEnv
+    )
+    expect(validTrendsConfigRes.status).toBe(200)
+
     const validSyncRes = await handleAdminKvSyncRequest(
       new Request('https://admin.local/api/admin/kv-sync', {
         method: 'POST',

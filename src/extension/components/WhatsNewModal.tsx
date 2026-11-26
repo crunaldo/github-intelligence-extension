@@ -197,7 +197,7 @@ export function WhatsNewModal({ releaseConfig, forceOpen = false, onClose }: Wha
             {whatsNew.title || '¡Novedades en GitHub Intelligence!'}
           </h3>
           <p style={{ fontSize: 12, color: 'var(--text-secondary, #94a3b8)', lineHeight: 1.5, margin: 0 }}>
-            {whatsNew.summary}
+            {whatsNew.summary || (whatsNew as any).description}
           </p>
         </div>
 
@@ -241,9 +241,11 @@ export function WhatsNewModal({ releaseConfig, forceOpen = false, onClose }: Wha
                 <h5 style={{ fontSize: 12, fontWeight: 600, color: '#fff', margin: '0 0 2px 0' }}>
                   {h.title}
                 </h5>
-                <p style={{ fontSize: 11, color: 'var(--text-secondary, #94a3b8)', margin: 0, lineHeight: 1.4 }}>
-                  {h.description}
-                </p>
+                {h.description ? (
+                  <p style={{ fontSize: 11, color: 'var(--text-secondary, #94a3b8)', margin: 0, lineHeight: 1.4 }}>
+                    {h.description}
+                  </p>
+                ) : null}
               </div>
             </div>
           ))}

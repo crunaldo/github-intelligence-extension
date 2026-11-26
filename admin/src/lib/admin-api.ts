@@ -39,7 +39,13 @@ const ALLOWED_CONFIG_KEYS = new Set<string>([
   'telegram_alerts',
   'billing_config',
   'admin_audit_logs',
-  'feedback_locations'
+  'feedback_locations',
+  'extension_release',
+  'in_app_notifications',
+  'team_rbac',
+  'cost_budget',
+  'llm_pricing',
+  'trends_config'
 ])
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -220,6 +226,48 @@ function validateRemoteConfigEntry(key: string, value: unknown): string | null {
     case 'admin_audit_logs': {
       if (!Array.isArray(value)) {
         return 'admin_audit_logs must be an array of audit log entries'
+      }
+      return null
+    }
+
+    case 'extension_release': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'extension_release must be a JSON object'
+      }
+      return null
+    }
+
+    case 'in_app_notifications': {
+      if (!value || typeof value !== 'object') {
+        return 'in_app_notifications must be an object or array'
+      }
+      return null
+    }
+
+    case 'team_rbac': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'team_rbac must be a JSON object'
+      }
+      return null
+    }
+
+    case 'cost_budget': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'cost_budget must be a JSON object'
+      }
+      return null
+    }
+
+    case 'llm_pricing': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'llm_pricing must be a JSON object'
+      }
+      return null
+    }
+
+    case 'trends_config': {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'trends_config must be a JSON object'
       }
       return null
     }

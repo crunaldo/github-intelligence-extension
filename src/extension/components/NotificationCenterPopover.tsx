@@ -293,7 +293,7 @@ export function NotificationCenterPopover({
                       >
                         {n.message}
                       </p>
-                      {n.actionLabel && (
+                      {(n.actionLabel || (n as any).actionText) && (
                         <div
                           style={{
                             display: 'inline-flex',
@@ -305,7 +305,7 @@ export function NotificationCenterPopover({
                             marginTop: 4
                           }}
                         >
-                          <span>{n.actionLabel}</span>
+                          <span>{n.actionLabel || (n as any).actionText}</span>
                           <ArrowRight size={10} />
                         </div>
                       )}

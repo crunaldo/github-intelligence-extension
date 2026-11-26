@@ -60,20 +60,60 @@ export function ReleasesContent({
     setLoading(false)
 
     if (res.data?.extension_release && typeof res.data.extension_release === 'object') {
-      const saved = res.data.extension_release as Partial<ExtensionReleaseConfig>
+      const saved = res.data.extension_release as any
+      const rawWhatsNew = saved.whatsNew || saved.whats_new || saved.whatsNewModal || {}
+
+      let highlights = []
+      if (Array.isArray(rawWhatsNew.highlights)) {
+        highlights = rawWhatsNew.highlights.map((h: any, idx: number) => {
+          if (typeof h === 'string') {
+            return {
+              id: `hl-${idx + 1}`,
+              icon: 'sparkles',
+              title: h,
+              description: ''
+            }
+          }
+          return {
+            id: String(h.id || `hl-${idx + 1}`),
+            icon: String(h.icon || 'sparkles'),
+            title: String(h.title || ''),
+            description: String(h.description || '')
+          }
+        })
+      } else {
+        highlights = [...DEFAULT_EXTENSION_RELEASE_CONFIG.whatsNew.highlights]
+      }
+
       setConfig({
-        minSupportedVersion: saved.minSupportedVersion || DEFAULT_EXTENSION_RELEASE_CONFIG.minSupportedVersion,
-        latestVersion: saved.latestVersion || DEFAULT_EXTENSION_RELEASE_CONFIG.latestVersion,
-        updateUrl: saved.updateUrl || DEFAULT_EXTENSION_RELEASE_CONFIG.updateUrl,
-        forceUpdateNotice: Boolean(saved.forceUpdateNotice),
+        minSupportedVersion:
+          saved.minSupportedVersion || saved.min_supported_version || DEFAULT_EXTENSION_RELEASE_CONFIG.minSupportedVersion,
+        latestVersion:
+          saved.latestVersion || saved.latest_version || DEFAULT_EXTENSION_RELEASE_CONFIG.latestVersion,
+        updateUrl:
+          saved.updateUrl || saved.update_url || saved.downloadUrl || DEFAULT_EXTENSION_RELEASE_CONFIG.updateUrl,
+        forceUpdateNotice: Boolean(
+          saved.forceUpdateNotice ?? saved.force_update_notice ?? saved.forceUpdate
+        ),
         forceUpdateMessage:
-          saved.forceUpdateMessage || DEFAULT_EXTENSION_RELEASE_CONFIG.forceUpdateMessage,
+          saved.forceUpdateMessage || saved.force_update_message || DEFAULT_EXTENSION_RELEASE_CONFIG.forceUpdateMessage,
         whatsNew: {
-          ...DEFAULT_EXTENSION_RELEASE_CONFIG.whatsNew,
-          ...(saved.whatsNew || {}),
-          highlights: Array.isArray(saved.whatsNew?.highlights)
-            ? saved.whatsNew.highlights
-            : [...DEFAULT_EXTENSION_RELEASE_CONFIG.whatsNew.highlights]
+          enabled: rawWhatsNew.enabled !== false,
+          version: String(
+            rawWhatsNew.version || saved.latestVersion || DEFAULT_EXTENSION_RELEASE_CONFIG.whatsNew.version
+          ),
+          releaseDate: String(
+            rawWhatsNew.releaseDate || rawWhatsNew.release_date || DEFAULT_EXTENSION_RELEASE_CONFIG.whatsNew.releaseDate
+          ),
+          title: String(rawWhatsNew.title || DEFAULT_EXTENSION_RELEASE_CONFIG.whatsNew.title),
+          summary: String(
+            rawWhatsNew.summary || rawWhatsNew.description || DEFAULT_EXTENSION_RELEASE_CONFIG.whatsNew.summary
+          ),
+          highlights,
+          blogUrl: rawWhatsNew.blogUrl || rawWhatsNew.blog_url || '',
+          ctaText:
+            rawWhatsNew.ctaText || rawWhatsNew.actionButtonText || DEFAULT_EXTENSION_RELEASE_CONFIG.whatsNew.ctaText,
+          ctaUrl: rawWhatsNew.ctaUrl || rawWhatsNew.actionButtonUrl || ''
         }
       })
     }
@@ -87,9 +127,37 @@ export function ReleasesContent({
     setSaving(true)
     setStatus(null)
 
+    const compatiblePayload = {
+      ...config,
+      min_supported_version: config.minSupportedVersion,
+      latest_version: config.latestVersion,
+      update_url: config.updateUrl,
+      downloadUrl: config.updateUrl,
+      forceUpdate: config.forceUpdateNotice,
+      force_update_notice: config.forceUpdateNotice,
+      force_update_message: config.forceUpdateMessage,
+      whatsNew: {
+        ...config.whatsNew,
+        description: config.whatsNew.summary,
+        actionButtonText: config.whatsNew.ctaText,
+        actionButtonUrl: config.whatsNew.ctaUrl
+      },
+      whatsNewModal: {
+        enabled: config.whatsNew.enabled,
+        version: config.whatsNew.version,
+        releaseDate: config.whatsNew.releaseDate,
+        title: config.whatsNew.title,
+        description: config.whatsNew.summary,
+        summary: config.whatsNew.summary,
+        highlights: config.whatsNew.highlights,
+        actionButtonText: config.whatsNew.ctaText,
+        actionButtonUrl: config.whatsNew.ctaUrl
+      }
+    }
+
     const syncRes = await dispatchServerConfigSync(
       'extension_release',
-      config,
+      compatiblePayload,
       session.accessToken
     )
 

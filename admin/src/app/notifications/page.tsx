@@ -72,10 +72,31 @@ export function NotificationsContent({
     const res = await fetchRemoteConfigsMap(client)
     setLoading(false)
 
-    if (res.data?.in_app_notifications && typeof res.data.in_app_notifications === 'object') {
-      const saved = res.data.in_app_notifications as Partial<InAppNotificationsConfig>
-      if (Array.isArray(saved.notifications)) {
-        setConfig({ notifications: saved.notifications })
+    if (res.data?.in_app_notifications) {
+      const raw = res.data.in_app_notifications
+      const rawList = Array.isArray(raw)
+        ? raw
+        : raw && typeof raw === 'object' && Array.isArray((raw as any).notifications)
+          ? (raw as any).notifications
+          : []
+
+      if (rawList.length > 0) {
+        const normalized: InAppNotificationItem[] = rawList.map((item: any, idx: number) => ({
+          id: String(item.id || `notif-${idx + 1}`),
+          title: String(item.title || ''),
+          message: String(item.message || ''),
+          type: (item.type || 'info') as InAppNotificationType,
+          targetTier: (item.targetTier || 'all') as 'all' | 'free' | 'pro',
+          actionUrl: item.actionUrl || item.action_url || '',
+          actionLabel: item.actionLabel || item.actionText || item.action_label || '',
+          pinned: Boolean(item.pinned),
+          active: item.active !== false && item.enabled !== false,
+          createdAt: String(item.createdAt || item.created_at || new Date().toISOString()),
+          expiresAt: item.expiresAt || item.expires_at || undefined,
+          readCount: Number(item.readCount || 0),
+          clickCount: Number(item.clickCount || 0)
+        }))
+        setConfig({ notifications: normalized })
       }
     }
   }, [client])
@@ -88,7 +109,12 @@ export function NotificationsContent({
     setSaving(true)
     setStatus(null)
 
-    const newConfig: InAppNotificationsConfig = { notifications: updatedList }
+    const compatibleList = updatedList.map((item) => ({
+      ...item,
+      enabled: item.active,
+      actionText: item.actionLabel || ''
+    }))
+    const newConfig: InAppNotificationsConfig = { notifications: compatibleList }
     setConfig(newConfig)
 
     const syncRes = await dispatchServerConfigSync(
