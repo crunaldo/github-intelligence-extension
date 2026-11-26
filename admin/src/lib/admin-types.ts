@@ -461,3 +461,400 @@ export interface UserFeedbackItem {
   location?: string
 }
 
+// ============================================================================
+// 1. EXTENSION RELEASES & "WHAT'S NEW" MANAGER (/releases)
+// ============================================================================
+
+export interface WhatsNewHighlight {
+  id: string
+  icon: string // emoji or Lucide icon name, e.g. "sparkles", "zap", "shield", "rocket"
+  title: string
+  description: string
+}
+
+export interface WhatsNewModalConfig {
+  enabled: boolean
+  version: string
+  releaseDate: string
+  title: string
+  summary: string
+  highlights: WhatsNewHighlight[]
+  blogUrl?: string
+  ctaText?: string
+  ctaUrl?: string
+}
+
+export interface ExtensionReleaseConfig {
+  minSupportedVersion: string
+  latestVersion: string
+  updateUrl: string
+  forceUpdateNotice: boolean
+  forceUpdateMessage?: string
+  whatsNew: WhatsNewModalConfig
+}
+
+export const DEFAULT_EXTENSION_RELEASE_CONFIG: ExtensionReleaseConfig = {
+  minSupportedVersion: '1.2.0',
+  latestVersion: '1.4.0',
+  updateUrl: 'https://chromewebstore.google.com/detail/github-project-intelligence',
+  forceUpdateNotice: false,
+  forceUpdateMessage: 'Hay una actualización crítica de la extensión requerida para continuar disfrutando del análisis por IA.',
+  whatsNew: {
+    enabled: true,
+    version: '1.4.0',
+    releaseDate: '2026-11-26',
+    title: '¡Bienvenido a GitHub Intelligence v1.4!',
+    summary: 'Descubre diagramas de arquitectura en tiempo real, auditoría profunda de dependencias y la nueva Mascota IA integrada.',
+    highlights: [
+      {
+        id: 'h1',
+        icon: 'sparkles',
+        title: 'Mascota Asistente en Dock',
+        description: 'Chatea interactivamente con la mascota de ingeniería para resolver dudas de cualquier repositorio.'
+      },
+      {
+        id: 'h2',
+        icon: 'zap',
+        title: 'Diagramas Mermaid Interactivos',
+        description: 'Visualiza la arquitectura del código, capas de datos y flujo de peticiones en 1 solo clic.'
+      },
+      {
+        id: 'h3',
+        icon: 'shield',
+        title: 'Auditoría de Seguridad & Stack',
+        description: 'Evaluación instantánea de salud, compatibilidad de hardware local y posibles cuellos de botella.'
+      }
+    ],
+    blogUrl: 'https://github.com',
+    ctaText: '¡Comenzar a Explorar!',
+    ctaUrl: ''
+  }
+}
+
+// ============================================================================
+// 2. FINOPS & AI COST ANALYTICS (/costs)
+// ============================================================================
+
+export interface ProviderPricingModel {
+  provider: ProviderName
+  modelName: string
+  inputCostPerMillion: number // USD
+  outputCostPerMillion: number // USD
+  notes?: string
+}
+
+export const DEFAULT_PROVIDER_PRICING: Record<ProviderName, ProviderPricingModel> = {
+  gemini: {
+    provider: 'gemini',
+    modelName: 'gemini-2.5-flash',
+    inputCostPerMillion: 0.15,
+    outputCostPerMillion: 0.60,
+    notes: 'Google AI Studio: Alta velocidad y bajo coste'
+  },
+  groq: {
+    provider: 'groq',
+    modelName: 'llama-3.3-70b-versatile',
+    inputCostPerMillion: 0.59,
+    outputCostPerMillion: 0.79,
+    notes: 'Groq LPU: Máxima velocidad de inferencia'
+  },
+  cfAi: {
+    provider: 'cfAi',
+    modelName: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+    inputCostPerMillion: 0.35,
+    outputCostPerMillion: 0.55,
+    notes: 'Cloudflare Workers AI en el Edge'
+  },
+  openRouter: {
+    provider: 'openRouter',
+    modelName: 'deepseek/deepseek-chat',
+    inputCostPerMillion: 0.14,
+    outputCostPerMillion: 0.28,
+    notes: 'OpenRouter DeepSeek V3: Eficiencia extrema'
+  }
+}
+
+export interface FinOpsBudgetConfig {
+  monthlyBudgetUsd: number
+  dailyBudgetUsd: number
+  alertThresholdPercent: number
+  hardStopEnabled: boolean
+  notifyViaTelegram: boolean
+  estimatedAvgInputTokensPerRepo: number
+  estimatedAvgOutputTokensPerRepo: number
+}
+
+export const DEFAULT_FINOPS_BUDGET_CONFIG: FinOpsBudgetConfig = {
+  monthlyBudgetUsd: 150,
+  dailyBudgetUsd: 8,
+  alertThresholdPercent: 80,
+  hardStopEnabled: false,
+  notifyViaTelegram: true,
+  estimatedAvgInputTokensPerRepo: 2800,
+  estimatedAvgOutputTokensPerRepo: 1200
+}
+
+export interface ProviderTokenUsageStats {
+  provider: ProviderName
+  requestCount: number
+  inputTokens: number
+  outputTokens: number
+  totalCostUsd: number
+  avgLatencyMs: number
+}
+
+// ============================================================================
+// 3. REPOSITORY INTELLIGENCE LEADERBOARD & CACHE PRE-WARMING (/trends)
+// ============================================================================
+
+export interface RepoTrendItem {
+  id: string
+  repo: string // e.g. "facebook/react"
+  analysisCount: number
+  lastAnalyzedAt: string
+  primaryLanguage: string
+  stars?: number
+  cached: boolean
+  cacheExpiresAt?: string
+  avgResponseTimeMs: number
+  preferredProvider?: ProviderName
+}
+
+export interface CachePrewarmConfig {
+  autoPrewarmTopRepos: boolean
+  cronSchedule: 'hourly' | 'daily_midnight' | 'weekly'
+  targetTopCount: number
+  preferredProvider: ProviderName
+  lastPrewarmRun?: string
+  lastPrewarmSuccessCount?: number
+  customRepoList: string[]
+}
+
+export const DEFAULT_CACHE_PREWARM_CONFIG: CachePrewarmConfig = {
+  autoPrewarmTopRepos: true,
+  cronSchedule: 'daily_midnight',
+  targetTopCount: 15,
+  preferredProvider: 'gemini',
+  lastPrewarmRun: '',
+  lastPrewarmSuccessCount: 0,
+  customRepoList: [
+    'facebook/react',
+    'vercel/next.js',
+    'tailwindlabs/tailwindcss',
+    'shadcn-ui/ui',
+    'astral-sh/uv',
+    'vuejs/core',
+    'oven-sh/bun',
+    'denoland/deno',
+    'angular/angular',
+    'microsoft/vscode'
+  ]
+}
+
+// ============================================================================
+// 4. IN-APP NOTIFICATION CENTER & ANNOUNCEMENTS (/notifications)
+// ============================================================================
+
+export type InAppNotificationType = 'info' | 'feature' | 'warning' | 'announcement' | 'tip'
+
+export interface InAppNotificationItem {
+  id: string
+  title: string
+  message: string
+  type: InAppNotificationType
+  targetTier: 'all' | 'free' | 'pro'
+  actionUrl?: string
+  actionLabel?: string
+  pinned: boolean
+  active: boolean
+  createdAt: string
+  expiresAt?: string
+  readCount?: number
+  clickCount?: number
+}
+
+export interface InAppNotificationsConfig {
+  notifications: InAppNotificationItem[]
+}
+
+export const DEFAULT_IN_APP_NOTIFICATIONS_CONFIG: InAppNotificationsConfig = {
+  notifications: [
+    {
+      id: 'notif-welcome-v14',
+      title: '¡Nueva versión 1.4 disponible!',
+      message: 'Hemos agregado diagramas de arquitectura interactivos y chat con la mascota en repositorios públicos.',
+      type: 'feature',
+      targetTier: 'all',
+      actionUrl: 'https://github.com',
+      actionLabel: 'Ver novedades',
+      pinned: true,
+      active: true,
+      createdAt: '2026-11-26T00:00:00.000Z',
+      readCount: 1420,
+      clickCount: 312
+    },
+    {
+      id: 'notif-pro-black-friday',
+      title: 'Descuento Especial Pro: 50% OFF',
+      message: 'Usa el cupón GITHUBPRO en el checkout para obtener análisis ilimitados y auditorías profundas.',
+      type: 'announcement',
+      targetTier: 'free',
+      actionUrl: '#upgrade',
+      actionLabel: 'Aprovechar 50% OFF',
+      pinned: false,
+      active: true,
+      createdAt: '2026-11-25T12:00:00.000Z',
+      expiresAt: '2026-12-05T23:59:59.000Z',
+      readCount: 980,
+      clickCount: 184
+    }
+  ]
+}
+
+// ============================================================================
+// 5. TEAM RBAC & ACCESS MANAGEMENT (/team)
+// ============================================================================
+
+export type AdminRole = 'super_admin' | 'developer' | 'marketing_support' | 'analyst_read_only'
+
+export type AdminPermission =
+  | 'all'
+  | 'manage_keys'
+  | 'manage_prompts'
+  | 'manage_flags'
+  | 'manage_campaigns'
+  | 'manage_billing'
+  | 'manage_releases'
+  | 'manage_notifications'
+  | 'manage_team'
+  | 'view_analytics'
+  | 'export_data'
+
+export interface RolePermissionDefinition {
+  role: AdminRole
+  label: string
+  badgeColor: string
+  description: string
+  permissions: AdminPermission[]
+}
+
+export const ADMIN_ROLE_DEFINITIONS: Record<AdminRole, RolePermissionDefinition> = {
+  super_admin: {
+    role: 'super_admin',
+    label: 'Super Admin',
+    badgeColor: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+    description: 'Acceso total y sin restricciones a todos los módulos, claves, facturación y gestión de equipo.',
+    permissions: ['all']
+  },
+  developer: {
+    role: 'developer',
+    label: 'Ingeniero / Dev',
+    badgeColor: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+    description: 'Control técnico de API keys, modelos IA, prompts, feature flags, telemetría y caché.',
+    permissions: [
+      'manage_keys',
+      'manage_prompts',
+      'manage_flags',
+      'manage_releases',
+      'view_analytics',
+      'export_data'
+    ]
+  },
+  marketing_support: {
+    role: 'marketing_support',
+    label: 'Marketing & Soporte',
+    badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    description: 'Gestión de banners del dock, notificaciones in-app, cupones, facturación y feedback CSAT.',
+    permissions: [
+      'manage_campaigns',
+      'manage_notifications',
+      'manage_billing',
+      'view_analytics'
+    ]
+  },
+  analyst_read_only: {
+    role: 'analyst_read_only',
+    label: 'Analista (Solo Lectura)',
+    badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    description: 'Visualización de telemetría, métricas de adopción, finanzas y exportación de reportes.',
+    permissions: ['view_analytics', 'export_data']
+  }
+}
+
+export interface TeamMemberItem {
+  id: string
+  email: string
+  name: string
+  role: AdminRole
+  avatarUrl?: string
+  status: 'active' | 'invited' | 'disabled'
+  createdAt: string
+  lastLoginAt?: string
+  department?: string
+}
+
+export interface TeamRbacConfig {
+  members: TeamMemberItem[]
+  enforce2fa: boolean
+  sessionTimeoutHours: number
+}
+
+export const DEFAULT_TEAM_RBAC_CONFIG: TeamRbacConfig = {
+  members: [
+    {
+      id: 'mem-1',
+      email: 'admin@github-intelligence.com',
+      name: 'Super Administrador',
+      role: 'super_admin',
+      status: 'active',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      lastLoginAt: '2026-11-26T09:45:00.000Z',
+      department: 'Dirección Técnica'
+    },
+    {
+      id: 'mem-2',
+      email: 'dev@github-intelligence.com',
+      name: 'Lead AI Engineer',
+      role: 'developer',
+      status: 'active',
+      createdAt: '2026-02-15T00:00:00.000Z',
+      lastLoginAt: '2026-11-25T18:20:00.000Z',
+      department: 'Inteligencia & Modelos'
+    },
+    {
+      id: 'mem-3',
+      email: 'growth@github-intelligence.com',
+      name: 'Growth & Marketing Manager',
+      role: 'marketing_support',
+      status: 'active',
+      createdAt: '2026-03-01T00:00:00.000Z',
+      lastLoginAt: '2026-11-24T14:10:00.000Z',
+      department: 'Marketing & Adquisición'
+    }
+  ],
+  enforce2fa: false,
+  sessionTimeoutHours: 24
+}
+
+// ============================================================================
+// 6. DATA EXPORT & BACKUP CENTER (/export)
+// ============================================================================
+
+export type ExportDatasetType =
+  | 'users'
+  | 'csat_feedback'
+  | 'audit_logs'
+  | 'query_logs'
+  | 'repo_trends'
+  | 'full_kv_snapshot'
+
+export interface ExportHistoryRecord {
+  id: string
+  dataset: ExportDatasetType
+  format: 'json' | 'csv'
+  rowCount: number
+  fileSizeBytes: number
+  exportedAt: string
+  exportedBy: string
+}
+

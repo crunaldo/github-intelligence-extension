@@ -83,6 +83,8 @@ import { GitHubLoginGateCard } from '../components/GitHubLoginGateCard'
 import { DeepTechnicalAuditCard } from '../components/DeepTechnicalAuditCard'
 import { UserFeedbackWidget } from '../components/UserFeedbackWidget'
 import { CampaignBanner } from '../components/CampaignBanner'
+import { NotificationCenterPopover } from '../components/NotificationCenterPopover'
+import { WhatsNewModal } from '../components/WhatsNewModal'
 import {
   getGuestAnalysisCount,
   incrementGuestAnalysisCount,
@@ -642,11 +644,27 @@ export function SidepanelApp() {
 
   return (
     <div className="extension-sidepanel-container">
+      {/* What's New & Version Deprecation Modal */}
+      <WhatsNewModal releaseConfig={remoteConfig?.extensionRelease} />
+
       {/* Top Header */}
       <header className="ext-header">
         <ExtHeaderBrand tag="Side Panel" />
 
         <div className="ext-header-actions">
+          {/* In-App Notification Center Bell */}
+          <NotificationCenterPopover
+            notifications={remoteConfig?.inAppNotifications}
+            isPro={isPro}
+            onActionClick={(url) => {
+              if (url === '#upgrade' || url === '#pricing') {
+                setNav('settings')
+              } else {
+                window.open(url, '_blank')
+              }
+            }}
+          />
+
           {!session?.user?.id && (
             <span
               style={{

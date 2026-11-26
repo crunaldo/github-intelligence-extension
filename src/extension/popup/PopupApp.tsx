@@ -66,6 +66,8 @@ import { ArchitectureDiagramView } from '../components/ArchitectureDiagramView'
 import { DeepTechnicalAuditCard } from '../components/DeepTechnicalAuditCard'
 import { UserFeedbackWidget } from '../components/UserFeedbackWidget'
 import { CampaignBanner } from '../components/CampaignBanner'
+import { NotificationCenterPopover } from '../components/NotificationCenterPopover'
+import { WhatsNewModal } from '../components/WhatsNewModal'
 import { PackageInstallCommand } from '../components/PackageInstallCommand'
 import { ApiErrorCard } from '../components/ApiErrorCard'
 import { ExtHeaderBrand } from '../components/ExtHeaderBrand'
@@ -526,11 +528,27 @@ export function PopupApp() {
 
   return (
     <div className="extension-popup-container">
+      {/* What's New & Version Gate Modal */}
+      <WhatsNewModal releaseConfig={remoteConfig?.extensionRelease} />
+
       {/* Header */}
       <header className="ext-header">
-        <ExtHeaderBrand tag="v1.0" />
+        <ExtHeaderBrand tag="v1.4" />
 
         <div className="ext-header-actions">
+          {/* Notification Center Bell */}
+          <NotificationCenterPopover
+            notifications={remoteConfig?.inAppNotifications}
+            isPro={isPro}
+            onActionClick={(url) => {
+              if (url === '#upgrade' || url === '#pricing') {
+                setShowSettingsModal(true)
+              } else {
+                window.open(url, '_blank')
+              }
+            }}
+          />
+
           {!session?.user?.id && (
             <span
               style={{

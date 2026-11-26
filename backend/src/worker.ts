@@ -83,6 +83,8 @@ interface RemoteConfigResponse {
   advanced_system_settings?: Record<string, unknown>
   default_new_user_tier?: 'free' | 'pro'
   campaign_banners?: CampaignBannerItem[]
+  extension_release?: Record<string, unknown>
+  in_app_notifications?: unknown[]
 }
 
 const DEFAULT_ANALYSIS_MODULES: Record<string, ModuleAccessLevel> = {
@@ -396,7 +398,18 @@ async function ingestRepositoryContext(owner: string, repo: string, commitSha: s
 }
 
 async function readRemoteConfig(kv: KVNamespace): Promise<RemoteConfigResponse> {
-  const [freeRaw, proRaw, flagsRaw, modulesRaw, settingsRaw, defaultTierRaw, feedbackLocRaw, campaignsRaw] = await Promise.all([
+  const [
+    freeRaw,
+    proRaw,
+    flagsRaw,
+    modulesRaw,
+    settingsRaw,
+    defaultTierRaw,
+    feedbackLocRaw,
+    campaignsRaw,
+    releaseRaw,
+    notificationsRaw
+  ] = await Promise.all([
     kv.get('free_daily_limit'),
     kv.get('pro_daily_limit'),
     kv.get('feature_flags'),
@@ -404,7 +417,9 @@ async function readRemoteConfig(kv: KVNamespace): Promise<RemoteConfigResponse> 
     kv.get('advanced_system_settings'),
     kv.get('default_new_user_tier'),
     kv.get('feedback_locations'),
-    kv.get('campaign_banners')
+    kv.get('campaign_banners'),
+    kv.get('extension_release'),
+    kv.get('in_app_notifications')
   ])
 
   const defaults = {
@@ -495,6 +510,34 @@ async function readRemoteConfig(kv: KVNamespace): Promise<RemoteConfigResponse> 
     }
   }
 
+  let parsedRelease: Record<string, unknown> | undefined = undefined
+  if (releaseRaw) {
+    try {
+      const candidate: unknown = JSON.parse(releaseRaw)
+      if (candidate && typeof candidate === 'object') {
+        parsedRelease = candidate as Record<string, unknown>
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  let parsedNotifications: unknown[] = []
+  if (notificationsRaw) {
+    try {
+      const candidate: unknown = JSON.parse(notificationsRaw)
+      if (candidate && typeof candidate === 'object') {
+        parsedNotifications = Array.isArray((candidate as any).notifications)
+          ? (candidate as any).notifications
+          : Array.isArray(candidate)
+            ? candidate
+            : []
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
   return {
     free_daily_limit: parsePositiveInteger(freeRaw, DEFAULT_FREE_DAILY_LIMIT),
     pro_daily_limit: parsePositiveInteger(proRaw, DEFAULT_PRO_DAILY_LIMIT),
@@ -506,6 +549,8 @@ async function readRemoteConfig(kv: KVNamespace): Promise<RemoteConfigResponse> 
     analysis_modules: parsedModules,
     default_new_user_tier: defaultTierRaw === 'pro' ? 'pro' : 'free',
     campaign_banners: parsedCampaigns,
+    ...(parsedRelease ? { extension_release: parsedRelease } : {}),
+    ...(parsedNotifications.length > 0 ? { in_app_notifications: parsedNotifications } : {}),
     ...(parsedSettings ? { advanced_system_settings: parsedSettings } : {})
   }
 }

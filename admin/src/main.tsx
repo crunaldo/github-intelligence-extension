@@ -15,6 +15,12 @@ import AccessControlPage from './app/access/page'
 import AuditLogPage from './app/audit/page'
 import CampaignsPage from './app/campaigns/page'
 import BillingPage from './app/billing/page'
+import ReleasesPage from './app/releases/page'
+import CostsPage from './app/costs/page'
+import TrendsPage from './app/trends/page'
+import NotificationsPage from './app/notifications/page'
+import TeamPage from './app/team/page'
+import ExportPage from './app/export/page'
 
 function normalizePath(pathname: string): string {
   const cleaned = pathname.replace(/\/+$/, '')
@@ -83,6 +89,18 @@ function AdminAppRouter() {
       return <CampaignsPage />
     case '/billing':
       return <BillingPage />
+    case '/releases':
+      return <ReleasesPage />
+    case '/costs':
+      return <CostsPage />
+    case '/trends':
+      return <TrendsPage />
+    case '/notifications':
+      return <NotificationsPage />
+    case '/team':
+      return <TeamPage />
+    case '/export':
+      return <ExportPage />
     case '/audit':
       return <AuditLogPage />
     case '/users':

@@ -53,6 +53,52 @@ export interface CampaignBannerItem {
   priority?: number
 }
 
+export interface WhatsNewHighlight {
+  id: string
+  icon: string
+  title: string
+  description: string
+}
+
+export interface WhatsNewModalConfig {
+  enabled: boolean
+  version: string
+  releaseDate: string
+  title: string
+  summary: string
+  highlights: WhatsNewHighlight[]
+  blogUrl?: string
+  ctaText?: string
+  ctaUrl?: string
+}
+
+export interface ExtensionReleaseConfig {
+  minSupportedVersion: string
+  latestVersion: string
+  updateUrl: string
+  forceUpdateNotice: boolean
+  forceUpdateMessage?: string
+  whatsNew: WhatsNewModalConfig
+}
+
+export type InAppNotificationType = 'info' | 'feature' | 'warning' | 'announcement' | 'tip'
+
+export interface InAppNotificationItem {
+  id: string
+  title: string
+  message: string
+  type: InAppNotificationType
+  targetTier: 'all' | 'free' | 'pro'
+  actionUrl?: string
+  actionLabel?: string
+  pinned: boolean
+  active: boolean
+  createdAt: string
+  expiresAt?: string
+  readCount?: number
+  clickCount?: number
+}
+
 export interface RemoteConfig {
   freeDailyLimit: number
   proDailyLimit: number
@@ -65,6 +111,8 @@ export interface RemoteConfig {
   feedbackLocations?: FeedbackLocationsConfig
   analysisModules?: Record<string, ModuleAccessLevel>
   campaignBanners?: CampaignBannerItem[]
+  extensionRelease?: ExtensionReleaseConfig
+  inAppNotifications?: InAppNotificationItem[]
 }
 
 export class BackendApiError extends Error {
@@ -613,6 +661,38 @@ export async function fetchRemoteConfig(options?: { forceRefresh?: boolean }): P
     campaignBanners = (rawCampaigns as any).banners as CampaignBannerItem[]
   }
 
+  const rawRelease = (raw.extension_release ?? raw.extensionRelease) as Record<string, unknown> | undefined
+  let extensionRelease: ExtensionReleaseConfig | undefined = undefined
+  if (rawRelease && typeof rawRelease === 'object') {
+    const rawWhatsNew = (rawRelease.whatsNew ?? rawRelease.whats_new) as Record<string, unknown> | undefined
+    extensionRelease = {
+      minSupportedVersion: String(rawRelease.minSupportedVersion ?? rawRelease.min_supported_version ?? '1.2.0'),
+      latestVersion: String(rawRelease.latestVersion ?? rawRelease.latest_version ?? '1.4.0'),
+      updateUrl: String(rawRelease.updateUrl ?? rawRelease.update_url ?? ''),
+      forceUpdateNotice: Boolean(rawRelease.forceUpdateNotice ?? rawRelease.force_update_notice ?? false),
+      forceUpdateMessage: typeof rawRelease.forceUpdateMessage === 'string' ? rawRelease.forceUpdateMessage : undefined,
+      whatsNew: {
+        enabled: Boolean(rawWhatsNew?.enabled ?? true),
+        version: String(rawWhatsNew?.version ?? '1.4.0'),
+        releaseDate: String(rawWhatsNew?.releaseDate ?? rawWhatsNew?.release_date ?? ''),
+        title: String(rawWhatsNew?.title ?? "¡Novedades en GitHub Intelligence!"),
+        summary: String(rawWhatsNew?.summary ?? ''),
+        highlights: Array.isArray(rawWhatsNew?.highlights) ? (rawWhatsNew?.highlights as WhatsNewHighlight[]) : [],
+        blogUrl: typeof rawWhatsNew?.blogUrl === 'string' ? rawWhatsNew.blogUrl : undefined,
+        ctaText: typeof rawWhatsNew?.ctaText === 'string' ? rawWhatsNew.ctaText : undefined,
+        ctaUrl: typeof rawWhatsNew?.ctaUrl === 'string' ? rawWhatsNew.ctaUrl : undefined,
+      }
+    }
+  }
+
+  const rawNotifs = raw.in_app_notifications ?? raw.inAppNotifications
+  let inAppNotifications: InAppNotificationItem[] = []
+  if (Array.isArray(rawNotifs)) {
+    inAppNotifications = rawNotifs as InAppNotificationItem[]
+  } else if (rawNotifs && typeof rawNotifs === 'object' && Array.isArray((rawNotifs as any).notifications)) {
+    inAppNotifications = (rawNotifs as any).notifications as InAppNotificationItem[]
+  }
+
   const config: RemoteConfig = {
     freeDailyLimit: Number.isFinite(freeDailyLimit) ? freeDailyLimit : 15,
     proDailyLimit: Number.isFinite(proDailyLimit) ? proDailyLimit : 250,
@@ -627,6 +707,8 @@ export async function fetchRemoteConfig(options?: { forceRefresh?: boolean }): P
     feedbackLocations,
     analysisModules,
     campaignBanners,
+    extensionRelease,
+    inAppNotifications,
   }
 
   memoryRemoteConfig = { config, timestamp: Date.now() }

@@ -4011,3 +4011,34 @@ body {
   color: var(--brand-primary);
   background: rgba(255, 47, 90, 0.08);
 }
+
+/* Modal Overlay & Card (What's New, Version Gate) */
+.ext-modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 16px;
+  z-index: 9999;
+}
+
+.ext-modal-card {
+  width: 100%;
+  border-radius: 16px;
+  background: var(--bg-surface, #0f172a);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.55);
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+[data-theme='light'] .ext-modal-card {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.15);
+}

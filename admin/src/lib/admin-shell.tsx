@@ -5,14 +5,17 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  Bell,
   Bot,
   Boxes,
   Check,
   CheckCircle2,
   ChevronRight,
   Clock,
+  Coins,
   CreditCard,
   Database,
+  Download,
   ExternalLink,
   Eye,
   EyeOff,
@@ -28,6 +31,7 @@ import {
   Palette,
   Radio,
   RefreshCw,
+  Rocket,
   Search,
   Settings,
   Shield,
@@ -36,7 +40,9 @@ import {
   Sliders,
   Sparkles,
   Sun,
+  TrendingUp,
   User,
+  UserCheck,
   Users,
   X,
   Zap
@@ -149,6 +155,12 @@ export type AdminRoute =
   | '/flags'
   | '/cache'
   | '/settings'
+  | '/releases'
+  | '/costs'
+  | '/trends'
+  | '/notifications'
+  | '/team'
+  | '/export'
 
 export interface AdminShellRenderContext {
   client: AdminSupabaseClient
@@ -181,6 +193,8 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/', label: 'Dashboard General', icon: LayoutDashboard, badge: 'KPIs' },
       { href: '/telemetry', label: 'Telemetría & CSAT', icon: Activity, badge: 'Live' },
       { href: '/playground', label: 'AI Playground', icon: Bot, badge: 'Simulador' },
+      { href: '/costs', label: 'FinOps & Costos IA', icon: Coins, badge: 'Finanzas' },
+      { href: '/trends', label: 'Tendencias & Caché', icon: TrendingUp, badge: 'Top Repos' },
       { href: '/prompts', label: 'Prompts & Mascota', icon: Sparkles }
     ]
   },
@@ -190,20 +204,24 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/apis', label: 'API Keys & Health Check', icon: KeyRound, badge: 'Pool' },
       { href: '/modules', label: 'Módulos Free vs Pro', icon: Boxes },
       { href: '/access', label: 'Control de Acceso & VIP', icon: ShieldAlert, badge: 'Baneos' },
-      { href: '/users', label: 'Usuarios & Membresías', icon: Users }
+      { href: '/users', label: 'Usuarios & Membresías', icon: Users },
+      { href: '/team', label: 'Equipo & Roles RBAC', icon: UserCheck, badge: 'Equipo' }
     ]
   },
   {
-    label: 'Marketing & Facturación',
+    label: 'Marketing & Comunicación',
     items: [
-      { href: '/campaigns', label: 'Campañas & Banners Dock', icon: Megaphone, badge: 'Nuevo' },
+      { href: '/campaigns', label: 'Campañas & Banners Dock', icon: Megaphone },
+      { href: '/notifications', label: 'Notificaciones In-App', icon: Bell, badge: 'Push' },
+      { href: '/releases', label: "Versiones & What's New", icon: Rocket, badge: 'v1.4' },
       { href: '/billing', label: 'Facturación & Pasarelas', icon: CreditCard, badge: 'MRR' }
     ]
   },
   {
-    label: 'Sistema & Auditoría',
+    label: 'Sistema, Datos & Auditoría',
     items: [
       { href: '/audit', label: 'Registro de Auditoría', icon: Clock, badge: 'Audit' },
+      { href: '/export', label: 'Exportación & Backups', icon: Download, badge: 'GDPR' },
       { href: '/flags', label: 'Cuotas & Feature Flags', icon: Sliders },
       { href: '/cache', label: 'Explorador de Caché KV', icon: Database },
       { href: '/settings', label: 'Configuración & Telegram', icon: Settings }
