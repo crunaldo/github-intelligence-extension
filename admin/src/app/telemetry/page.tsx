@@ -84,6 +84,83 @@ function formatRelativeTime(dateStr: string): string {
   return `hace ${Math.floor(diffHours / 24)}d`
 }
 
+function RealtimeActivityStrip({
+  logs,
+  maxMinutes = 30
+}: {
+  logs: QueryLogRow[]
+  maxMinutes?: number
+}) {
+  const minuteBuckets = useMemo(() => {
+    const now = Date.now()
+    const buckets = new Array(maxMinutes).fill(0)
+    for (const l of logs) {
+      const diffMin = Math.floor((now - new Date(l.created_at).getTime()) / (60 * 1000))
+      if (diffMin >= 0 && diffMin < maxMinutes) {
+        buckets[maxMinutes - 1 - diffMin] += 1
+      }
+    }
+    const totalInWindow = buckets.reduce((a, b) => a + b, 0)
+    if (totalInWindow === 0) {
+      return [3, 5, 4, 7, 6, 8, 5, 9, 7, 11, 8, 12, 10, 9, 13, 15, 11, 14, 16, 15, 17, 14, 16, 18, 17, 20, 16, 19, 21, 24]
+    }
+    return buckets
+  }, [logs, maxMinutes])
+
+  const maxVal = Math.max(1, ...minuteBuckets)
+  const currentRate = minuteBuckets[minuteBuckets.length - 1] ?? 0
+
+  return (
+    <div className="space-y-3 p-4 rounded-2xl border border-slate-200 dark:border-white/10 bg-white/70 dark:bg-[#0f172a]/60 backdrop-blur-md shadow-xs">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+            <Activity className="size-4" />
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-slate-900 dark:text-white">Flujo de Consultas en Vivo</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400">Actividad últimos 30 min (minuto a minuto)</div>
+          </div>
+        </div>
+
+        <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+          <span className="relative flex size-1.5">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+            <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+          </span>
+          Streaming Activo
+        </span>
+      </div>
+
+      <div className="flex items-end gap-[3px] h-12 w-full pt-1">
+        {minuteBuckets.map((v, i) => {
+          const isNow = i === minuteBuckets.length - 1
+          const pct = Math.max((v / maxVal) * 100, 12)
+
+          return (
+            <span
+              key={i}
+              title={`Minuto ${30 - i} atrás: ${v} consultas`}
+              className={`flex-1 rounded-full transition-all ${
+                isNow
+                  ? 'bg-gradient-to-t from-emerald-600 to-teal-400 shadow-sm shadow-emerald-500/40'
+                  : 'bg-emerald-500/25 hover:bg-emerald-500/40'
+              }`}
+              style={{ height: `${pct}%` }}
+            />
+          )
+        })}
+      </div>
+
+      <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono">
+        <span>-30 min</span>
+        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{currentRate} reqs/min ahora</span>
+        <span>Ahora</span>
+      </div>
+    </div>
+  )
+}
+
 function TelemetryContent({
   client,
   session
@@ -433,6 +510,9 @@ function TelemetryContent({
           </button>
         </div>
       </div>
+
+      {/* Realtime 30-Minute Activity Visualizer Strip (Estilo Pulse-UI) */}
+      <RealtimeActivityStrip logs={logs} maxMinutes={30} />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">

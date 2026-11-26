@@ -11,6 +11,8 @@ import {
   ChevronRight,
   Database,
   ExternalLink,
+  Eye,
+  EyeOff,
   Flame,
   GitBranch,
   KeyRound,
@@ -210,6 +212,7 @@ export function AdminShell({
   const [logoVariant, setLogoVariant] = useState<string>(() => getStoredLogoVariant())
   const [emailInput, setEmailInput] = useState('')
   const [passwordInput, setPasswordInput] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -404,16 +407,33 @@ export function AdminShell({
   }
 
   // ---------------------------------------------------------------------------
-  // Pantalla de Inicio de Sesión (Limpia, Sin Bloques de Marketing)
+  // Pantalla de Inicio de Sesión (Estilo Pulse-UI: Glassmorphism + Textura Grain)
   // ---------------------------------------------------------------------------
   if (authStatus === 'unauthenticated') {
     return (
-      <div className="relative min-h-screen bg-slate-50 dark:bg-[#090d16] text-slate-900 dark:text-slate-100 flex flex-col justify-between overflow-hidden transition-colors duration-200">
-        {/* Dot pattern */}
-        <div className="pointer-events-none absolute inset-0 bg-dot-pattern [mask-image:radial-gradient(750px_circle_at_center,white,transparent)]" />
+      <div className="relative min-h-screen bg-slate-50 dark:bg-[#090d16] text-slate-900 dark:text-slate-100 flex flex-col justify-between overflow-hidden transition-colors duration-200 isolate">
+        {/* Background texture & Atmosphere — inspirado en Pulse-UI */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+          {/* Orbes de luz atmosféricos */}
+          <div className="absolute left-1/2 top-0 h-[500px] w-[720px] -translate-x-1/2 -translate-y-1/3 rounded-full bg-indigo-500/10 dark:bg-indigo-500/15 blur-3xl" />
+          <div className="absolute right-[10%] bottom-0 h-[380px] w-[380px] translate-y-1/3 rounded-full bg-purple-500/10 dark:bg-purple-500/15 blur-3xl" />
+          <div className="absolute left-[8%] bottom-1/4 h-[280px] w-[280px] rounded-full bg-cyan-500/10 dark:bg-cyan-500/10 blur-3xl" />
+
+          {/* Filtro procedural de grano analógico (Film Grain) */}
+          <svg className="absolute inset-0 h-full w-full opacity-[0.08] dark:opacity-[0.04]">
+            <filter id="pulse-auth-grain">
+              <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch" />
+              <feColorMatrix type="saturate" values="0" />
+            </filter>
+            <rect width="100%" height="100%" filter="url(#pulse-auth-grain)" />
+          </svg>
+
+          {/* Rejilla procedural sutil de 40px */}
+          <div className="absolute inset-0 [background-image:linear-gradient(to_right,rgba(15,23,42,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.06)_1px,transparent_1px)] dark:[background-image:linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:40px_40px]" />
+        </div>
 
         {/* Minimal Header */}
-        <header className="relative z-20 flex h-16 items-center justify-between px-6 lg:px-12 border-b border-slate-200 dark:border-white/5 bg-white/70 dark:bg-[#090d16]/70 backdrop-blur-md">
+        <header className="relative z-20 flex h-16 items-center justify-between px-6 lg:px-12 border-b border-slate-200/80 dark:border-white/5 bg-white/70 dark:bg-[#090d16]/70 backdrop-blur-md">
           <div className="flex items-center gap-3">
             <img
               src={currentLogo.src}
@@ -434,9 +454,9 @@ export function AdminShell({
           </div>
         </header>
 
-        {/* Centered Minimal Auth Card */}
+        {/* Centered Glassmorphic Auth Card */}
         <main className="relative z-10 flex flex-1 items-center justify-center p-6">
-          <div className="w-full max-w-[420px] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f172a]/90 backdrop-blur-xl p-8 shadow-xl dark:shadow-2xl space-y-6 hero-in">
+          <div className="w-full max-w-[420px] rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/85 dark:bg-[#0f172a]/85 backdrop-blur-xl p-8 shadow-2xl space-y-6 hero-in">
             
             {/* Header: Logo & Title */}
             <div className="flex flex-col items-center text-center space-y-3">
@@ -499,30 +519,32 @@ export function AdminShell({
               </div>
             )}
 
-            {/* GitHub OAuth Button */}
+            {/* GitHub OAuth Button con Logo Oficial SVG de GitHub */}
             <button
               type="button"
               onClick={() => void handleGitHubOAuthSignIn()}
               className="w-full flex items-center justify-center gap-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-700/50 dark:border-white/10 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition active:scale-[0.99]"
             >
-              <GitBranch className="size-4 text-indigo-400" />
-              Continuar con GitHub OAuth
+              <svg className="size-4.5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+                <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+              </svg>
+              <span>Continuar con GitHub</span>
             </button>
 
             {/* Divider */}
             <div className="relative flex items-center py-0.5">
               <div className="flex-grow border-t border-slate-200 dark:border-white/10" />
               <span className="mx-3 text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-mono">
-                o con email
+                o con credenciales
               </span>
               <div className="flex-grow border-t border-slate-200 dark:border-white/10" />
             </div>
 
-            {/* Email Form */}
+            {/* Email Form con Toggle de Contraseña Eye/EyeOff */}
             <form onSubmit={handleEmailSignIn} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                  Email
+                  Correo electrónico
                 </label>
                 <input
                   type="email"
@@ -538,20 +560,30 @@ export function AdminShell({
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                   Contraseña
                 </label>
-                <input
-                  type="password"
-                  required
-                  value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-[#090d16] px-3.5 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    placeholder="••••••••••••"
+                    className="w-full rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-[#090d16] pl-3.5 pr-10 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+                    aria-label={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                  >
+                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
               </div>
 
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-600/20 transition active:scale-[0.99]"
+                className="w-full rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-500/20 transition active:scale-[0.99]"
               >
                 {submitting ? 'Autenticando...' : 'Iniciar Sesión'}
               </button>
@@ -560,7 +592,7 @@ export function AdminShell({
         </main>
 
         {/* Minimal Footer */}
-        <footer className="relative z-20 flex h-14 items-center justify-between px-6 lg:px-12 border-t border-slate-200 dark:border-white/5 text-xs text-slate-500 dark:text-slate-500">
+        <footer className="relative z-20 flex h-14 items-center justify-between px-6 lg:px-12 border-t border-slate-200/80 dark:border-white/5 text-xs text-slate-500 dark:text-slate-500">
           <span>GitHub Intelligence &copy; {new Date().getFullYear()}</span>
           <span className="flex items-center gap-1.5">
             <Shield className="size-3.5 text-indigo-500" />
