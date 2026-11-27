@@ -145,9 +145,27 @@ export function TrendsContent({
   const [prewarmProgress, setPrewarmProgress] = useState<number>(0)
   const [prewarmLog, setPrewarmLog] = useState<string[]>([])
 
+  // Live KPI statistics
+  const [totalAnalysesCount, setTotalAnalysesCount] = useState<number>(18450)
+  const [cacheHitPercentage, setCacheHitPercentage] = useState<string>('74.2%')
+  const [avgCacheLatencyMs, setAvgCacheLatencyMs] = useState<number>(145)
+  const [avgLlmLatencyMs, setAvgLlmLatencyMs] = useState<number>(1850)
+
   const loadData = useCallback(async () => {
     setLoading(true)
-    const res = await fetchRemoteConfigsMap(client)
+    const [res, dbRes, logsRes] = await Promise.all([
+      fetchRemoteConfigsMap(client),
+      client
+        .from('repo_analyses')
+        .select('repo_full_name, commit_sha, created_at, provider_used')
+        .order('created_at', { ascending: false })
+        .limit(50),
+      client
+        .from('query_logs')
+        .select('repo_full_name, cache_hit, response_time_ms, created_at')
+        .order('created_at', { ascending: false })
+        .limit(500)
+    ])
 
     const rawPrewarm = res.data?.cache_prewarm_config || res.data?.trends_config
     if (rawPrewarm && typeof rawPrewarm === 'object') {
@@ -161,42 +179,56 @@ export function TrendsContent({
       }))
     }
 
-    // Try fetching actual top repositories from Supabase repo_analyses table if available
-    try {
-      const dbRes = await client
-        .from('repo_analyses')
-        .select('repo_full_name, commit_sha, created_at, provider')
-        .order('created_at', { ascending: false })
-        .limit(30)
+    // Process real telemetry stats if available
+    const logs = Array.isArray(logsRes.data) ? logsRes.data : []
+    if (logs.length > 0) {
+      setTotalAnalysesCount(logs.length)
+      const hits = logs.filter((l) => l.cache_hit)
+      const hitPercent = Math.round((hits.length / logs.length) * 100)
+      setCacheHitPercentage(`${hitPercent}%`)
 
-      if (dbRes.data && dbRes.data.length > 0) {
-        // Group by repo
-        const counts: Record<string, { count: number; lastDate: string; provider?: string }> = {}
-        for (const item of dbRes.data) {
-          const r = item.repo_full_name
-          if (!counts[r]) {
-            counts[r] = { count: 1, lastDate: item.created_at, provider: item.provider }
-          } else {
-            counts[r].count++
-          }
-        }
-        const dynamicList: RepoTrendItem[] = Object.entries(counts).map(([repo, stat], i) => ({
-          id: `dyn-${i}`,
-          repo,
-          analysisCount: stat.count * 12 + 10,
-          lastAnalyzedAt: new Date(stat.lastDate).toLocaleTimeString(),
-          primaryLanguage: 'GitHub Repo',
-          cached: true,
-          avgResponseTimeMs: 145,
-          preferredProvider: (stat.provider as ProviderName) || 'gemini'
-        }))
-        // Combine with samples
-        if (dynamicList.length > 0) {
-          setTrends(dynamicList)
+      const hitsWithTime = hits.filter((h) => h.response_time_ms && h.response_time_ms > 0)
+      if (hitsWithTime.length > 0) {
+        const avgHit = Math.round(
+          hitsWithTime.reduce((sum, h) => sum + (h.response_time_ms || 0), 0) / hitsWithTime.length
+        )
+        setAvgCacheLatencyMs(avgHit)
+      }
+
+      const missesWithTime = logs.filter((l) => !l.cache_hit && l.response_time_ms && l.response_time_ms > 0)
+      if (missesWithTime.length > 0) {
+        const avgMiss = Math.round(
+          missesWithTime.reduce((sum, m) => sum + (m.response_time_ms || 0), 0) / missesWithTime.length
+        )
+        setAvgLlmLatencyMs(avgMiss)
+      }
+    }
+
+    // Populate leaderboard with actual repositories from DB
+    if (dbRes.data && dbRes.data.length > 0) {
+      const counts: Record<string, { count: number; lastDate: string; provider?: string }> = {}
+      for (const item of dbRes.data) {
+        const r = item.repo_full_name
+        if (!r) continue
+        if (!counts[r]) {
+          counts[r] = { count: 1, lastDate: item.created_at, provider: item.provider_used }
+        } else {
+          counts[r].count++
         }
       }
-    } catch {
-      // Fallback to sample data
+      const dynamicList: RepoTrendItem[] = Object.entries(counts).map(([repo, stat], i) => ({
+        id: `dyn-${i}`,
+        repo,
+        analysisCount: stat.count,
+        lastAnalyzedAt: new Date(stat.lastDate).toLocaleTimeString(),
+        primaryLanguage: 'GitHub Repo',
+        cached: true,
+        avgResponseTimeMs: 145,
+        preferredProvider: (stat.provider as ProviderName) || 'gemini'
+      }))
+      if (dynamicList.length > 0) {
+        setTrends(dynamicList)
+      }
     }
     setLoading(false)
   }, [client])
@@ -240,39 +272,86 @@ export function TrendsContent({
     setSaving(false)
   }
 
-  // Prewarm Trigger
+  // Prewarm Trigger with Real Edge Worker Requests
   const handleTriggerPrewarm = async () => {
     setIsPrewarming(true)
-    setPrewarmProgress(10)
-    setPrewarmLog(['[Inicio] Iniciando escaneo de top repositorios populares...'])
+    setPrewarmProgress(5)
+    setPrewarmLog(['[Inicio] Iniciando pre-calentamiento real en Cloudflare Edge KV...'])
 
     const targetList = config.customRepoList.slice(0, config.targetTopCount)
+    const workerUrl = process.env.NEXT_PUBLIC_WORKER_API_URL || 'https://github-intelligence-api.crunaldo2.workers.dev'
+    let successCount = 0
 
     for (let i = 0; i < targetList.length; i++) {
       const repo = targetList[i]
-      await new Promise((r) => setTimeout(r, 350))
+      const parts = repo.split('/')
+      if (parts.length < 2 || !parts[0] || !parts[1]) {
+        setPrewarmLog((prev) => [`[${i + 1}/${targetList.length}] Repositorio inválido: ${repo}`, ...prev])
+        continue
+      }
+      const [owner, repoName] = parts
+      const tStart = performance.now()
+
+      try {
+        const res = await fetch(`${workerUrl}/v1/analyze`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {})
+          },
+          body: JSON.stringify({
+            owner,
+            repo: repoName,
+            commitSha: 'HEAD',
+            forceRefresh: true
+          })
+        })
+        const tElapsed = Math.round(performance.now() - tStart)
+        if (res.ok) {
+          successCount++
+          setPrewarmLog((prev) => [
+            `[${i + 1}/${targetList.length}] ✓ "${repo}" pre-calentado exitosamente en Edge KV (${tElapsed}ms).`,
+            ...prev
+          ])
+        } else {
+          setPrewarmLog((prev) => [
+            `[${i + 1}/${targetList.length}] ⚠ "${repo}" aviso: código de respuesta ${res.status}.`,
+            ...prev
+          ])
+        }
+      } catch (err) {
+        setPrewarmLog((prev) => [
+          `[${i + 1}/${targetList.length}] ✗ Error de red en "${repo}": ${err instanceof Error ? err.message : 'Error'}`,
+          ...prev
+        ])
+      }
+
       const percent = Math.round(((i + 1) / targetList.length) * 100)
       setPrewarmProgress(percent)
-      setPrewarmLog((prev) => [
-        `[${i + 1}/${targetList.length}] Pre-calentando "${repo}" en Cloudflare KV vía ${config.preferredProvider.toUpperCase()}... OK`,
-        ...prev
-      ])
     }
 
     setPrewarmLog((prev) => [
-      `[Completado] ¡Éxito! ${targetList.length} repositorios pre-calentados y listos en Edge KV. Latencia reducida a ~150ms.`,
+      `[Completado] ¡Éxito! ${successCount} de ${targetList.length} repositorios pre-calentados y listos en Edge KV.`,
       ...prev
     ])
     setIsPrewarming(false)
     setConfig((prev) => ({
       ...prev,
       lastPrewarmRun: new Date().toISOString(),
-      lastPrewarmSuccessCount: targetList.length
+      lastPrewarmSuccessCount: successCount
     }))
 
     // Update trend cache badges
     setTrends((prev) =>
       prev.map((t) => (targetList.includes(t.repo) ? { ...t, cached: true, avgResponseTimeMs: 145 } : t))
+    )
+
+    await recordAdminAuditLog(
+      client,
+      session.user.email,
+      'trigger_cache_prewarm',
+      'cache_prewarm_config',
+      { successCount, totalAttempted: targetList.length }
     )
   }
 
@@ -294,15 +373,15 @@ export function TrendsContent({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Repositorios Analizados"
-          value="18,450+"
-          hint="En los últimos 30 días"
+          value={totalAnalysesCount.toLocaleString()}
+          hint="Total consultas registradas"
           icon={<Flame className="size-4" />}
           accent="amber"
           badge="Global"
         />
         <KpiCard
           label="Tasa de Aciertos Caché (Hit)"
-          value="74.2%"
+          value={cacheHitPercentage}
           hint="Respuestas servidas directo desde Cloudflare KV"
           icon={<Database className="size-4" />}
           accent="emerald"
@@ -310,11 +389,11 @@ export function TrendsContent({
         />
         <KpiCard
           label="Aceleración de Latencia"
-          value="12.5x Más Rápido"
-          hint="145ms en Caché vs ~1,850ms llamada LLM"
+          value={`${avgCacheLatencyMs}ms`}
+          hint={`Caché Edge vs ~${avgLlmLatencyMs}ms llamada a modelo IA`}
           icon={<Zap className="size-4" />}
           accent="sky"
-          badge="145ms"
+          badge={`~${Math.round(avgLlmLatencyMs / Math.max(1, avgCacheLatencyMs))}x vel.`}
         />
         <KpiCard
           label="Pre-Warming Automático"

@@ -58,7 +58,10 @@ export function TeamContent({
   client: AdminSupabaseClient
   session: AdminSession
 }) {
-  const [config, setConfig] = useState<TeamRbacConfig>({ ...DEFAULT_TEAM_RBAC_CONFIG })
+  const [config, setConfig] = useState<TeamRbacConfig>({
+    ...DEFAULT_TEAM_RBAC_CONFIG,
+    members: []
+  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -72,20 +75,71 @@ export function TeamContent({
 
   const loadData = useCallback(async () => {
     setLoading(true)
-    const res = await fetchRemoteConfigsMap(client)
+    const [res, profilesRes] = await Promise.all([
+      fetchRemoteConfigsMap(client),
+      client.from('profiles').select('id, email, role, created_at').limit(100)
+    ])
     setLoading(false)
 
-    if (res.data?.team_rbac_config && typeof res.data.team_rbac_config === 'object') {
-      const saved = res.data.team_rbac_config as Partial<TeamRbacConfig>
-      if (Array.isArray(saved.members)) {
-        setConfig((prev) => ({
-          ...prev,
-          ...saved,
-          members: saved.members!
-        }))
+    const profiles = Array.isArray(profilesRes.data)
+      ? (profilesRes.data as Array<{ id: string; email?: string; role?: string; created_at?: string }>)
+      : []
+
+    const saved = res.data?.team_rbac_config as Partial<TeamRbacConfig> | undefined
+    let membersList: TeamMemberItem[] = []
+
+    if (saved && Array.isArray(saved.members) && saved.members.length > 0) {
+      // Filter out dummy template accounts if not in real Supabase profiles
+      membersList = saved.members.filter(
+        (m) =>
+          !m.email.endsWith('@github-intelligence.com') ||
+          profiles.some((p) => p.email?.toLowerCase() === m.email.toLowerCase())
+      )
+    }
+
+    // Always ensure the currently logged-in admin is present as a member
+    const currentAdminEmail = session.email || ''
+    if (currentAdminEmail) {
+      const exists = membersList.some((m) => m.email.toLowerCase() === currentAdminEmail.toLowerCase())
+      if (!exists) {
+        membersList.unshift({
+          id: `mem-${session.userId || 'admin-self'}`,
+          email: currentAdminEmail,
+          name: currentAdminEmail.split('@')[0] || 'Administrador',
+          role: 'super_admin',
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          lastLoginAt: new Date().toISOString(),
+          department: 'Administración'
+        })
       }
     }
-  }, [client])
+
+    // Also include any profiles with role === 'admin'
+    for (const p of profiles) {
+      if (p.role === 'admin' && p.email) {
+        const exists = membersList.some((m) => m.email.toLowerCase() === p.email.toLowerCase())
+        if (!exists) {
+          membersList.push({
+            id: `mem-${p.id}`,
+            email: p.email,
+            name: p.email.split('@')[0],
+            role: 'developer',
+            status: 'active',
+            createdAt: p.created_at || new Date().toISOString(),
+            lastLoginAt: new Date().toISOString(),
+            department: 'Ingeniería'
+          })
+        }
+      }
+    }
+
+    setConfig((prev) => ({
+      ...prev,
+      ...(saved || {}),
+      members: membersList
+    }))
+  }, [client, session])
 
   useEffect(() => {
     loadData()
@@ -109,7 +163,7 @@ export function TeamContent({
       })
       await recordAdminAuditLog(
         client,
-        session.user.email,
+        session.email,
         'update_team_rbac',
         'team_rbac_config',
         { membersCount: updatedConfig.members.length }
@@ -149,6 +203,16 @@ export function TeamContent({
       members: [...config.members, newMember]
     }
 
+    // Attempt to update profile role in Supabase if exists
+    try {
+      await client
+        .from('profiles')
+        .update({ role: 'admin' })
+        .eq('email', inviteEmail.trim().toLowerCase())
+    } catch {
+      // Ignore if user hasn't signed up yet
+    }
+
     await handleSave(updated)
     setShowInviteModal(false)
     setInviteName('')
@@ -157,7 +221,7 @@ export function TeamContent({
   }
 
   const handleRemoveMember = async (id: string, email: string) => {
-    if (email === session.user.email) {
+    if (email.toLowerCase() === session.email.toLowerCase()) {
       alert('No puedes eliminar tu propia cuenta de administrador activa.')
       return
     }

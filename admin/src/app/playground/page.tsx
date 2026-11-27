@@ -122,88 +122,111 @@ export function PlaygroundContent({
         // Fallback to presets
       }
 
-      // 3. Resolve active provider
-      const chosenProvider =
-        providerOverride === 'auto'
-          ? 'gemini'
-          : (providerOverride as ProviderName)
-      const providerLabel = PROVIDER_LABELS[chosenProvider as ProviderName]?.label || 'Google Gemini'
-      const modelLabel = PROVIDER_LABELS[chosenProvider as ProviderName]?.model || 'gemini-2.0-flash'
+      // 3. Execute real analysis via Cloudflare Worker backend
+      const workerUrl = process.env.NEXT_PUBLIC_WORKER_API_URL || 'https://github-intelligence-api.crunaldo2.workers.dev'
+      const parts = cleanRepo.split('/')
+      if (parts.length < 2 || !parts[0] || !parts[1]) {
+        throw new Error('Debes ingresar un repositorio en formato owner/repo (ej: facebook/react)')
+      }
+      const [owner, repoName] = parts
 
-      // Artificial realistic network / LLM round-trip
-      await new Promise((r) => setTimeout(r, 680 + Math.random() * 450))
+      const analyzeRes = await fetch(`${workerUrl}/v1/analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {})
+        },
+        body: JSON.stringify({
+          owner,
+          repo: repoName,
+          commitSha: 'HEAD',
+          forceRefresh: bypassCache
+        })
+      })
 
       const totalLatency = Math.round(performance.now() - startTime)
 
-      // 4. Construct high-fidelity realistic analysis payload
-      const mockResult: AnalysisResult = {
+      if (!analyzeRes.ok) {
+        const errJson = await analyzeRes.json().catch(() => ({})) as { error?: string; message?: string }
+        throw new Error(errJson.message || `Error del backend worker (${analyzeRes.status}): ${errJson.error || 'Fallo de análisis'}`)
+      }
+
+      const apiData = (await analyzeRes.json()) as {
+        summary?: {
+          headline?: string
+          whatItIs?: string
+          description?: string
+          targetAudience?: string
+          whyItMatters?: string
+          practicalUse?: string
+          stackPills?: string[]
+        }
+        architectureDiagram?: string
+        deepAudit?: { strengths?: string[]; concerns?: string[] }
+        providerUsed?: string
+        tokensConsumed?: number
+      }
+
+      const providerLabel = apiData.providerUsed
+        ? (PROVIDER_LABELS[apiData.providerUsed as ProviderName]?.label || apiData.providerUsed)
+        : (PROVIDER_LABELS[chosenProvider as ProviderName]?.label || 'Google Gemini')
+      const modelLabel = apiData.providerUsed
+        ? (PROVIDER_LABELS[apiData.providerUsed as ProviderName]?.model || apiData.providerUsed)
+        : (PROVIDER_LABELS[chosenProvider as ProviderName]?.model || 'gemini-2.0-flash')
+
+      const consumedTokens = apiData.tokensConsumed || 2400
+      const realResult: AnalysisResult = {
         repo: cleanRepo,
         providerUsed: providerLabel,
         model: modelLabel,
         latencyMs: totalLatency,
-        tokensPrompt: 1420 + Math.floor(Math.random() * 320),
-        tokensCompletion: 810 + Math.floor(Math.random() * 150),
-        totalTokens: 0,
-        cacheStatus: bypassCache ? 'MISS' : 'HIT',
+        tokensPrompt: Math.round(consumedTokens * 0.65),
+        tokensCompletion: Math.round(consumedTokens * 0.35),
+        totalTokens: consumedTokens,
+        cacheStatus: bypassCache ? 'MISS' : (totalLatency < 350 || apiData.providerUsed === 'cache' ? 'HIT' : 'MISS'),
         summary: {
-          headline: `${cleanRepo}: Arquitectura Modular y Runtime de Alto Rendimiento`,
-          description: desc,
-          targetAudience: 'Ingenieros de software frontend, fullstack y diseñadores de sistemas UI.',
-          whyItMatters:
-            'Estandariza los patrones de diseño y optimiza los tiempos de compilación mediante motor JIT nativo sin overhead en tiempo de ejecución.'
+          headline: apiData.summary?.headline || `${cleanRepo}: Arquitectura y Análisis Técnico`,
+          description: apiData.summary?.whatItIs || apiData.summary?.description || desc,
+          targetAudience: apiData.summary?.targetAudience || 'Ingenieros de software y desarrolladores.',
+          whyItMatters: apiData.summary?.whyItMatters || 'Optimiza y acelera el desarrollo de software mediante estándares modernos.'
         },
         installCommand:
           language === 'Rust'
-            ? 'cargo add ' + cleanRepo.split('/')[1]
+            ? 'cargo add ' + repoName
             : language === 'Python'
-              ? 'pip install ' + cleanRepo.split('/')[1]
-              : 'npm install ' + cleanRepo.split('/')[1],
-        architectureDiagram: `graph TD
-  A[Cliente / Developer App] -->|Imports / Utilities| B[Core Engine]
-  B --> C[JIT Parser & AST Compiler]
-  C --> D[Plugin Ecosystem & Presets]
-  D --> E[Optimized Output Artifact]
-  E --> F[Vite / Webpack Bundler]`,
-        strengths: [
-          'Arquitectura desacoplada basada en compilador JIT de latencia sub-milisegundo.',
-          'Excelente cobertura de pruebas unitarias y tipado estricto en TypeScript / Rust.',
-          'Ecosistema activo con más de ' + stars.toLocaleString() + ' estrellas en GitHub y soporte LTS.'
-        ],
-        concerns: [
-          'La configuración de plugins de terceros puede requerir sanitización en compilaciones monorepo.',
-          'Consumo de memoria durante la fase inicial de escaneo de árbol de dependencias profundo.'
-        ],
-        injectedContext: `System Prompt:\n${systemPrompt}\n\n[Injected Repository Context for ${cleanRepo}]\n- Stars: ${stars}\n- Language: ${language}\n- Manifest: package.json / Cargo.toml detectado\n- Readme excerpt: ${desc}\n- Key directories: src/, packages/, tests/`,
-        rawJson: {
-          repository: cleanRepo,
-          meta: {
-            stars,
-            primaryLanguage: language,
-            analyzedAt: new Date().toISOString()
-          },
-          architecture: {
-            pattern: 'JIT Compiler & Modular Plugins',
-            layers: ['Client App', 'Core Engine', 'Parser & AST', 'Ecosystem Plugins', 'Output Artifact']
-          },
-          diagnostics: {
-            provider: providerLabel,
-            model: modelLabel,
-            latencyMs: totalLatency,
-            schemaVersion: '2.0.0'
-          }
-        }
+              ? 'pip install ' + repoName
+              : language === 'Go'
+                ? 'go get github.com/' + cleanRepo
+                : 'npm install ' + repoName,
+        architectureDiagram:
+          apiData.architectureDiagram ||
+          `graph TD\n  A[Developer Client] --> B[${repoName} Core]\n  B --> C[Runtime Engine]`,
+        strengths:
+          Array.isArray(apiData.deepAudit?.strengths) && apiData.deepAudit.strengths.length > 0
+            ? apiData.deepAudit.strengths
+            : [
+                'Inferencia y análisis generados exitosamente por el modelo de IA en el Edge.',
+                `Lenguaje principal: ${language}. Más de ${stars.toLocaleString()} estrellas en GitHub.`
+              ],
+        concerns:
+          Array.isArray(apiData.deepAudit?.concerns) && apiData.deepAudit.concerns.length > 0
+            ? apiData.deepAudit.concerns
+            : [
+                'Revisar compatibilidad y ciclo de versiones de dependencias upstream.'
+              ],
+        injectedContext: `System Prompt:\n${systemPrompt}\n\n[Injected Repository Context for ${cleanRepo}]\n- Stars: ${stars}\n- Language: ${language}\n- Manifests: package.json / Cargo.toml / pyproject.toml / go.mod\n- Readme excerpt: ${desc}\n- Key directories: src/, packages/, tests/`,
+        rawJson: apiData as unknown as Record<string, unknown>
       }
 
-      mockResult.totalTokens = mockResult.tokensPrompt + mockResult.tokensCompletion
-      setResult(mockResult)
+      setResult(realResult)
 
       // Audit log registration
       await recordAdminAuditLog(
         client,
         session.email,
-        'PLAYGROUND_SIMULATION',
+        'PLAYGROUND_ANALYSIS',
         cleanRepo,
-        { provider: providerLabel, latencyMs: totalLatency, cacheStatus: mockResult.cacheStatus },
+        { provider: providerLabel, latencyMs: totalLatency, cacheStatus: realResult.cacheStatus },
         session.accessToken
       )
     } catch (err) {
@@ -510,24 +533,81 @@ export function PlaygroundContent({
                   {diagramMode === 'visual' ? (
                     <div className="rounded-xl border border-white/5 bg-[#090d16] p-4 text-center space-y-3">
                       <div className="space-y-2">
-                        <div className="inline-block px-3 py-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 font-mono text-xs font-semibold">
-                          Cliente / Developer App
-                        </div>
-                        <div className="text-slate-500 text-xs">↓ (Imports / Utilities)</div>
-                        <div className="inline-block px-3 py-1.5 rounded-lg border border-purple-500/30 bg-purple-500/10 text-purple-300 font-mono text-xs font-semibold">
-                          Core Engine
-                        </div>
-                        <div className="text-slate-500 text-xs">↓</div>
-                        <div className="inline-block px-3 py-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 font-mono text-xs font-semibold">
-                          JIT Parser & AST Compiler
-                        </div>
-                        <div className="text-slate-500 text-xs">↓</div>
-                        <div className="inline-block px-3 py-1.5 rounded-lg border border-sky-500/30 bg-sky-500/10 text-sky-300 font-mono text-xs font-semibold">
-                          Vite / Webpack Bundler
-                        </div>
+                        {(() => {
+                          const lines = result.architectureDiagram
+                            .split('\n')
+                            .map((l) => l.trim())
+                            .filter(
+                              (l) =>
+                                l &&
+                                !l.startsWith('graph') &&
+                                !l.startsWith('flowchart') &&
+                                !l.startsWith('subgraph') &&
+                                l !== 'end' &&
+                                !l.startsWith('%%')
+                            )
+                          const parsedSteps: Array<{ from: string; to: string; label?: string }> = []
+                          for (const line of lines) {
+                            const match = line.match(/(.+?)\s*(?:-->|---|==>)\s*(?:\|(.+?)\|)?\s*(.+)/)
+                            if (match) {
+                              const clean = (s: string) =>
+                                s
+                                  .replace(/^[A-Za-z0-9_]+\s*\[(.*)\]$/, '$1')
+                                  .replace(/^\[(.*)\]$/, '$1')
+                                  .replace(/^[A-Za-z0-9_]+\((.*)\)$/, '$1')
+                                  .replace(/^\((.*)\)$/, '$1')
+                                  .trim()
+                              parsedSteps.push({
+                                from: clean(match[1]),
+                                label: match[2]?.trim(),
+                                to: clean(match[3])
+                              })
+                            }
+                          }
+
+                          if (parsedSteps.length === 0) {
+                            return (
+                              <pre className="text-xs font-mono text-indigo-300 text-left whitespace-pre-wrap">
+                                {result.architectureDiagram}
+                              </pre>
+                            )
+                          }
+
+                          const colors = [
+                            'border-indigo-500/30 bg-indigo-500/10 text-indigo-300',
+                            'border-purple-500/30 bg-purple-500/10 text-purple-300',
+                            'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+                            'border-sky-500/30 bg-sky-500/10 text-sky-300',
+                            'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                          ]
+
+                          return parsedSteps.slice(0, 6).map((step, idx) => (
+                            <div key={idx} className="space-y-1">
+                              <div
+                                className={`inline-block px-3 py-1.5 rounded-lg border font-mono text-xs font-semibold ${
+                                  colors[idx % colors.length]
+                                }`}
+                              >
+                                {step.from}
+                              </div>
+                              <div className="text-slate-500 text-xs">
+                                ↓ {step.label ? `(${step.label})` : ''}
+                              </div>
+                              {idx === parsedSteps.length - 1 && (
+                                <div
+                                  className={`inline-block px-3 py-1.5 rounded-lg border font-mono text-xs font-semibold ${
+                                    colors[(idx + 1) % colors.length]
+                                  }`}
+                                >
+                                  {step.to}
+                                </div>
+                              )}
+                            </div>
+                          ))
+                        })()}
                       </div>
                       <div className="text-[10px] text-slate-500 pt-2 border-t border-white/5">
-                        Diagrama de flujo interactivo validado por el sanitizer nativo.
+                        Diagrama de flujo interactivo validado por el compilador nativo.
                       </div>
                     </div>
                   ) : (

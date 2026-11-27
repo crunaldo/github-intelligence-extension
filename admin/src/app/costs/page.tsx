@@ -54,6 +54,11 @@ export function CostsContent({
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
+  // Real Spend Calculations from Supabase telemetry
+  const [realMonthlySpend, setRealMonthlySpend] = useState<number>(0)
+  const [realDailySpend, setRealDailySpend] = useState<number>(0)
+  const [realAnalysesCount, setRealAnalysesCount] = useState<number>(0)
+
   // Interactive Simulator State
   const [simMonthlyQueries, setSimMonthlyQueries] = useState<number>(25000)
   const [simAvgInputTokens, setSimAvgInputTokens] = useState<number>(2800)
@@ -61,24 +66,79 @@ export function CostsContent({
 
   const loadData = useCallback(async () => {
     setLoading(true)
-    const res = await fetchRemoteConfigsMap(client)
+    const [configsRes, analysesRes, queryLogsRes] = await Promise.all([
+      fetchRemoteConfigsMap(client),
+      client.from('repo_analyses').select('provider_used, tokens_consumed, created_at').limit(1000),
+      client.from('query_logs').select('provider, cache_hit, created_at').limit(1000)
+    ])
     setLoading(false)
 
-    if (res.data?.finops_budget_config && typeof res.data.finops_budget_config === 'object') {
-      const saved = res.data.finops_budget_config as Partial<FinOpsBudgetConfig>
+    let loadedPricing = DEFAULT_PROVIDER_PRICING
+    if (configsRes.data?.finops_pricing_models && typeof configsRes.data.finops_pricing_models === 'object') {
+      const savedPricing = configsRes.data.finops_pricing_models as Record<ProviderName, ProviderPricingModel>
+      loadedPricing = { ...DEFAULT_PROVIDER_PRICING, ...savedPricing }
+      setPricingModels(loadedPricing)
+    }
+
+    if (configsRes.data?.finops_budget_config && typeof configsRes.data.finops_budget_config === 'object') {
+      const saved = configsRes.data.finops_budget_config as Partial<FinOpsBudgetConfig>
       setBudgetConfig((prev) => ({
         ...prev,
         ...saved
       }))
     }
 
-    if (res.data?.finops_pricing_models && typeof res.data.finops_pricing_models === 'object') {
-      const savedPricing = res.data.finops_pricing_models as Record<ProviderName, ProviderPricingModel>
-      setPricingModels((prev) => ({
-        ...prev,
-        ...savedPricing
-      }))
+    // Calculate real live spending from repo_analyses & query_logs
+    const now = new Date()
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+
+    let monthCost = 0
+    let dayCost = 0
+    let countMonth = 0
+    const processedTimestamps = new Set<string>()
+
+    const analyses = Array.isArray(analysesRes.data) ? analysesRes.data : []
+    for (const item of analyses) {
+      const t = item.created_at ? new Date(item.created_at).getTime() : 0
+      if (t >= startOfMonth) {
+        countMonth++
+        const pKey = (item.provider_used as ProviderName) || 'gemini'
+        const pricing = loadedPricing[pKey] || loadedPricing.gemini
+        const tokens = Number(item.tokens_consumed) || 2800
+        const inCost = ((tokens * 0.65) / 1_000_000) * pricing.inputCostPerMillion
+        const outCost = ((tokens * 0.35) / 1_000_000) * pricing.outputCostPerMillion
+        const total = inCost + outCost
+
+        monthCost += total
+        if (t >= startOfDay) {
+          dayCost += total
+        }
+        if (item.created_at) processedTimestamps.add(item.created_at)
+      }
     }
+
+    const logs = Array.isArray(queryLogsRes.data) ? queryLogsRes.data : []
+    for (const log of logs) {
+      const t = log.created_at ? new Date(log.created_at).getTime() : 0
+      if (t >= startOfMonth && !log.cache_hit && !processedTimestamps.has(log.created_at)) {
+        countMonth++
+        const pKey = (log.provider as ProviderName) || 'gemini'
+        const pricing = loadedPricing[pKey] || loadedPricing.gemini
+        const inCost = (2500 / 1_000_000) * pricing.inputCostPerMillion
+        const outCost = (1100 / 1_000_000) * pricing.outputCostPerMillion
+        const total = inCost + outCost
+
+        monthCost += total
+        if (t >= startOfDay) {
+          dayCost += total
+        }
+      }
+    }
+
+    setRealMonthlySpend(monthCost)
+    setRealDailySpend(dayCost)
+    setRealAnalysesCount(countMonth)
   }, [client])
 
   useEffect(() => {
@@ -170,10 +230,12 @@ export function CostsContent({
     }
   }, [simMonthlyQueries, simAvgInputTokens, simAvgOutputTokens, pricingModels])
 
-  // Mocked / Current Live Stats
-  const currentMonthlySpend = 28.45
-  const currentDailySpend = 1.12
-  const budgetUsagePercent = Math.round((currentMonthlySpend / (budgetConfig.monthlyBudgetUsd || 150)) * 100)
+  // Real Live Telemetry Stats
+  const currentMonthlySpend = realMonthlySpend
+  const currentDailySpend = realDailySpend
+  const budgetUsagePercent = budgetConfig.monthlyBudgetUsd > 0
+    ? Math.round((currentMonthlySpend / budgetConfig.monthlyBudgetUsd) * 100)
+    : 0
 
   return (
     <div className="space-y-6">
@@ -188,7 +250,7 @@ export function CostsContent({
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
-          label="Gasto Mensual Estimado"
+          label="Gasto Mensual Real"
           value={`$${currentMonthlySpend.toFixed(2)} USD`}
           hint={`Límite fijado: $${budgetConfig.monthlyBudgetUsd} USD (${budgetUsagePercent}% consumido)`}
           icon={<DollarSign className="size-4" />}
@@ -196,7 +258,7 @@ export function CostsContent({
           badge={`${budgetUsagePercent}%`}
         />
         <KpiCard
-          label="Gasto Diario Actual"
+          label="Gasto Diario Real"
           value={`$${currentDailySpend.toFixed(2)} USD`}
           hint={`Límite de alerta: $${budgetConfig.dailyBudgetUsd} USD/día`}
           icon={<Coins className="size-4" />}

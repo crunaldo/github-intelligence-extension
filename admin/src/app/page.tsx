@@ -864,7 +864,7 @@ function DashboardContent({
         <div className="lg:col-span-6">
           <SectionCard
             title="Actividad Global por País"
-            description="Origen geográfico del tráfico y consultas procesadas por la extensión"
+            description="Distribución geográfica estimada de desarrolladores (privacidad GDPR con SHA-256 ip_hash)"
             actions={
               <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2.5 py-1 rounded-lg">
                 Top 10 Regiones

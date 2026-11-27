@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { handleLemonSqueezyWebhook } from '../src/webhooks/lemonsqueezy'
-import worker, { type WorkerEnv } from '../src/worker'
+import worker, { deriveIpHashHex, type WorkerEnv } from '../src/worker'
 import { AIProvidersExhaustedError, type AnalysisResult, type KVNamespace } from '../src/ai/types'
 import { setCachedAnalysis } from '../src/cache/repo-cache'
 
@@ -1337,5 +1337,75 @@ describe('Cloudflare Worker Entrypoint', () => {
 
     const body1 = (await res1.json()) as AnalysisResult
     expect(body1.summary.headline).toBe(fullResult.summary.headline)
+  })
+
+  it('enforces access_control_rules: blocks banned IP/user and allows VIP bypass', async () => {
+    const bannedIp = '1.2.3.4'
+    const bannedIpHash = await deriveIpHashHex(new Request('https://api.example.com', { headers: { 'CF-Connecting-IP': bannedIp } }))
+    const bannedUserId = 'user-banned-999'
+    const vipUserId = 'user-vip-111'
+
+    const kv = createMockKv({
+      free_daily_limit: '1',
+      pro_daily_limit: '1',
+      access_control_rules: JSON.stringify({
+        bannedIpHashes: [bannedIpHash],
+        bannedUserIds: [bannedUserId],
+        vipUserIds: [vipUserId],
+        vipIpHashes: []
+      })
+    })
+
+    const fullResult = makeSampleAnalysis()
+    await setCachedAnalysis('Owner', 'Repo', 'sha1', fullResult, kv)
+
+    const env: WorkerEnv = {
+      KV: kv,
+      verifyProUser: vi.fn().mockImplementation(async (token: string) => {
+        if (token === 'banned-jwt') return { isPro: false, userId: bannedUserId }
+        if (token === 'vip-jwt') return { isPro: false, userId: vipUserId }
+        return { isPro: false, userId: null }
+      })
+    }
+
+    // 1. Request from banned IP -> 403 ACCESS_DENIED
+    const bannedIpReq = new Request('https://api.example.com/v1/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'CF-Connecting-IP': bannedIp
+      },
+      body: JSON.stringify({ owner: 'Owner', repo: 'Repo', commitSha: 'sha1' })
+    })
+    const bannedIpRes = await worker.fetch(bannedIpReq, env)
+    expect(bannedIpRes.status).toBe(403)
+    const bannedIpBody = await bannedIpRes.json() as any
+    expect(bannedIpBody.error).toBe('ACCESS_DENIED')
+
+    // 2. Request from banned user -> 403 ACCESS_DENIED
+    const bannedUserReq = new Request('https://api.example.com/v1/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer banned-jwt'
+      },
+      body: JSON.stringify({ owner: 'Owner', repo: 'Repo', commitSha: 'sha1' })
+    })
+    const bannedUserRes = await worker.fetch(bannedUserReq, env)
+    expect(bannedUserRes.status).toBe(403)
+    const bannedUserBody = await bannedUserRes.json() as any
+    expect(bannedUserBody.error).toBe('ACCESS_DENIED')
+
+    // 3. Request from VIP user -> succeeds (200) even when not pro
+    const vipReq = new Request('https://api.example.com/v1/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer vip-jwt'
+      },
+      body: JSON.stringify({ owner: 'Owner', repo: 'Repo', commitSha: 'sha1' })
+    })
+    const vipRes = await worker.fetch(vipReq, env)
+    expect(vipRes.status).toBe(200)
   })
 })

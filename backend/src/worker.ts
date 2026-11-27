@@ -141,7 +141,7 @@ function parsePositiveInteger(raw: string | null, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
-async function deriveIpHashHex(request: Request): Promise<string> {
+export async function deriveIpHashHex(request: Request): Promise<string> {
   const ip = request.headers.get('CF-Connecting-IP')?.trim() || '0.0.0.0'
   const payload = new TextEncoder().encode(ip)
   const digest = await crypto.subtle.digest('SHA-256', payload)
@@ -612,6 +612,83 @@ async function readProviderPriority(kv: KVNamespace): Promise<ProviderName[] | u
   }
 }
 
+interface AccessControlRules {
+  bannedIpHashes: string[]
+  bannedUserIds: string[]
+  vipUserIds: string[]
+  vipIpHashes: string[]
+  rateLimitPerMinute: number
+  autoBanThresholdPerMin: number
+}
+
+async function readAccessControlRules(kv: KVNamespace): Promise<AccessControlRules> {
+  const raw = await kv.get('access_control_rules')
+  if (!raw) {
+    return { bannedIpHashes: [], bannedUserIds: [], vipUserIds: [], vipIpHashes: [], rateLimitPerMinute: 60, autoBanThresholdPerMin: 120 }
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<AccessControlRules>
+    return {
+      bannedIpHashes: Array.isArray(parsed.bannedIpHashes) ? parsed.bannedIpHashes : [],
+      bannedUserIds: Array.isArray(parsed.bannedUserIds) ? parsed.bannedUserIds : [],
+      vipUserIds: Array.isArray(parsed.vipUserIds) ? parsed.vipUserIds : [],
+      vipIpHashes: Array.isArray(parsed.vipIpHashes) ? parsed.vipIpHashes : [],
+      rateLimitPerMinute: typeof parsed.rateLimitPerMinute === 'number' ? parsed.rateLimitPerMinute : 60,
+      autoBanThresholdPerMin: typeof parsed.autoBanThresholdPerMin === 'number' ? parsed.autoBanThresholdPerMin : 120
+    }
+  } catch {
+    return { bannedIpHashes: [], bannedUserIds: [], vipUserIds: [], vipIpHashes: [], rateLimitPerMinute: 60, autoBanThresholdPerMin: 120 }
+  }
+}
+
+interface TelegramAlertsConfig {
+  enabled: boolean
+  botToken: string
+  chatId: string
+  notifyOnQuotaExhausted?: boolean
+  notifyOnMaintenance?: boolean
+  notifyOnSecurityBan?: boolean
+  notifyOnProviderError?: boolean
+}
+
+async function readTelegramConfig(kv: KVNamespace): Promise<TelegramAlertsConfig | null> {
+  const raw = await kv.get('telegram_alerts')
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as Partial<TelegramAlertsConfig>
+    if (parsed && typeof parsed === 'object' && parsed.enabled && parsed.botToken && parsed.chatId) {
+      return parsed as TelegramAlertsConfig
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function dispatchTelegramAlert(
+  env: WorkerEnv,
+  ctx: WorkerExecutionContext | undefined,
+  message: string
+): void {
+  scheduleBackgroundTask(ctx, async () => {
+    try {
+      const tg = await readTelegramConfig(env.KV)
+      if (!tg || !tg.enabled || !tg.botToken.trim() || !tg.chatId.trim()) return
+      await fetch(`https://api.telegram.org/bot${tg.botToken.trim()}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: tg.chatId.trim(),
+          text: message,
+          parse_mode: 'Markdown'
+        })
+      })
+    } catch {
+      // Non-blocking
+    }
+  })
+}
+
 function maintenanceModeResponse(config: RemoteConfigResponse): Response {
   return jsonResponse(
     {
@@ -867,31 +944,69 @@ async function handleAnalyze(
     ? await verifySupabaseUser(token, env)
     : { isPro: false, userId: null }
 
-  if (isPro && userId) {
-    const proQuota = await checkAndIncrementQuota(`pro:${userId}`, true, env.KV, {
-      proLimit: config.pro_daily_limit
-    })
-    if (!proQuota.allowed) {
-      return jsonResponse({ error: 'QUOTA_EXCEEDED', message: 'Daily Pro limit reached' }, 429)
-    }
-  } else {
-    const freeIdentifier = userId
-      ? `free:${userId}`
-      : await deriveAnonymousIdentifier(request)
-    const freeQuota = await checkAndIncrementQuota(freeIdentifier, false, env.KV, {
-      freeLimit: config.free_daily_limit
-    })
-    if (!freeQuota.allowed) {
-      return jsonResponse({ error: 'QUOTA_EXCEEDED', message: 'Daily free limit reached' }, 429)
-    }
+  const ipHash = await deriveIpHashHex(request)
+  const accessRules = await readAccessControlRules(env.KV)
 
-    if (!userId) {
-      const ipIdentifier = await deriveIpCeilingIdentifier(request)
-      const ipQuota = await checkAndIncrementQuota(ipIdentifier, false, env.KV, {
-        freeLimit: DEFAULT_IP_DAILY_CEILING
+  if (accessRules.bannedIpHashes.includes(ipHash)) {
+    dispatchTelegramAlert(
+      env,
+      ctx,
+      `🚨 *Seguridad:* Petición bloqueada desde IP baneada \`${ipHash.slice(0, 12)}...\``
+    )
+    return jsonResponse(
+      { error: 'ACCESS_DENIED', message: 'Acceso denegado por políticas de administración.' },
+      403
+    )
+  }
+
+  if (userId && accessRules.bannedUserIds.includes(userId)) {
+    dispatchTelegramAlert(
+      env,
+      ctx,
+      `🚨 *Seguridad:* Petición bloqueada para usuario baneado \`${userId}\``
+    )
+    return jsonResponse(
+      { error: 'ACCESS_DENIED', message: 'Tu cuenta de usuario ha sido suspendida.' },
+      403
+    )
+  }
+
+  const isVip =
+    (userId && accessRules.vipUserIds.includes(userId)) || accessRules.vipIpHashes.includes(ipHash)
+  const effectiveIsPro = isPro || isVip
+
+  if (!isVip) {
+    if (isPro && userId) {
+      const proQuota = await checkAndIncrementQuota(`pro:${userId}`, true, env.KV, {
+        proLimit: config.pro_daily_limit
       })
-      if (!ipQuota.allowed) {
+      if (!proQuota.allowed) {
+        dispatchTelegramAlert(
+          env,
+          ctx,
+          `⚠️ *Cuota:* Usuario Pro \`${userId}\` ha alcanzado el límite diario (${config.pro_daily_limit}).`
+        )
+        return jsonResponse({ error: 'QUOTA_EXCEEDED', message: 'Daily Pro limit reached' }, 429)
+      }
+    } else {
+      const freeIdentifier = userId
+        ? `free:${userId}`
+        : await deriveAnonymousIdentifier(request)
+      const freeQuota = await checkAndIncrementQuota(freeIdentifier, false, env.KV, {
+        freeLimit: config.free_daily_limit
+      })
+      if (!freeQuota.allowed) {
         return jsonResponse({ error: 'QUOTA_EXCEEDED', message: 'Daily free limit reached' }, 429)
+      }
+
+      if (!userId) {
+        const ipIdentifier = await deriveIpCeilingIdentifier(request)
+        const ipQuota = await checkAndIncrementQuota(ipIdentifier, false, env.KV, {
+          freeLimit: DEFAULT_IP_DAILY_CEILING
+        })
+        if (!ipQuota.allowed) {
+          return jsonResponse({ error: 'QUOTA_EXCEEDED', message: 'Daily free limit reached' }, 429)
+        }
       }
     }
   }
@@ -912,7 +1027,7 @@ async function handleAnalyze(
         actionType: 'analysis',
         startedAt
       })
-      return jsonResponse(buildAnalyzeResponsePayload(cached, isPro, config), 200)
+      return jsonResponse(buildAnalyzeResponsePayload(cached, effectiveIsPro, config), 200)
     }
 
     const dbCached = await tryReadRepoAnalysisFromSupabase(owner, repo, commitSha, env)
@@ -931,7 +1046,7 @@ async function handleAnalyze(
         actionType: 'analysis',
         startedAt
       })
-      return jsonResponse(buildAnalyzeResponsePayload(dbCached, isPro, config), 200)
+      return jsonResponse(buildAnalyzeResponsePayload(dbCached, effectiveIsPro, config), 200)
     }
   }
 
@@ -984,10 +1099,15 @@ async function handleAnalyze(
       actionType: 'analysis',
       startedAt
     })
-    return jsonResponse(buildAnalyzeResponsePayload(analysis, isPro, config), 200)
+    return jsonResponse(buildAnalyzeResponsePayload(analysis, effectiveIsPro, config), 200)
   } catch (error) {
     const code = (error as { code?: string })?.code
     if (error instanceof AIProvidersExhaustedError || code === 'AI_PROVIDERS_EXHAUSTED') {
+      dispatchTelegramAlert(
+        env,
+        ctx,
+        `🔥 *Fallo de Proveedores:* Todos los proveedores de IA agotados para \`${owner}/${repo}\`.`
+      )
       return jsonResponse(
         {
           error: 'AI_PROVIDERS_EXHAUSTED',
@@ -1085,6 +1205,26 @@ async function handleMascotChat(
     ? await verifySupabaseUser(token, env)
     : { isPro: false, userId: null }
 
+  const ipHash = await deriveIpHashHex(request)
+  const accessRules = await readAccessControlRules(env.KV)
+
+  if (accessRules.bannedIpHashes.includes(ipHash)) {
+    return jsonResponse(
+      { error: 'ACCESS_DENIED', message: 'Acceso denegado por políticas de administración.' },
+      403
+    )
+  }
+  if (userId && accessRules.bannedUserIds.includes(userId)) {
+    return jsonResponse(
+      { error: 'ACCESS_DENIED', message: 'Tu cuenta de usuario ha sido suspendida.' },
+      403
+    )
+  }
+
+  const isVip =
+    (userId && accessRules.vipUserIds.includes(userId)) || accessRules.vipIpHashes.includes(ipHash)
+  const effectiveIsPro = isPro || isVip
+
   const mascotAccess = config.analysis_modules?.mascotChat ?? 'pro'
   if (mascotAccess === 'disabled' || config.feature_flags.mascot_enabled === false) {
     return jsonResponse(
@@ -1093,7 +1233,7 @@ async function handleMascotChat(
     )
   }
 
-  if (mascotAccess === 'pro' && (!userId || !isPro)) {
+  if (mascotAccess === 'pro' && (!userId || !isPro) && !isVip) {
     return jsonResponse(
       { error: 'PRO_REQUIRED', message: 'Mascot chat requires an active Pro subscription' },
       403
@@ -1414,6 +1554,11 @@ async function handleExplainFile(
   } catch (error) {
     const code = (error as { code?: string })?.code
     if (error instanceof AIProvidersExhaustedError || code === 'AI_PROVIDERS_EXHAUSTED') {
+      dispatchTelegramAlert(
+        env,
+        ctx,
+        `🔥 *Fallo de Proveedores:* Todos los proveedores de IA agotados para \`${owner}/${repo}\`.`
+      )
       return jsonResponse(
         {
           error: 'AI_PROVIDERS_EXHAUSTED',
