@@ -133,13 +133,13 @@ export function FileAiExplainerPopover({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#ef4444', fontWeight: 600, marginBottom: 4 }}>
             <AlertTriangle size={14} />
             <span>
-              {error.toLowerCase().includes('cuota') || error.toLowerCase().includes('límite') || error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit')
-                ? t('explainer_daily_limit', locale)
+              {error.toLowerCase().includes('cuota') || error.toLowerCase().includes('límite') || error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit') || error.toLowerCase().includes('pro')
+                ? (error.toLowerCase().includes('pro') ? (locale === 'es' ? 'Función Pro Requerida' : 'Pro Feature Required') : t('explainer_daily_limit', locale))
                 : t('explainer_unavailable', locale)}
             </span>
           </div>
           <p style={{ margin: '0 0 8px 0', fontSize: 11, color: 'var(--gpi-text-muted, #8b949e)' }}>{error}</p>
-          {(error.toLowerCase().includes('cuota') || error.toLowerCase().includes('límite') || error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit')) && (
+          {(error.toLowerCase().includes('cuota') || error.toLowerCase().includes('límite') || error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit') || error.toLowerCase().includes('pro')) && (
             <button
               type="button"
               onClick={onUpgradeToPro}

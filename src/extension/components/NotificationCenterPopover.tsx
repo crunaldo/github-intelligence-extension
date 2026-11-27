@@ -132,38 +132,12 @@ export function NotificationCenterPopover({
 
       {/* Popover Card */}
       {isOpen && (
-        <div
-          className="animate-fade-in"
-          style={{
-            position: 'absolute',
-            top: 36,
-            right: 0,
-            width: 310,
-            maxHeight: 380,
-            borderRadius: 14,
-            background: 'var(--bg-surface, #0f172a)',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.45)',
-            zIndex: 9990,
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column'
-          }}
-        >
+        <div className="ext-notif-popover animate-fade-in">
           {/* Popover Header */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '10px 14px',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-              background: 'rgba(255, 255, 255, 0.02)'
-            }}
-          >
+          <div className="ext-notif-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Bell size={13} style={{ color: '#818cf8' }} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>
+              <Bell size={13} style={{ color: 'var(--brand-primary, #818cf8)' }} />
+              <span className="ext-notif-header-title">
                 Novedades
               </span>
               {unreadCount > 0 && (
@@ -203,13 +177,9 @@ export function NotificationCenterPopover({
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text-secondary, #94a3b8)',
-                  cursor: 'pointer',
-                  padding: 2
-                }}
+                className="ext-modal-close-btn"
+                title="Cerrar notificaciones"
+                aria-label="Cerrar"
               >
                 <X size={14} />
               </button>
@@ -232,15 +202,9 @@ export function NotificationCenterPopover({
                 <div
                   key={n.id}
                   onClick={() => handleItemClick(n)}
+                  className={`ext-notif-item ${isRead ? 'is-read' : 'is-unread'}`}
                   style={{
-                    padding: '8px 10px',
-                    borderRadius: 10,
-                    background: isRead ? 'rgba(255, 255, 255, 0.02)' : 'rgba(99, 102, 241, 0.08)',
-                    border: isRead
-                      ? '1px solid rgba(255, 255, 255, 0.05)'
-                      : '1px solid rgba(99, 102, 241, 0.25)',
-                    cursor: n.actionUrl ? 'pointer' : 'default',
-                    transition: 'all 0.15s ease'
+                    cursor: n.actionUrl ? 'pointer' : 'default'
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
@@ -278,19 +242,12 @@ export function NotificationCenterPopover({
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#fff' }}>
+                        <span className="ext-notif-item-title">
                           {n.title}
                         </span>
                         {n.pinned && <Pin size={10} style={{ color: '#818cf8' }} />}
                       </div>
-                      <p
-                        style={{
-                          fontSize: 10.5,
-                          color: 'var(--text-secondary, #94a3b8)',
-                          margin: '2px 0 0 0',
-                          lineHeight: 1.35
-                        }}
-                      >
+                      <p className="ext-notif-item-desc">
                         {n.message}
                       </p>
                       {(n.actionLabel || (n as any).actionText) && (

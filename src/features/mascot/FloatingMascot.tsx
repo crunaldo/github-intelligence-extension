@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { fetchRemoteConfig } from '../../extension/api/backendClient'
+import { fetchRemoteConfig, getModuleAccess } from '../../extension/api/backendClient'
 import { MascotAvatarSvg, MascotChatWindow } from './MascotChatWindow'
 
 export interface FloatingMascotRepo {
@@ -304,7 +304,8 @@ export const FloatingMascot: React.FC<FloatingMascotProps> = ({ repo }) => {
     void fetchRemoteConfig()
       .then((config) => {
         if (active) {
-          setMascotEnabled(config.featureFlags.enableMascot)
+          const mascotAccess = getModuleAccess(config, 'mascotChat', 'pro')
+          setMascotEnabled(config.featureFlags.enableMascot && mascotAccess !== 'disabled')
         }
       })
       .catch(() => {

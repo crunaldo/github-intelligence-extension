@@ -142,6 +142,23 @@ export async function explainFileWithAi(params: {
     }
   } catch (error) {
     const err = error as { status?: number; code?: string; message?: string }
+    if (err.status === 403) {
+      if (err.code === 'MODULE_DISABLED' || err.message?.toLowerCase().includes('disabled')) {
+        throw new Error(
+          locale === 'es'
+            ? 'La explicación de archivos está desactivada por el administrador.'
+            : 'File explanation is disabled by administrator.'
+        )
+      }
+      if (err.code === 'PRO_REQUIRED' || err.message?.toLowerCase().includes('pro')) {
+        throw new Error(
+          locale === 'es'
+            ? 'La explicación de archivos requiere una suscripción Pro activa.'
+            : 'File explanation requires an active Pro subscription.'
+        )
+      }
+    }
+
     if (
       err.status === 429 ||
       err.code === 'QUOTA_EXCEEDED' ||

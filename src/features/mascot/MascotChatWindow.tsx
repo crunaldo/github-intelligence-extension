@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
 import {
   BackendApiError,
+  fetchRemoteConfig,
+  getModuleAccess,
   streamMascotChat,
   type MascotChatMessage,
+  type RemoteConfig,
 } from '../../extension/api/backendClient'
 import {
   getAuthSession,
@@ -57,6 +60,7 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
   const [error, setError] = useState<string | null>(null)
   const [session, setSession] = useState<AuthSession | null>(null)
   const [authLoaded, setAuthLoaded] = useState(false)
+  const [remoteConfig, setRemoteConfig] = useState<RemoteConfig | null>(null)
   const [upgrading, setUpgrading] = useState(false)
   const [refreshingStatus, setRefreshingStatus] = useState(false)
 
@@ -100,6 +104,18 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
       if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
         chrome.storage.onChanged.removeListener(onStorageChange)
       }
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    void fetchRemoteConfig()
+      .then((cfg) => {
+        if (active) setRemoteConfig(cfg)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
     }
   }, [])
 
@@ -294,6 +310,9 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
   }
 
   const isPro = Boolean(session?.isPro)
+  const mascotAccess = getModuleAccess(remoteConfig, 'mascotChat', 'pro')
+  const isDisabled = mascotAccess === 'disabled'
+  const requiresProUpgrade = mascotAccess === 'pro' && !isPro
 
   return (
     <section
@@ -306,7 +325,7 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
           <MascotAvatarSvg size={24} />
           <div className="gpi-chat-title-text">
             <div className="gpi-chat-title">
-              Octo Copilot <span className="gpi-pro-badge">PRO</span>
+              Octo Copilot {mascotAccess === 'pro' && <span className="gpi-pro-badge">PRO</span>}
             </div>
             <div className="gpi-chat-subtitle">
               {owner}/{repo}
@@ -314,7 +333,7 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
           </div>
         </div>
         <div className="gpi-chat-header-actions">
-          {messages.length > 0 && isPro && (
+          {messages.length > 0 && !requiresProUpgrade && !isDisabled && (
             <button
               type="button"
               className="gpi-icon-btn"
@@ -339,11 +358,19 @@ export const MascotChatWindow: React.FC<MascotChatWindowProps> = ({
         </div>
       </header>
 
-      {!authLoaded ? (
+      {isDisabled ? (
+        <div className="gpi-chat-gate">
+          <MascotAvatarSvg size={44} />
+          <h3 className="gpi-gate-title">Octo Copilot Deshabilitado</h3>
+          <p className="gpi-gate-desc">
+            El módulo de chat flotante ha sido desactivado temporalmente por el administrador.
+          </p>
+        </div>
+      ) : !authLoaded ? (
         <div className="gpi-chat-gate">
           <p className="gpi-gate-desc">Checking Pro status...</p>
         </div>
-      ) : !isPro ? (
+      ) : requiresProUpgrade ? (
         <div className="gpi-chat-gate">
           <MascotAvatarSvg size={44} />
           <h3 className="gpi-gate-title">Unlock Octo Floating Copilot</h3>

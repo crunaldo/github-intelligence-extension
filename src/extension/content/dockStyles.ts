@@ -586,9 +586,51 @@ export const DOCK_CSS = `
 }
 
 :host([data-theme="light"]) .gpi-campaign-banner {
-  background: linear-gradient(135deg, rgba(255, 59, 92, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
-  border: 1px solid rgba(255, 59, 92, 0.25);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  background: linear-gradient(135deg, #FFF1F4 0%, #F5F3FF 100%);
+  border: 1px solid #FDA4AF;
+  box-shadow: 0 2px 8px rgba(225, 29, 72, 0.08);
+}
+
+:host([data-theme="light"]) .gpi-campaign-title {
+  color: #1F2328;
+  font-weight: 700;
+}
+
+:host([data-theme="light"]) .gpi-campaign-desc {
+  color: #334155;
+  font-weight: 500;
+}
+
+:host([data-theme="light"]) .gpi-campaign-coupon {
+  color: #92400E;
+  background: #FEF3C7;
+  border: 1px solid #FCD34D;
+  font-weight: 700;
+}
+
+:host([data-theme="light"]) .gpi-campaign-coupon:hover {
+  background: #FDE68A;
+  color: #78350F;
+  border-color: #F59E0B;
+}
+
+:host([data-theme="light"]) .gpi-campaign-cta {
+  background: linear-gradient(135deg, #E11D48 0%, #BE123C 100%);
+  color: #FFFFFF;
+  box-shadow: 0 2px 6px rgba(225, 29, 72, 0.25);
+}
+
+:host([data-theme="light"]) .gpi-campaign-cta:hover {
+  box-shadow: 0 3px 10px rgba(225, 29, 72, 0.4);
+}
+
+:host([data-theme="light"]) .gpi-campaign-dismiss {
+  color: #656D76;
+}
+
+:host([data-theme="light"]) .gpi-campaign-dismiss:hover {
+  color: #1F2328;
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .gpi-campaign-header {
@@ -636,7 +678,7 @@ export const DOCK_CSS = `
 }
 
 :host([data-theme="light"]) .gpi-campaign-actions {
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: 1px solid rgba(225, 29, 72, 0.12);
 }
 
 .gpi-campaign-coupon {

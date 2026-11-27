@@ -75,7 +75,7 @@ export function InteractiveBeamLoader({ repoName, locale = 'es' }: Props) {
         </div>
         <div className="beam-header-text">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
               {repoName || (isEs ? 'Extrayendo Inteligencia...' : 'Extracting Intelligence...')}
             </span>
             <Sparkles size={12} style={{ color: '#2ea043' }} className="animate-pulse" />

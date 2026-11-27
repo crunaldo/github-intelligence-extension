@@ -58,8 +58,9 @@ export function CampaignsContent({
   const [couponCode, setCouponCode] = useState('LAUNCH50')
   const [enabled, setEnabled] = useState(true)
 
-  // Dock Preview tier switcher
+  // Dock Preview tier & theme switcher
   const [previewTier, setPreviewTier] = useState<'free' | 'pro'>('free')
+  const [previewTheme, setPreviewTheme] = useState<'dark' | 'light'>('dark')
   const [copiedCoupon, setCopiedCoupon] = useState(false)
 
   // Global Upper Announcement Banner (banner_message in feature_flags)
@@ -619,53 +620,92 @@ export function CampaignsContent({
             subtitle="Así es exactamente como verán los usuarios el banner dentro de GitHub."
             icon={<Eye className="size-4 text-indigo-400" />}
             action={
-              <div className="flex items-center gap-1 bg-[#090d16] p-0.5 rounded-lg border border-white/5">
-                <button
-                  type="button"
-                  onClick={() => setPreviewTier('free')}
-                  className={`px-2 py-1 text-[10px] font-medium rounded ${
-                    previewTier === 'free' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  Vista Free
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPreviewTier('pro')}
-                  className={`px-2 py-1 text-[10px] font-medium rounded ${
-                    previewTier === 'pro' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  Vista Pro
-                </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Theme Selector: Dark vs Light */}
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#090d16] p-0.5 rounded-lg border border-slate-200 dark:border-white/5">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTheme('dark')}
+                    className={`px-2 py-1 text-[10px] font-medium rounded transition ${
+                      previewTheme === 'dark' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    🌙 Oscuro
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTheme('light')}
+                    className={`px-2 py-1 text-[10px] font-medium rounded transition ${
+                      previewTheme === 'light' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    ☀️ Claro
+                  </button>
+                </div>
+
+                {/* Tier Selector: Free vs Pro */}
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#090d16] p-0.5 rounded-lg border border-slate-200 dark:border-white/5">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTier('free')}
+                    className={`px-2 py-1 text-[10px] font-medium rounded transition ${
+                      previewTier === 'free' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    Vista Free
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTier('pro')}
+                    className={`px-2 py-1 text-[10px] font-medium rounded transition ${
+                      previewTier === 'pro' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    Vista Pro
+                  </button>
+                </div>
               </div>
             }
           >
             {/* Simulated GitHub Page & Floating Dock */}
-            <div className="rounded-2xl border border-white/10 bg-[#070b14] p-4 space-y-3 relative overflow-hidden">
+            <div className={`rounded-2xl border p-4 space-y-3 relative overflow-hidden transition-colors ${
+              previewTheme === 'light'
+                ? 'border-slate-200 bg-[#f6f8fa] text-slate-800 shadow-sm'
+                : 'border-white/10 bg-[#070b14] text-slate-200 shadow-2xl'
+            }`}>
               {/* Fake GitHub Repo Bar */}
-              <div className="flex items-center justify-between border-b border-white/10 pb-2.5 text-xs text-slate-400">
+              <div className={`flex items-center justify-between border-b pb-2.5 text-xs ${
+                previewTheme === 'light'
+                  ? 'border-slate-200 text-slate-600'
+                  : 'border-white/10 text-slate-400'
+              }`}>
                 <div className="flex items-center gap-2">
                   <div className="size-2 rounded-full bg-rose-500" />
                   <div className="size-2 rounded-full bg-amber-500" />
                   <div className="size-2 rounded-full bg-emerald-500" />
-                  <span className="font-mono text-slate-300 ml-1">github.com/facebook/react</span>
+                  <span className={`font-mono ml-1 font-semibold ${previewTheme === 'light' ? 'text-slate-900' : 'text-slate-300'}`}>github.com/facebook/react</span>
                 </div>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 font-semibold text-slate-300">
+                <span className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
+                  previewTheme === 'light' ? 'bg-slate-200/80 text-slate-700' : 'bg-white/5 text-slate-300'
+                }`}>
                   {previewTier === 'free' ? 'Usuario Free' : 'Usuario Pro (Activo)'}
                 </span>
               </div>
 
               {/* Simulated Extension Dock Header */}
-              <div className="rounded-xl border border-indigo-500/30 bg-[#0f172a]/90 backdrop-blur-md p-3 space-y-2.5 shadow-xl">
+              <div className={`rounded-xl border p-3 space-y-2.5 shadow-xl transition-colors ${
+                previewTheme === 'light'
+                  ? 'border-slate-300 bg-white shadow-slate-200/60'
+                  : 'border-indigo-500/30 bg-[#0f172a]/90 backdrop-blur-md'
+              }`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="size-6 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-xs">
                       🐙
                     </div>
                     <div>
-                      <div className="text-xs font-semibold text-white">GitHub Project Intelligence</div>
-                      <div className="text-[10px] text-slate-400">Dock Flotante en Navegador</div>
+                      <div className={`text-xs font-semibold ${previewTheme === 'light' ? 'text-slate-900' : 'text-white'}`}>GitHub Project Intelligence</div>
+                      <div className={`text-[10px] ${previewTheme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Dock Flotante en Navegador</div>
                     </div>
                   </div>
                   <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -673,26 +713,36 @@ export function CampaignsContent({
 
                 {/* Banner Render */}
                 {activeBannerForPreview ? (
-                  <div className="rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/15 via-indigo-500/10 to-purple-500/15 p-3.5 space-y-2.5">
+                  <div className={`rounded-xl border p-3.5 space-y-2.5 transition-colors ${
+                    previewTheme === 'light'
+                      ? 'border-rose-300 bg-gradient-to-br from-rose-50 via-purple-50 to-pink-50 shadow-sm'
+                      : 'border-amber-500/30 bg-gradient-to-br from-amber-500/15 via-indigo-500/10 to-purple-500/15'
+                  }`}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="space-y-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {activeBannerForPreview.badge && (
-                            <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-amber-400 text-slate-950">
+                            <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${
+                              previewTheme === 'light'
+                                ? 'bg-rose-500 text-white'
+                                : 'bg-amber-400 text-slate-950'
+                            }`}>
                               {activeBannerForPreview.badge}
                             </span>
                           )}
-                          <span className="text-xs font-bold text-white">
+                          <span className={`text-xs font-bold ${previewTheme === 'light' ? 'text-slate-900' : 'text-white'}`}>
                             {activeBannerForPreview.title}
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-300 leading-snug">
+                        <p className={`text-[11px] leading-snug font-medium ${previewTheme === 'light' ? 'text-slate-700' : 'text-slate-300'}`}>
                           {activeBannerForPreview.message}
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/10">
+                    <div className={`flex items-center justify-between gap-2 pt-1 border-t ${
+                      previewTheme === 'light' ? 'border-rose-200' : 'border-white/10'
+                    }`}>
                       {activeBannerForPreview.couponCode ? (
                         <button
                           type="button"
@@ -701,7 +751,11 @@ export function CampaignsContent({
                             setCopiedCoupon(true)
                             setTimeout(() => setCopiedCoupon(false), 2000)
                           }}
-                          className="inline-flex items-center gap-1 text-[10px] font-mono font-semibold px-2 py-1 rounded-lg border border-amber-400/40 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 transition"
+                          className={`inline-flex items-center gap-1 text-[10px] font-mono font-semibold px-2 py-1 rounded-lg border transition ${
+                            previewTheme === 'light'
+                              ? 'border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                              : 'border-amber-400/40 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20'
+                          }`}
                         >
                           <Tag className="size-3" />
                           <span>{activeBannerForPreview.couponCode}</span>
@@ -715,7 +769,11 @@ export function CampaignsContent({
                         href={activeBannerForPreview.ctaUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 text-slate-950 shadow-md shadow-amber-500/20 transition active:scale-95"
+                        className={`inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-xl shadow-md transition active:scale-95 ${
+                          previewTheme === 'light'
+                            ? 'bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 text-white shadow-rose-500/20'
+                            : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 text-slate-950 shadow-amber-500/20'
+                        }`}
                       >
                         <span>{activeBannerForPreview.ctaText}</span>
                         <ArrowRight className="size-3" />
@@ -723,16 +781,18 @@ export function CampaignsContent({
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-white/10 p-4 text-center text-xs text-slate-500">
+                  <div className={`rounded-xl border border-dashed p-4 text-center text-xs ${
+                    previewTheme === 'light' ? 'border-slate-300 text-slate-500' : 'border-white/10 text-slate-500'
+                  }`}>
                     No hay campañas activas dirigidas a esta categoría de usuario ({previewTier}).
                   </div>
                 )}
 
                 {/* Simulated Dock Content Preview */}
-                <div className="space-y-1.5 pt-2 border-t border-white/5 opacity-50">
-                  <div className="h-3 w-3/4 rounded bg-white/10" />
-                  <div className="h-2 w-1/2 rounded bg-white/10" />
-                  <div className="h-10 rounded-lg bg-white/5 border border-white/5" />
+                <div className={`space-y-1.5 pt-2 border-t opacity-50 ${previewTheme === 'light' ? 'border-slate-200' : 'border-white/5'}`}>
+                  <div className={`h-3 w-3/4 rounded ${previewTheme === 'light' ? 'bg-slate-300' : 'bg-white/10'}`} />
+                  <div className={`h-2 w-1/2 rounded ${previewTheme === 'light' ? 'bg-slate-300' : 'bg-white/10'}`} />
+                  <div className={`h-10 rounded-lg ${previewTheme === 'light' ? 'bg-slate-200 border border-slate-300' : 'bg-white/5 border border-white/5'}`} />
                 </div>
               </div>
             </div>

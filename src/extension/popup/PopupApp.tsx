@@ -51,6 +51,7 @@ import {
   type ExtensionPreferences,
   DEFAULT_EXTENSION_PREFERENCES,
 } from '../storage'
+import { ProFeatureGateCard } from '../components/ProFeatureGateCard'
 import { LanguageBar } from '../components/LanguageBar'
 import { RateLimitGauge } from '../components/RateLimitGauge'
 import { detectSystemHardware, evaluateHardwareCompatibility, type HardwareInfo } from '../hardware'
@@ -124,7 +125,14 @@ export function PopupApp() {
       (b) => b.enabled !== false && (b.targetTier === 'all' || b.targetTier === userTier)
     )
   }, [remoteConfig?.campaignBanners, isPro])
+  const summaryAccess = getModuleAccess(remoteConfig, 'summary', 'free')
+  const installAccess = getModuleAccess(remoteConfig, 'installCommand', 'free')
+  const sandboxAccess = getModuleAccess(remoteConfig, 'cloudSandbox', 'free')
+  const hardwareAccess = getModuleAccess(remoteConfig, 'hardwareCompat', 'free')
+  const roadmapAccess = getModuleAccess(remoteConfig, 'roadmap', 'free')
+  const healthAccess = getModuleAccess(remoteConfig, 'repoHealth', 'free')
   const archAccess = getModuleAccess(remoteConfig, 'architectureDiagram', 'pro')
+  const deepAuditAccess = getModuleAccess(remoteConfig, 'deepAudit', 'pro')
 
   // Detect system hardware, remote config, and auth session with live sync
   useEffect(() => {
@@ -867,27 +875,64 @@ export function PopupApp() {
             {/* Contenedor de Detalles y Acciones Rápidas */}
             <div className="repo-hero-integrated-card" style={{ marginTop: 10 }}>
               {/* Explicación del Repo Integrada Aquí Mismo */}
-              <div className="integrated-summary-section" style={{ borderTop: 'none', paddingTop: 0 }}>
-                <ColloquialSummaryCard
-                  report={report}
-                  locale={activeLocale}
-                  refreshNonce={refreshNonce}
-                  onQuotaExceeded={() => {
-                    setQuotaExceeded(true)
-                    setReport(null)
-                  }}
-                />
-              </div>
+              {summaryAccess !== 'disabled' && (
+                summaryAccess === 'pro' && !isPro ? (
+                  <div className="integrated-summary-section" style={{ borderTop: 'none', paddingTop: 0 }}>
+                    <ProFeatureGateCard
+                      moduleName={activeLocale === 'es' ? 'Resumen Ejecutivo & Coloquial' : 'Executive & Colloquial Summary'}
+                      description={activeLocale === 'es' ? 'Explicación del repositorio generada por IA adaptada al perfil técnico.' : 'AI-generated repository explanation tailored to technical level.'}
+                      locale={activeLocale}
+                      onUpgraded={setSession}
+                    />
+                  </div>
+                ) : (
+                  <div className="integrated-summary-section" style={{ borderTop: 'none', paddingTop: 0 }}>
+                    <ColloquialSummaryCard
+                      report={report}
+                      locale={activeLocale}
+                      refreshNonce={refreshNonce}
+                      onQuotaExceeded={() => {
+                        setQuotaExceeded(true)
+                        setReport(null)
+                      }}
+                    />
+                  </div>
+                )
+              )}
 
               {/* 📦 Comando de Instalación en 1-Clic */}
-              <div style={{ marginTop: 6 }}>
-                <PackageInstallCommand report={report} locale={activeLocale} />
-              </div>
+              {installAccess !== 'disabled' && (
+                installAccess === 'pro' && !isPro ? (
+                  <div style={{ marginTop: 6 }}>
+                    <ProFeatureGateCard
+                      moduleName={activeLocale === 'es' ? 'Comando de Instalación en 1-Clic' : '1-Click Install Command'}
+                      locale={activeLocale}
+                      onUpgraded={setSession}
+                    />
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 6 }}>
+                    <PackageInstallCommand report={report} locale={activeLocale} />
+                  </div>
+                )
+              )}
 
               {/* ⚡ 2. Clonado y Apertura en 1 Clic en tu Editor / Sandbox en la Nube */}
-              <div style={{ marginTop: 6 }}>
-                <EditorLaunchButtons repoUrl={report.repository.htmlUrl} fullName={report.repository.fullName} locale={activeLocale} />
-              </div>
+              {sandboxAccess !== 'disabled' && (
+                sandboxAccess === 'pro' && !isPro ? (
+                  <div style={{ marginTop: 6 }}>
+                    <ProFeatureGateCard
+                      moduleName={activeLocale === 'es' ? 'Lanzador en Cloud Sandbox & Editores Web' : 'Cloud Sandbox & Web Editor Launcher'}
+                      locale={activeLocale}
+                      onUpgraded={setSession}
+                    />
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 6 }}>
+                    <EditorLaunchButtons repoUrl={report.repository.htmlUrl} fullName={report.repository.fullName} locale={activeLocale} />
+                  </div>
+                )
+              )}
             </div>
 
             {/* Satisfacción & Feedback de Usuario */}
@@ -933,16 +978,34 @@ export function PopupApp() {
             </div>
 
             {/* Módulo Desplegable: Compatibilidad con tu PC */}
-            {activeSubTab === 'hardware' && (
+            {activeSubTab === 'hardware' && hardwareAccess !== 'disabled' && (
               <div className="subtab-view-container animate-fade-in">
-                <HardwareCompatibilityCard hardware={hardware} compat={compat} locale={activeLocale} />
+                {hardwareAccess === 'pro' && !isPro ? (
+                  <ProFeatureGateCard
+                    moduleName={activeLocale === 'es' ? 'Compatibilidad de Hardware del PC' : 'PC Hardware Compatibility'}
+                    description={activeLocale === 'es' ? 'Verifica automáticamente si tu procesador, memoria RAM y arquitectura son suficientes para ejecutar este software.' : 'Automatically checks if your CPU, RAM, and OS architecture can execute this workload.'}
+                    locale={activeLocale}
+                    onUpgraded={setSession}
+                  />
+                ) : (
+                  <HardwareCompatibilityCard hardware={hardware} compat={compat} locale={activeLocale} />
+                )}
               </div>
             )}
 
             {/* Módulo Desplegable: Roadmap de Instalación */}
-            {activeSubTab === 'roadmap' && (
+            {activeSubTab === 'roadmap' && roadmapAccess !== 'disabled' && (
               <div className="subtab-view-container animate-fade-in">
-                <RoadmapView report={report} hardware={hardware} locale={activeLocale} />
+                {roadmapAccess === 'pro' && !isPro ? (
+                  <ProFeatureGateCard
+                    moduleName={activeLocale === 'es' ? 'Roadmap de Puesta en Marcha' : 'Quickstart Installation Roadmap'}
+                    description={activeLocale === 'es' ? 'Secuencia interactiva paso a paso para clonar, configurar dependencias y correr en local.' : 'Step-by-step interactive onboarding sequence to clone, configure, and run locally.'}
+                    locale={activeLocale}
+                    onUpgraded={setSession}
+                  />
+                ) : (
+                  <RoadmapView report={report} hardware={hardware} locale={activeLocale} />
+                )}
               </div>
             )}
 
@@ -971,10 +1034,32 @@ export function PopupApp() {
                 />
 
                 {/* 🛡️ Auditoría Técnica Profunda */}
-                <DeepTechnicalAuditCard report={report} locale={activeLocale} />
+                {deepAuditAccess !== 'disabled' && (
+                  deepAuditAccess === 'pro' && !isPro ? (
+                    <ProFeatureGateCard
+                      moduleName={activeLocale === 'es' ? 'Auditoría Técnica Profunda' : 'Deep Technical Audit'}
+                      description={activeLocale === 'es' ? 'Desglose exhaustivo de fortalezas de diseño, deuda técnica oculta y cuellos de botella detectados por IA.' : 'Exhaustive breakdown of design strengths, hidden tech debt, and potential bottlenecks detected by AI.'}
+                      locale={activeLocale}
+                      onUpgraded={setSession}
+                    />
+                  ) : (
+                    <DeepTechnicalAuditCard report={report} locale={activeLocale} />
+                  )
+                )}
 
                 {/* 🩺 3. Índice de Salud & Actividad Detallado */}
-                <RepoHealthCard report={report} locale={activeLocale} />
+                {healthAccess !== 'disabled' && (
+                  healthAccess === 'pro' && !isPro ? (
+                    <ProFeatureGateCard
+                      moduleName={activeLocale === 'es' ? 'Índice de Salud & Actividad' : 'Repository Health & Velocity Index'}
+                      description={activeLocale === 'es' ? 'Puntaje de mantenimiento, frecuencia de commits, velocidad de PRs y tasa de resolución de issues.' : 'Maintenance score, commit cadence, PR turnaround time, and issue resolution ratio.'}
+                      locale={activeLocale}
+                      onUpgraded={setSession}
+                    />
+                  ) : (
+                    <RepoHealthCard report={report} locale={activeLocale} />
+                  )
+                )}
 
                 <div className="modern-card" style={{ padding: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' }}>

@@ -97,11 +97,11 @@ export function WhatsNewModal({ releaseConfig, forceOpen = false, onClose }: Wha
             <ShieldAlert size={28} />
           </div>
 
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: '#fff', margin: '0 0 6px 0' }}>
+          <h3 className="ext-modal-title">
             Actualización Requerida
           </h3>
 
-          <p style={{ fontSize: 12, color: 'var(--text-secondary, #94a3b8)', lineHeight: 1.5, marginBottom: 16 }}>
+          <p className="ext-modal-desc" style={{ marginBottom: 16 }}>
             {releaseConfig?.forceUpdateMessage ||
               'Esta versión de la extensión ha sido deprecada. Por favor actualiza a la versión más reciente en Chrome Web Store para continuar.'}
           </p>
@@ -142,20 +142,10 @@ export function WhatsNewModal({ releaseConfig, forceOpen = false, onClose }: Wha
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                padding: '2px 8px',
-                borderRadius: 999,
-                background: 'rgba(99, 102, 241, 0.2)',
-                color: '#818cf8',
-                border: '1px solid rgba(99, 102, 241, 0.35)'
-              }}
-            >
+            <span className="ext-modal-badge">
               v{whatsNew.version || CURRENT_EXTENSION_VERSION}
             </span>
-            <span style={{ fontSize: 11, color: 'var(--text-secondary, #94a3b8)' }}>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
               {whatsNew.releaseDate}
             </span>
           </div>
@@ -163,14 +153,9 @@ export function WhatsNewModal({ releaseConfig, forceOpen = false, onClose }: Wha
           <button
             type="button"
             onClick={handleDismiss}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-secondary, #94a3b8)',
-              cursor: 'pointer',
-              padding: 4,
-              borderRadius: 8
-            }}
+            className="ext-modal-close-btn"
+            title="Cerrar modal"
+            aria-label="Cerrar"
           >
             <X size={16} />
           </button>
@@ -178,25 +163,13 @@ export function WhatsNewModal({ releaseConfig, forceOpen = false, onClose }: Wha
 
         {/* Hero Title */}
         <div style={{ textAlign: 'center', marginBottom: 16 }}>
-          <div
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: 16,
-              background: 'rgba(99, 102, 241, 0.15)',
-              color: '#818cf8',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 8
-            }}
-          >
+          <div className="ext-modal-hero-icon">
             <Sparkles size={24} />
           </div>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: '#fff', margin: '0 0 6px 0' }}>
+          <h3 className="ext-modal-title">
             {whatsNew.title || '¡Novedades en GitHub Intelligence!'}
           </h3>
-          <p style={{ fontSize: 12, color: 'var(--text-secondary, #94a3b8)', lineHeight: 1.5, margin: 0 }}>
+          <p className="ext-modal-desc">
             {whatsNew.summary || (whatsNew as any).description}
           </p>
         </div>
@@ -204,31 +177,8 @@ export function WhatsNewModal({ releaseConfig, forceOpen = false, onClose }: Wha
         {/* Highlights List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
           {(whatsNew.highlights || []).map((h) => (
-            <div
-              key={h.id}
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 10,
-                padding: '10px 12px',
-                borderRadius: 12,
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(255, 255, 255, 0.06)'
-              }}
-            >
-              <div
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 8,
-                  background: 'rgba(99, 102, 241, 0.15)',
-                  color: '#818cf8',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}
-              >
+            <div key={h.id} className="ext-modal-highlight">
+              <div className="ext-modal-highlight-icon">
                 {h.icon === 'zap' ? (
                   <Zap size={14} />
                 ) : h.icon === 'shield' ? (
@@ -238,11 +188,11 @@ export function WhatsNewModal({ releaseConfig, forceOpen = false, onClose }: Wha
                 )}
               </div>
               <div>
-                <h5 style={{ fontSize: 12, fontWeight: 600, color: '#fff', margin: '0 0 2px 0' }}>
+                <h5 className="ext-modal-highlight-title">
                   {h.title}
                 </h5>
                 {h.description ? (
-                  <p style={{ fontSize: 11, color: 'var(--text-secondary, #94a3b8)', margin: 0, lineHeight: 1.4 }}>
+                  <p className="ext-modal-highlight-desc">
                     {h.description}
                   </p>
                 ) : null}
@@ -277,16 +227,7 @@ export function WhatsNewModal({ releaseConfig, forceOpen = false, onClose }: Wha
               href={whatsNew.blogUrl}
               target="_blank"
               rel="noreferrer"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 4,
-                fontSize: 11,
-                color: '#818cf8',
-                textDecoration: 'none',
-                marginTop: 2
-              }}
+              className="ext-modal-blog-link"
             >
               <span>Ver notas de la versión completas</span>
               <ExternalLink size={11} />

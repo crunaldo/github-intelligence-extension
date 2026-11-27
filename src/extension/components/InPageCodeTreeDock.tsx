@@ -30,7 +30,7 @@ import { classifyFile, getFileIcon } from '../utils/fileClassifier'
 import { FileAiExplainerPopover } from './FileAiExplainerPopover'
 import type { CodeTreePreferences } from '../storage'
 import { DEFAULT_CODE_TREE_PREFERENCES, saveStoredPreferences, getStoredGitHubToken } from '../storage'
-import { fetchRemoteConfig, type CampaignBannerItem } from '../api/backendClient'
+import { fetchRemoteConfig, getModuleAccess, type CampaignBannerItem, type RemoteConfig } from '../api/backendClient'
 import {
   parsePrOrCommitUrl,
   resolvePrOrCommitFiles,
@@ -337,6 +337,7 @@ export function InPageCodeTreeDock({
   }, [owner, repo, targetUrl, prOrCommitResolution, codeTreePreferences?.customEnterpriseDomains])
 
   // Dynamic In-Dock Campaign Banners from Remote Config
+  const [remoteConfig, setRemoteConfig] = useState<RemoteConfig | null>(null)
   const [campaignBanners, setCampaignBanners] = useState<CampaignBannerItem[]>([])
   const [dismissedBannerIds, setDismissedBannerIds] = useState<Record<string, boolean>>(() => {
     try {
@@ -351,12 +352,15 @@ export function InPageCodeTreeDock({
   useEffect(() => {
     fetchRemoteConfig()
       .then((cfg) => {
+        setRemoteConfig(cfg)
         if (cfg?.campaignBanners && cfg.campaignBanners.length > 0) {
           setCampaignBanners(cfg.campaignBanners)
         }
       })
       .catch(() => {})
   }, [])
+
+  const fileTreeAccess = getModuleAccess(remoteConfig, 'fileTree', 'free')
 
   const activeBanner = useMemo(() => {
     if (!campaignBanners || campaignBanners.length === 0) return null
@@ -715,6 +719,10 @@ export function InPageCodeTreeDock({
     })
   }
 
+  if (isHiddenByUrl || fileTreeAccess === 'disabled') {
+    return null
+  }
+
   return (
     <div className={`gpi-dock-container ${isRight ? 'position-right' : ''}`}>
       {/* Prominent Glowing Toggle Tab Handle (Hidden when drawer is open so it never overlaps content) */}
@@ -739,7 +747,7 @@ export function InPageCodeTreeDock({
         }
       >
         <FolderTree size={17} />
-        <span className="gpi-tab-label">Tree</span>
+        <span className="gpi-tab-label">Tree{fileTreeAccess === 'pro' && !isPro ? ' (PRO)' : ''}</span>
         <span className="gpi-tab-pulse-dot" />
       </div>
 
@@ -765,6 +773,11 @@ export function InPageCodeTreeDock({
           <div className="gpi-header-title">
             <span style={{ color: 'var(--gpi-accent)' }}>⚡</span>
             <span>{repo}</span>
+            {fileTreeAccess === 'pro' && (
+              <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: 'rgba(217, 119, 6, 0.2)', color: '#f59e0b', border: '1px solid rgba(217, 119, 6, 0.4)' }}>
+                PRO
+              </span>
+            )}
             <span style={{ fontSize: 11, color: 'var(--gpi-text-muted)', fontWeight: 400 }}>
               @{ref}
             </span>
@@ -1135,7 +1148,30 @@ export function InPageCodeTreeDock({
 
             {/* Body Content */}
             <div className="gpi-tree-body">
-              {prResolution && prResolution.files.length > 0 && prViewTab === 'pr' ? (
+              {fileTreeAccess === 'pro' && !isPro ? (
+                <div style={{ padding: '32px 18px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                  <Zap size={28} style={{ color: '#d97706' }} />
+                  <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--gpi-text)' }}>
+                    {activeLocale === 'es' ? 'Explorador de Código Pro' : 'Code Explorer Pro'}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--gpi-text-muted)', lineHeight: 1.5 }}>
+                    {activeLocale === 'es'
+                      ? 'El explorador de código in-page está reservado para suscriptores Pro según la configuración del administrador.'
+                      : 'The in-page code explorer is reserved for Pro subscribers according to administrator settings.'}
+                  </div>
+                  {onOpenSidepanel && (
+                    <button
+                      type="button"
+                      className="gpi-dock-settings-btn primary"
+                      style={{ marginTop: 8 }}
+                      onClick={onOpenSidepanel}
+                    >
+                      <Sparkles size={12} />
+                      <span>{activeLocale === 'es' ? 'Desbloquear con Pro' : 'Upgrade to Pro'}</span>
+                    </button>
+                  )}
+                </div>
+              ) : prResolution && prResolution.files.length > 0 && prViewTab === 'pr' ? (
                 (() => {
                   const query = searchQuery.toLowerCase().trim()
                   const filtered = prResolution.files.filter((f) =>

@@ -175,8 +175,10 @@ export function SidepanelApp() {
   const roadmapAccess = getModuleAccess(remoteConfig, 'roadmap', 'free')
   const healthAccess = getModuleAccess(remoteConfig, 'repoHealth', 'free')
   const archAccess = getModuleAccess(remoteConfig, 'architectureDiagram', 'pro')
+  const deepAuditAccess = getModuleAccess(remoteConfig, 'deepAudit', 'pro')
   const depAccess = getModuleAccess(remoteConfig, 'dependencies', 'free')
   const fileAccess = getModuleAccess(remoteConfig, 'fileTree', 'free')
+  const exportAccess = getModuleAccess(remoteConfig, 'exportReport', 'free')
 
   const compat = useMemo(() => {
     if (!hardware || !report) return null
@@ -635,6 +637,15 @@ export function SidepanelApp() {
 
   const handleExportDownload = (format: 'markdown' | 'json') => {
     if (!report) return
+    if (exportAccess === 'disabled') return
+    if (exportAccess === 'pro' && !isPro) {
+      alert(
+        activeLocale === 'es'
+          ? 'La exportación de reportes requiere una suscripción Pro activa.'
+          : 'Exporting reports requires an active Pro subscription.'
+      )
+      return
+    }
     void downloadReport(report, format)
   }
 
@@ -1040,7 +1051,18 @@ export function SidepanelApp() {
                 {reportSection === 'overview' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {/* 🛡️ 2. Auditoría Técnica Profunda (Fortalezas & Riesgos) */}
-                    <DeepTechnicalAuditCard report={report} locale={activeLocale} />
+                    {deepAuditAccess !== 'disabled' && (
+                      deepAuditAccess === 'pro' && !isPro ? (
+                        <ProFeatureGateCard
+                          moduleName={activeLocale === 'es' ? 'Auditoría Técnica Profunda' : 'Deep Technical Audit'}
+                          description={activeLocale === 'es' ? 'Desglose exhaustivo de fortalezas de diseño, deuda técnica oculta y cuellos de botella detectados por IA.' : 'Exhaustive breakdown of design strengths, hidden tech debt, and potential bottlenecks detected by AI.'}
+                          locale={activeLocale}
+                          onUpgraded={setSession}
+                        />
+                      ) : (
+                        <DeepTechnicalAuditCard report={report} locale={activeLocale} />
+                      )
+                    )}
 
                     {/* 🩺 3. Índice de Salud & Actividad Detallado */}
                     {healthAccess !== 'disabled' && (
@@ -1476,25 +1498,48 @@ export function SidepanelApp() {
               <span>{copiedMd ? t('copied_markdown', activeLocale) : t('copy_markdown', activeLocale)}</span>
             </button>
 
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => handleExportDownload('markdown')}
-              title={activeLocale === 'es' ? 'Descargar archivo .md' : 'Download .md file'}
-            >
-              <Download size={13} />
-              <span>{activeLocale === 'es' ? 'Descargar .md' : 'Download .md'}</span>
-            </button>
+            {exportAccess !== 'disabled' && (
+              exportAccess === 'pro' && !isPro ? (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() =>
+                    alert(
+                      activeLocale === 'es'
+                        ? 'La exportación de reportes requiere una suscripción Pro activa.'
+                        : 'Exporting reports requires an active Pro subscription.'
+                    )
+                  }
+                  title={activeLocale === 'es' ? 'Exportar requiere Pro' : 'Export requires Pro'}
+                  style={{ opacity: 0.8 }}
+                >
+                  <Download size={13} style={{ color: 'var(--accent-amber)' }} />
+                  <span>{activeLocale === 'es' ? 'Exportar (PRO)' : 'Export (PRO)'}</span>
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => handleExportDownload('markdown')}
+                    title={activeLocale === 'es' ? 'Descargar archivo .md' : 'Download .md file'}
+                  >
+                    <Download size={13} />
+                    <span>{activeLocale === 'es' ? 'Descargar .md' : 'Download .md'}</span>
+                  </button>
 
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => handleExportDownload('json')}
-              title={activeLocale === 'es' ? 'Descargar archivo .json' : 'Download .json file'}
-            >
-              <Download size={13} />
-              <span>JSON</span>
-            </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => handleExportDownload('json')}
+                    title={activeLocale === 'es' ? 'Descargar archivo .json' : 'Download .json file'}
+                  >
+                    <Download size={13} />
+                    <span>JSON</span>
+                  </button>
+                </>
+              )
+            )}
           </div>
 
           <a

@@ -1281,7 +1281,7 @@ async function handleMascotChat(
   try {
     const stream = await handleMascotChatRequest(
       {
-        userId,
+        userId: userId || `anon:${ipHash}`,
         messages,
         repoContext: {
           owner,

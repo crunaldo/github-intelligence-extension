@@ -49,7 +49,8 @@ export function ReleasesContent({
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
-  // New highlight form state
+  // Highlight and preview theme state
+  const [previewTheme, setPreviewTheme] = useState<'dark' | 'light'>('dark')
   const [newIcon, setNewIcon] = useState('sparkles')
   const [newTitle, setNewTitle] = useState('')
   const [newDesc, setNewDesc] = useState('')
@@ -572,19 +573,53 @@ export function ReleasesContent({
           <SectionCard
             title="Vista Previa en Vivo del Modal"
             description="Así es como tus usuarios verán el modal 'What's New' en su navegador."
+            action={
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#090d16] p-0.5 rounded-lg border border-slate-200 dark:border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setPreviewTheme('dark')}
+                  className={`px-2.5 py-1 text-[10px] font-medium rounded transition ${
+                    previewTheme === 'dark' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  🌙 Modo Oscuro
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewTheme('light')}
+                  className={`px-2.5 py-1 text-[10px] font-medium rounded transition ${
+                    previewTheme === 'light' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  ☀️ Modo Claro
+                </button>
+              </div>
+            }
           >
-            <div className="overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-b from-slate-900 to-slate-950 shadow-2xl">
+            <div className={`overflow-hidden rounded-2xl border transition-colors shadow-2xl ${
+              previewTheme === 'light'
+                ? 'border-slate-200 bg-white text-slate-900 shadow-slate-200/60'
+                : 'border-white/15 bg-gradient-to-b from-slate-900 to-slate-950 text-white'
+            }`}>
               {/* Fake Chrome / Browser Titlebar */}
-              <div className="flex items-center justify-between border-b border-white/10 bg-slate-950/80 px-4 py-2.5">
+              <div className={`flex items-center justify-between border-b px-4 py-2.5 ${
+                previewTheme === 'light'
+                  ? 'border-slate-200 bg-slate-50 text-slate-600'
+                  : 'border-white/10 bg-slate-950/80 text-slate-400'
+              }`}>
                 <div className="flex items-center gap-2">
                   <div className="size-2.5 rounded-full bg-rose-500" />
                   <div className="size-2.5 rounded-full bg-amber-500" />
                   <div className="size-2.5 rounded-full bg-emerald-500" />
                 </div>
-                <span className="text-[11px] font-medium text-slate-400">
+                <span className={`text-[11px] font-medium ${previewTheme === 'light' ? 'text-slate-700' : 'text-slate-400'}`}>
                   GitHub Extension • What's New
                 </span>
-                <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-bold text-indigo-400">
+                <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                  previewTheme === 'light'
+                    ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                    : 'bg-indigo-500/20 text-indigo-400'
+                }`}>
                   v{config.whatsNew.version}
                 </span>
               </div>
@@ -592,13 +627,17 @@ export function ReleasesContent({
               {/* Modal Body Preview */}
               <div className="p-5 space-y-4">
                 <div className="text-center space-y-1">
-                  <div className="inline-flex size-11 items-center justify-center rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 shadow-inner">
-                    <Rocket className="size-6 text-indigo-400" />
+                  <div className={`inline-flex size-11 items-center justify-center rounded-2xl border shadow-inner ${
+                    previewTheme === 'light'
+                      ? 'bg-indigo-50 text-indigo-600 border-indigo-100'
+                      : 'bg-indigo-600/20 text-indigo-400 border-indigo-500/30'
+                  }`}>
+                    <Rocket className={`size-6 ${previewTheme === 'light' ? 'text-indigo-600' : 'text-indigo-400'}`} />
                   </div>
-                  <h3 className="text-base font-bold text-white pt-1">
+                  <h3 className={`text-base font-bold pt-1 ${previewTheme === 'light' ? 'text-slate-900' : 'text-white'}`}>
                     {config.whatsNew.title}
                   </h3>
-                  <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+                  <p className={`text-xs max-w-sm mx-auto leading-relaxed ${previewTheme === 'light' ? 'text-slate-600' : 'text-slate-400'}`}>
                     {config.whatsNew.summary}
                   </p>
                 </div>
@@ -608,9 +647,17 @@ export function ReleasesContent({
                   {config.whatsNew.highlights.map((h) => (
                     <div
                       key={h.id}
-                      className="flex items-start gap-3 rounded-xl border border-white/5 bg-white/[0.03] p-2.5"
+                      className={`flex items-start gap-3 rounded-xl border p-2.5 transition-colors ${
+                        previewTheme === 'light'
+                          ? 'border-slate-200 bg-slate-50/80 shadow-xs'
+                          : 'border-white/5 bg-white/[0.03]'
+                      }`}
                     >
-                      <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-indigo-500/20 text-indigo-400">
+                      <div className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${
+                        previewTheme === 'light'
+                          ? 'bg-indigo-100 text-indigo-600'
+                          : 'bg-indigo-500/20 text-indigo-400'
+                      }`}>
                         {h.icon === 'zap' ? (
                           <Zap className="size-3.5" />
                         ) : h.icon === 'shield' ? (
@@ -620,8 +667,8 @@ export function ReleasesContent({
                         )}
                       </div>
                       <div>
-                        <h5 className="text-xs font-semibold text-white">{h.title}</h5>
-                        <p className="text-[11px] text-slate-400 leading-snug">{h.description}</p>
+                        <h5 className={`text-xs font-semibold ${previewTheme === 'light' ? 'text-slate-900' : 'text-white'}`}>{h.title}</h5>
+                        <p className={`text-[11px] leading-snug ${previewTheme === 'light' ? 'text-slate-600' : 'text-slate-400'}`}>{h.description}</p>
                       </div>
                     </div>
                   ))}
@@ -631,14 +678,14 @@ export function ReleasesContent({
                 <div className="pt-2">
                   <button
                     type="button"
-                    className="w-full rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 py-2.5 text-xs font-bold text-white shadow-md shadow-indigo-600/20 hover:from-indigo-500 hover:to-indigo-400"
+                    className="w-full rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 py-2.5 text-xs font-bold text-white shadow-md shadow-indigo-600/20 hover:from-indigo-500 hover:to-indigo-400 transition"
                   >
                     {config.whatsNew.ctaText || '¡Comenzar a Explorar!'}
                   </button>
                   {config.whatsNew.blogUrl && (
-                    <p className="mt-2 text-center text-[10px] text-slate-500">
+                    <p className={`mt-2 text-center text-[10px] ${previewTheme === 'light' ? 'text-slate-600' : 'text-slate-500'}`}>
                       ¿Quieres ver el changelog completo?{' '}
-                      <span className="text-indigo-400 underline cursor-pointer">
+                      <span className={`${previewTheme === 'light' ? 'text-indigo-600' : 'text-indigo-400'} underline cursor-pointer`}>
                         Leer notas de la versión
                       </span>
                     </p>
