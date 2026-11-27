@@ -34,6 +34,7 @@ import {
   type AdminSession,
   type AdminSupabaseClient,
   dispatchServerConfigSync,
+  fetchProfiles,
   fetchRemoteConfigsMap,
   recordAdminAuditLog
 } from '../../lib/supabase-client'
@@ -77,7 +78,7 @@ export function TeamContent({
     setLoading(true)
     const [res, profilesRes] = await Promise.all([
       fetchRemoteConfigsMap(client),
-      client.from('profiles').select('id, email, role, created_at').limit(100)
+      fetchProfiles(client)
     ])
     setLoading(false)
 
@@ -326,18 +327,21 @@ export function TeamContent({
             </thead>
             <tbody className="divide-y divide-white/5">
               {config.members.map((m) => {
-                const roleDef = ADMIN_ROLE_DEFINITIONS[m.role]
-                const isCurrentUser = m.email === session.user.email
+                const roleDef = ADMIN_ROLE_DEFINITIONS[m.role] || ADMIN_ROLE_DEFINITIONS.developer
+                const currentEmail = session?.email || session?.user?.email || ''
+                const isCurrentUser = Boolean(currentEmail && m.email && m.email.toLowerCase() === currentEmail.toLowerCase())
+                const initial = (m.name || m.email || 'U').charAt(0).toUpperCase()
+                const displayName = m.name || m.email?.split('@')[0] || 'Miembro'
                 return (
                   <tr key={m.id} className="hover:bg-white/[0.02]">
                     <td className="py-3 px-3">
                       <div className="flex items-center gap-2.5">
                         <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-indigo-600 to-indigo-400 text-xs font-bold text-white shadow">
-                          {m.name.charAt(0).toUpperCase()}
+                          {initial}
                         </div>
                         <div>
                           <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-white">{m.name}</span>
+                            <span className="font-semibold text-white">{displayName}</span>
                             {isCurrentUser && (
                               <span className="rounded bg-indigo-500/20 px-1 py-0.2 text-[9px] font-bold text-indigo-300">
                                 TÚ
@@ -351,7 +355,7 @@ export function TeamContent({
                     <td className="py-3 px-3 text-slate-300">{m.department || 'General'}</td>
                     <td className="py-3 px-3">
                       <select
-                        value={m.role}
+                        value={m.role === 'admin' ? 'super_admin' : (m.role || 'developer')}
                         disabled={isCurrentUser}
                         onChange={(e) => handleChangeRole(m.id, e.target.value as AdminRole)}
                         className={`rounded-lg border px-2 py-1 text-xs font-medium ${roleDef.badgeColor} bg-slate-900`}

@@ -715,7 +715,12 @@ export const DEFAULT_IN_APP_NOTIFICATIONS_CONFIG: InAppNotificationsConfig = {
 // 5. TEAM RBAC & ACCESS MANAGEMENT (/team)
 // ============================================================================
 
-export type AdminRole = 'super_admin' | 'developer' | 'marketing_support' | 'analyst_read_only'
+export type AdminRole =
+  | 'super_admin'
+  | 'admin'
+  | 'developer'
+  | 'marketing_support'
+  | 'analyst_read_only'
 
 export type AdminPermission =
   | 'all'
@@ -741,6 +746,13 @@ export interface RolePermissionDefinition {
 export const ADMIN_ROLE_DEFINITIONS: Record<AdminRole, RolePermissionDefinition> = {
   super_admin: {
     role: 'super_admin',
+    label: 'Super Admin',
+    badgeColor: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+    description: 'Acceso total y sin restricciones a todos los módulos, claves, facturación y gestión de equipo.',
+    permissions: ['all']
+  },
+  admin: {
+    role: 'admin',
     label: 'Super Admin',
     badgeColor: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
     description: 'Acceso total y sin restricciones a todos los módulos, claves, facturación y gestión de equipo.',

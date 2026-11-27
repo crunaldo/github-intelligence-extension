@@ -130,7 +130,7 @@ export function NotificationsContent({
       })
       await recordAdminAuditLog(
         client,
-        session.user.email,
+        session.email || session.user?.email || '',
         'update_in_app_notifications',
         'in_app_notifications',
         { count: updatedList.length }

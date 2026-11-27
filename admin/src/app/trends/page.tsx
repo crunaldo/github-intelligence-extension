@@ -254,7 +254,7 @@ export function TrendsContent({
       })
       await recordAdminAuditLog(
         client,
-        session.user.email,
+        session.email || session.user?.email || '',
         'update_cache_prewarm',
         'cache_prewarm_config',
         {
@@ -348,7 +348,7 @@ export function TrendsContent({
 
     await recordAdminAuditLog(
       client,
-      session.user.email,
+      session.email || session.user?.email || '',
       'trigger_cache_prewarm',
       'cache_prewarm_config',
       { successCount, totalAttempted: targetList.length }

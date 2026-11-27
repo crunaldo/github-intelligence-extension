@@ -32,21 +32,34 @@ Object.defineProperty(window, 'localStorage', {
 const fakeSession: AdminSession = {
   accessToken: 'fake-token',
   userId: 'user-admin-1',
-  email: 'admin@example.com'
+  email: 'admin@example.com',
+  user: {
+    id: 'user-admin-1',
+    email: 'admin@example.com'
+  }
+}
+
+const fakeBuilder: any = {
+  eq: () => fakeBuilder,
+  order: () => fakeBuilder,
+  ilike: () => fakeBuilder,
+  or: () => fakeBuilder,
+  limit: () => fakeBuilder,
+  maybeSingle: () => Promise.resolve({ data: { role: 'admin' }, error: null }),
+  single: () => Promise.resolve({ data: { role: 'admin' }, error: null }),
+  then: (cb: any) =>
+    Promise.resolve({
+      data: [{ id: 'user-admin-1', email: 'admin@example.com', role: 'admin', created_at: new Date().toISOString() }],
+      error: null
+    }).then(cb)
 }
 
 const fakeClient: any = {
   from: () => ({
-    select: () => ({
-      eq: () => ({
-        maybeSingle: () => Promise.resolve({ data: { role: 'admin' }, error: null }),
-        limit: () => Promise.resolve({ data: [{ role: 'admin' }], error: null }),
-        then: (cb: any) => Promise.resolve({ data: [{ role: 'admin' }], error: null }).then(cb)
-      }),
-      order: () => ({
-        limit: () => Promise.resolve({ data: [], error: null })
-      })
-    })
+    select: () => fakeBuilder,
+    update: () => fakeBuilder,
+    delete: () => fakeBuilder,
+    upsert: () => Promise.resolve({ data: null, error: null })
   })
 }
 
@@ -102,6 +115,17 @@ describe('Admin Pages Render', () => {
     const root = createRoot(container)
     await React.act(async () => {
       root.render(<TeamPage injectedSession={fakeSession} injectedClient={fakeClient} />)
+    })
+    expect(container.innerHTML.length).toBeGreaterThan(0)
+  })
+
+  it('renders TeamContent directly with active members without throwing', async () => {
+    const root = createRoot(container)
+    const { TeamContent } = await import('../src/app/team/page')
+    await React.act(async () => {
+      root.render(<TeamContent client={fakeClient} session={fakeSession} />)
+      // Allow async loadData to run and populate members
+      await new Promise((r) => setTimeout(r, 50))
     })
     expect(container.innerHTML.length).toBeGreaterThan(0)
   })

@@ -19,6 +19,10 @@ export interface AdminSession {
   accessToken: string
   userId: string
   email: string
+  user?: {
+    id: string
+    email: string
+  }
 }
 
 export interface AdminSupabaseConfig {

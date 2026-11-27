@@ -168,7 +168,7 @@ export function ReleasesContent({
       })
       await recordAdminAuditLog(
         client,
-        session.user.email,
+        session.email || session.user?.email || '',
         'update_extension_release',
         'extension_release',
         {

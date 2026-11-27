@@ -168,7 +168,7 @@ export function CostsContent({
       })
       await recordAdminAuditLog(
         client,
-        session.user.email,
+        session.email || session.user?.email || '',
         'update_finops_config',
         'finops_budget_config',
         {

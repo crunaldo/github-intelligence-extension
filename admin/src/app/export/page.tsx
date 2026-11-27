@@ -52,7 +52,7 @@ export function ExportContent({
       rowCount: 1,
       fileSizeBytes: 24500,
       exportedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-      exportedBy: session.user.email
+      exportedBy: session.email || session.user?.email || 'admin'
     },
     {
       id: 'exp-2',
@@ -61,7 +61,7 @@ export function ExportContent({
       rowCount: 384,
       fileSizeBytes: 42100,
       exportedAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-      exportedBy: session.user.email
+      exportedBy: session.email || session.user?.email || 'admin'
     }
   ])
 
@@ -107,7 +107,7 @@ export function ExportContent({
         const snapshotData = {
           version: '1.4.0',
           exportedAt: new Date().toISOString(),
-          exportedBy: session.user.email,
+          exportedBy: session.email || session.user?.email || 'admin',
           environment: 'production',
           configurations: configMap.data || {}
         }
@@ -122,7 +122,7 @@ export function ExportContent({
             rowCount: Object.keys(configMap.data || {}).length,
             fileSizeBytes: jsonStr.length,
             exportedAt: new Date().toISOString(),
-            exportedBy: session.user.email
+            exportedBy: session.email || session.user?.email || 'admin'
           },
           ...prev
         ])
@@ -149,7 +149,7 @@ export function ExportContent({
             rowCount: rows.length,
             fileSizeBytes: content.length,
             exportedAt: new Date().toISOString(),
-            exportedBy: session.user.email
+            exportedBy: session.email || session.user?.email || 'admin'
           },
           ...prev
         ])
@@ -194,13 +194,13 @@ export function ExportContent({
             rowCount: rows.length,
             fileSizeBytes: content.length,
             exportedAt: new Date().toISOString(),
-            exportedBy: session.user.email
+            exportedBy: session.email || session.user?.email || 'admin'
           },
           ...prev
         ])
       }
 
-      await recordAdminAuditLog(client, session.user.email, 'export_dataset', dataset, {
+      await recordAdminAuditLog(client, session.email || session.user?.email || 'admin', 'export_dataset', dataset, {
         format,
         rowCount: rows.length
       })
